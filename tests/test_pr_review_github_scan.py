@@ -14,6 +14,7 @@ def _rows() -> list[dict[str, object]]:
             "number": 1,
             "title": "one",
             "state": "OPEN",
+            "changedFiles": 1,
             "headRefOid": HEAD_1,
             "updatedAt": "2026-08-12T00:00:00Z",
         },
@@ -21,6 +22,7 @@ def _rows() -> list[dict[str, object]]:
             "number": 2,
             "title": "two",
             "state": "OPEN",
+            "changedFiles": 1,
             "headRefOid": HEAD_2,
             "updatedAt": "2026-08-12T00:00:00Z",
         },
@@ -139,6 +141,69 @@ def test_pr_list_failed_check_lookup_leaves_rollup_absent(monkeypatch) -> None:
     assert scan["complete"] is False
     assert scan["states"][0]["detail_read_failures"] == 2
     assert scan["states"][0]["source_read_valid"] is False
+
+
+def test_pr_list_paginates_files_when_graphql_detail_is_truncated(monkeypatch) -> None:
+    row = _rows()[0]
+    row["changedFiles"] = 101
+    rest_files = [
+        {"filename": f"src/file_{index}.py", "additions": index, "deletions": 0}
+        for index in range(101)
+    ]
+    calls: list[list[str]] = []
+
+    def fake(args: list[str], *, cwd: Path | None = None):
+        calls.append(args)
+        if args[:2] == ["pr", "list"]:
+            return [row]
+        if args[:2] == ["pr", "view"]:
+            details = _fake_run_gh_json(args, cwd=cwd)
+            details["files"] = details["files"] * 100
+            return details
+        if args[:3] == ["api", "--paginate", "--slurp"]:
+            return [rest_files[:100], rest_files[100:]]
+        raise AssertionError(args)
+
+    monkeypatch.setattr(pr_review_module, "_run_gh_json", fake)
+    scan = pr_review_module.scan_github_pull_requests(
+        repo="huangruiteng/loopx",
+        limit=10,
+        state_filter="open",
+    )
+
+    assert scan["states"][0]["source_read_valid"] is True
+    assert len(scan["pull_requests"][0]["files"]) == 101
+    assert scan["pull_requests"][0]["files"][-1]["path"] == "src/file_100.py"
+    assert ["api", "--paginate", "--slurp"] in [call[:3] for call in calls]
+
+
+def test_pr_list_marks_source_incomplete_when_rest_files_are_still_truncated(
+    monkeypatch,
+) -> None:
+    row = _rows()[0]
+    row["changedFiles"] = 101
+
+    def fake(args: list[str], *, cwd: Path | None = None):
+        if args[:2] == ["pr", "list"]:
+            return [row]
+        if args[:2] == ["pr", "view"]:
+            details = _fake_run_gh_json(args, cwd=cwd)
+            details["files"] = details["files"] * 100
+            return details
+        if args[:3] == ["api", "--paginate", "--slurp"]:
+            return [[{"filename": f"src/file_{index}.py"} for index in range(100)]]
+        raise AssertionError(args)
+
+    monkeypatch.setattr(pr_review_module, "_run_gh_json", fake)
+    scan = pr_review_module.scan_github_pull_requests(
+        repo="huangruiteng/loopx",
+        limit=10,
+        state_filter="open",
+    )
+
+    assert scan["complete"] is False
+    assert scan["states"][0]["detail_read_failures"] == 1
+    assert "files" not in scan["pull_requests"][0]
 
 
 def test_security_policy_keeps_public_entry_classification_after_move() -> None:

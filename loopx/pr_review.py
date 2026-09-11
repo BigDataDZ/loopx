@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
 from collections.abc import Mapping
 from datetime import datetime, timezone
 from pathlib import Path
@@ -13,6 +12,10 @@ from .capabilities.pr_review_queue import (
     build_review_plan,
     build_review_template,
 )
+from .capabilities.pr_review_queue.github_source import (
+    attach_pr_review_details as _attach_pr_review_details,
+)
+from .capabilities.pr_review_queue.github_source import run_gh_json as _run_gh_json
 from .control_plane.runtime.time import now_utc_iso
 from .presentation.markdown import as_dict as _as_dict
 from .presentation.markdown import as_list as _as_list
@@ -113,71 +116,6 @@ def _join_short(items: list[str], *, limit: int = 3, fallback: str = "未提供"
     if not compact:
         return fallback
     return "、".join(compact[:limit])
-
-
-def _run_gh_json(args: list[str], *, cwd: Path | None = None) -> Any:
-    proc = subprocess.run(
-        ["gh", *args],
-        cwd=cwd,
-        check=True,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    return json.loads(proc.stdout or "null")
-
-
-def _attach_pr_review_details(
-    row: dict[str, Any],
-    *,
-    repository: str | None,
-    cwd: Path | None = None,
-) -> bool:
-    """Attach bounded review details for one PR after the lightweight list scan.
-
-    Requesting review state, merge state, bodies, files, commits, and reviews
-    across a 100-item ``gh pr list`` can exceed GitHub's GraphQL complexity
-    limit. ``gh pr view`` scopes those fields to one PR and also supports
-    ``statusCheckRollup``, so one bounded detail call enriches the review
-    surfaces. A failed lookup leaves the lightweight row intact and marks the
-    source scan incomplete.
-    """
-
-    number = str(row.get("number") or "").strip()
-    if not number or not repository:
-        return False
-    try:
-        details = _run_gh_json(
-            [
-                "pr",
-                "view",
-                number,
-                "--json",
-                "body,files,reviewDecision,mergeStateStatus,createdAt,commits,reviews,statusCheckRollup",
-                "--repo",
-                repository,
-            ],
-            cwd=cwd,
-        )
-    except Exception:
-        return False
-    if not isinstance(details, dict):
-        return False
-    required_keys = (
-        "body",
-        "files",
-        "reviewDecision",
-        "mergeStateStatus",
-        "createdAt",
-        "commits",
-        "reviews",
-        "statusCheckRollup",
-    )
-    if any(key not in details for key in required_keys):
-        return False
-    for key in required_keys:
-        row[key] = details[key]
-    return True
 
 
 def resolve_current_github_repository(*, cwd: Path | None = None) -> str | None:
@@ -349,6 +287,7 @@ def scan_github_pull_requests(
                 row,
                 repository=api_repository,
                 cwd=cwd,
+                run_gh_json=_run_gh_json,
             ):
                 detail_read_failures += 1
             detailed.append(row)
