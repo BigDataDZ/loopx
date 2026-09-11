@@ -69,6 +69,8 @@ def main() -> int:
         "formal `REQUEST_CHANGES`",
         "Read the published review back",
         "Route approval, merge, self-merge, and admin bypass to `loopx-pr-merge`",
+        "--check-merge-readiness NUMBER@HEAD_OID",
+        "admin bypass never overrides this gate",
         "Full PR Review And Bilingual Format",
         "findings-only or blocker-only body is incomplete",
         "Cover every changed surface and key symbols",
@@ -245,6 +247,100 @@ def main() -> int:
     assert any(
         item["number"] == 770 and item["state"] == "MERGED" for item in sequence
     ), sequence
+
+    merge_head = "e" * 40
+    with tempfile.TemporaryDirectory() as temp_dir:
+        merge_fixture_path = Path(temp_dir) / "merge-readiness.json"
+        merge_fixture = {
+            "repository": "owner/repo",
+            "pull_requests": [
+                {
+                    "number": 4110,
+                    "title": "Exact-head merge gate fixture",
+                    "url": "https://github.com/owner/repo/pull/4110",
+                    "state": "OPEN",
+                    "author": {"login": "contributor"},
+                    "headRefOid": merge_head,
+                    "baseRefName": "main",
+                    "isDraft": False,
+                    "reviewDecision": "APPROVED",
+                    "mergeStateStatus": "CLEAN",
+                    "files": [
+                        {"path": "src/runtime.py", "additions": 1, "deletions": 1}
+                    ],
+                    "reviews": [
+                        {
+                            "state": "APPROVED",
+                            "body": (
+                                "## 动机\n动机。\n\n## 改动思路\n思路。\n\n"
+                                "## 具体改动\n改动。\n\n## 对主干的风险\n风险。\n\n"
+                                "## 我的整体评价\n通过。\n\n"
+                                f"English verdict: APPROVE at exact head {merge_head}."
+                            ),
+                            "author": {"login": "maintainer"},
+                            "commit": {"oid": merge_head},
+                            "submittedAt": "2026-09-09T11:14:01Z",
+                        }
+                    ],
+                    "statusCheckRollup": [
+                        {
+                            "name": "Sign-off",
+                            "status": "COMPLETED",
+                            "conclusion": "SUCCESS",
+                        },
+                        {
+                            "name": "merge-gate",
+                            "status": "COMPLETED",
+                            "conclusion": "SUCCESS",
+                        },
+                    ],
+                    "review_thread_summary": {
+                        "schema_version": "github_review_thread_summary_v0",
+                        "complete": True,
+                        "total_count": 0,
+                        "unresolved_count": 0,
+                    },
+                }
+            ],
+        }
+        merge_fixture_path.write_text(json.dumps(merge_fixture), encoding="utf-8")
+        ready = json.loads(
+            run_cli(
+                "--format",
+                "json",
+                "pr-review",
+                "--fixture",
+                str(merge_fixture_path),
+                "--check-merge-readiness",
+                f"4110@{merge_head}",
+            ).stdout
+        )
+        assert ready["ready"] is True, ready
+        assert ready["blocking_reasons"] == [], ready
+
+        merge_fixture["pull_requests"][0]["reviews"][0]["body"] = merge_fixture[
+            "pull_requests"
+        ][0]["reviews"][0]["body"].replace(merge_head, "d" * 40)
+        merge_fixture["pull_requests"][0]["statusCheckRollup"][0]["conclusion"] = (
+            "FAILURE"
+        )
+        merge_fixture_path.write_text(json.dumps(merge_fixture), encoding="utf-8")
+        blocked_run = run_cli(
+            "--format",
+            "json",
+            "pr-review",
+            "--fixture",
+            str(merge_fixture_path),
+            "--check-merge-readiness",
+            f"4110@{merge_head}",
+            check=False,
+        )
+        assert blocked_run.returncode == 1, blocked_run
+        blocked = json.loads(blocked_run.stdout)
+        assert (
+            "current_head_review_missing_or_invalid" in blocked["blocking_reasons"]
+        ), blocked
+        assert "status_checks_failed" in blocked["blocking_reasons"], blocked
     assert sequence[0]["risk_hint_level"] == "medium", sequence[0]
     assert sequence[0]["main_risk_level"] == "medium", sequence[0]
     merged_sequence = next(item for item in sequence if item["number"] == 770)

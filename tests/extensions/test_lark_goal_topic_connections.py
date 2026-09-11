@@ -678,6 +678,60 @@ def test_async_inbox_preflights_local_state_before_provider_write(
     assert not any("+messages-send" in call for call in state.get("calls", []))
 
 
+@pytest.mark.parametrize("execute", [False, True])
+@pytest.mark.parametrize("scope", ["agent", "goal"])
+def test_connect_preserves_existing_inbox_before_any_effect(
+    tmp_path: Path, execute: bool, scope: str
+) -> None:
+    registry = _registry(tmp_path)
+    inbox = {"enabled": True, "config_path": ".loopx/config/team-collector.json"}
+    registry["goals"][0]["control_plane"] = (
+        {"lark_event_inboxes": {"agent-alpha": inbox}}
+        if scope == "agent"
+        else {"lark_event_inbox": inbox}
+    )
+    state: dict[str, Any] = {}
+    result = _connect_registered_agent(
+        registry=registry,
+        goal_id="goal-alpha",
+        target_path=tmp_path / "targets.json",
+        binding_path=tmp_path / "binding.json",
+        app_ref="mew",
+        chat_id=CHAT_ID,
+        execute=execute,
+        runner=_runner(state),
+        cli_bin="fake-lark",
+    )
+    assert result["ok"] is False
+    assert result["blocker"] == "agent_inbox_binding_conflict"
+    assert state.get("calls", []) == []
+    assert not (tmp_path / "targets.json").exists()
+    assert not (tmp_path / "binding.json").exists()
+    assert not (tmp_path / ".loopx/config/lark-goal-topics").exists()
+    saved = json.loads((tmp_path / ".loopx/registry.json").read_text())
+    assert saved["goals"][0]["control_plane"] == registry["goals"][0]["control_plane"]
+
+
+def test_reconnect_same_inbox_keeps_registration(tmp_path: Path) -> None:
+    state: dict[str, Any] = {}
+    kwargs = dict(
+        goal_id="goal-alpha",
+        target_path=tmp_path / "targets.json",
+        binding_path=tmp_path / "binding.json",
+        app_ref="mew",
+        chat_id=CHAT_ID,
+        runner=_runner(state),
+        cli_bin="fake-lark",
+    )
+    assert _connect_registered_agent(registry=_registry(tmp_path), **kwargs)["ok"]
+    registry_path = tmp_path / ".loopx/registry.json"
+    registry = json.loads(registry_path.read_text())
+    before = registry["goals"][0]["control_plane"]["lark_event_inboxes"]
+    assert _connect_registered_agent(registry=registry, **kwargs)["ok"]
+    after = json.loads(registry_path.read_text())["goals"][0]["control_plane"]
+    assert after["lark_event_inboxes"] == before
+
+
 def test_two_goals_share_one_connection_with_distinct_topics(tmp_path: Path) -> None:
     state: dict[str, Any] = {}
     runner = _runner(state)
@@ -2600,7 +2654,8 @@ def test_manager_waits_for_actual_turn_in_its_own_audience_session(
     )
     assert response == "Current work summarized"
     assert calls[0]["session_id"] == "manager-session"
-    assert "LoopX Goal manager" in calls[0]["objective"]
+    from loopx.chat_manager import MANAGER_AGENT_OBJECTIVE
+    assert calls[0]["objective"] == MANAGER_AGENT_OBJECTIVE
     for wrong_channel in [
         "manager",
         manager_channel(provider="lark", audience="another-group"),
@@ -2753,3 +2808,76 @@ def test_manager_upgrade_does_not_claim_preserved_route_when_compensation_fails(
     assert result["ok"] is False
     assert result["status"] == "upgrade_recovery_required"
     assert result["details"]["prior_route_restored"] is False
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "none",
+        "disabled_binding",
+        "disabled_target",
+        "wrong_session",
+        "wrong_executor",
+        "wrong_audience",
+        "ambiguous",
+    ],
+)
+def test_manager_read_scope_follows_live_authorized_connection(tmp_path, mutation):
+    from loopx.extensions.lark.manager_routing import authorized_manager_goal_ids
+
+    kwargs, _state, bindings = _manager_fixture(tmp_path)
+    targets = read_goal_channel_targets(kwargs["target_path"])
+    decision = decide_lark_topic_event(
+        target_payload=targets,
+        binding_payloads={"goal-alpha": bindings},
+        event={
+            "chat_id": CHAT_ID,
+            "message_id": "om_scope_read",
+            "mentions": [{"id": APP_ID}],
+        },
+    )
+    route = decision["route"]
+    session = {
+        "session_id": "manager-session",
+        "agent_id": "codex",
+        "channel_id": route["manager_channel_id"],
+        "goal_id": "unrelated-old-anchor",
+    }
+    snapshot = {"target_payload": targets, "binding_payloads": {"goal-alpha": bindings}}
+    connections = bindings["bindings"]["goal-alpha"]["connections"]
+    bound = connections[route["connection_id"]]
+    if mutation == "disabled_binding":
+        bound["enabled"] = False
+    elif mutation == "disabled_target":
+        targets["targets"][route["target_ref"]]["enabled"] = False
+    elif mutation == "wrong_session":
+        session["session_id"] = "other-session"
+    elif mutation == "wrong_executor":
+        session["agent_id"] = "claude-code"
+    elif mutation == "wrong_audience":
+        session["channel_id"] = "manager"
+    elif mutation == "ambiguous":
+        connections["duplicate-manager"] = dict(bound)
+    assert authorized_manager_goal_ids(snapshot, session) == (
+        ["goal-alpha"] if mutation == "none" else []
+    )
+
+
+def test_manager_explicit_audience_scope_still_requires_live_binding(tmp_path):
+    import json
+    from loopx.extensions.lark.manager_routing import authorized_manager_goal_ids
+    from loopx.capabilities.manager_context import POLICY_SCHEMA
+    kwargs, _state, bindings = _manager_fixture(tmp_path)
+    targets = read_goal_channel_targets(kwargs["target_path"])
+    route = decide_lark_topic_event(target_payload=targets,
+        binding_payloads={"goal-alpha": bindings},
+        event={"chat_id":CHAT_ID,"message_id":"om_scope_multi","mentions":[{"id":APP_ID}]})["route"]
+    session = {"session_id":"manager-session","agent_id":"codex","channel_id":route["manager_channel_id"]}
+    snapshot = {"target_payload":targets,"binding_payloads":{"goal-alpha":bindings}}
+    path=tmp_path/'.local'/'manager-context'/'policy.json'
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"schema_version":POLICY_SCHEMA,"sources":{
+        session['channel_id']:{'evidence_goal_ids':['goal-alpha','goal-beta']}}}))
+    assert authorized_manager_goal_ids(snapshot,session,runtime_root=tmp_path)==['goal-alpha','goal-beta']
+    session['session_id']='different-session'
+    assert authorized_manager_goal_ids(snapshot,session,runtime_root=tmp_path)==[]

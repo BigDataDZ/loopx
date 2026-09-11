@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loopx"
-version = "1.0.2"
+version = "1.0.3"
 description = "A lightweight Loop Engineering control plane for long-running agent goals."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -60,6 +60,7 @@ include = ["loopx*"]
 "loopx.control_plane.work_items" = ["*.ts"]
 "*" = ["README.md", "README.zh-CN.md", "docs/*.md", "docs/protocols/*.md"]
 "loopx.capabilities.content_ops" = ["templates/*.json"]
+"loopx.capabilities.manager_context" = ["skills/loopx-manager/SKILL.md"]
 "loopx.extensions.lark" = ["extension.toml", "README.md", "docs/*.md"]
 "loopx.extensions.openviking_periodic_report" = ["extension.toml"]
 "loopx.extensions.openviking_semantic_preference" = ["extension.toml"]
@@ -145,6 +146,7 @@ files = [
   "loopx/control_plane/testing/authority_e2e_ladder.py",
   "loopx/control_plane/testing/authority_e2e_row_support.py",
   "loopx/control_plane/testing/authority_e2e_rows_stage2c.py",
+  "loopx/control_plane/testing/authority_e2e_rows_stage2c2.py",
   "loopx/control_plane/work_items/delivery_batch_scale.py",
   "loopx/control_plane/work_items/delivery_outcome.py",
   "loopx/control_plane/work_items/lifecycle.py",

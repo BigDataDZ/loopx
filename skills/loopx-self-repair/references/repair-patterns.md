@@ -200,10 +200,11 @@ teaches a reusable control-plane lesson.
 
 When a newer runtime fails parity only because a filesystem error includes an
 additional path, reproduce with that runtime before changing product behavior.
-Normalize only the exact known diagnostic and expected path in test support;
-retain full envelope, error-code, retry, and disk-effect comparisons. Add
-negative cases for wrong paths and different errors, then validate both the
-minimum supported runtime and the forward-compatibility runtime.
+If the public contract is path-free, sanitize the diagnostic once in the
+production adapter before returning it. Test support may normalize temporary
+roots, but must not erase public error semantics. Assert the real production
+boundary on both the minimum and forward-compatibility runtimes so removing the
+production sanitization makes the newer-runtime test fail.
 
 ## Minimal Evidence Packet
 

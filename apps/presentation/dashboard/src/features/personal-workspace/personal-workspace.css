@@ -872,22 +872,23 @@
 .personal-manager-conversation-tray:focus-within { border-color: var(--pw-blue); box-shadow: 0 0 0 3px rgb(47 102 233 / 13%), 0 5px 20px rgb(34 62 120 / 10%); }
 .personal-manager-conversation-tray > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .personal-manager-conversation-tray > header > span { display: flex; align-items: center; gap: 7px; color: var(--pw-blue-ink); }
-.personal-manager-conversation-tray > header small { color: var(--pw-faint); font-size: 10px; font-weight: 500; }
+.personal-manager-conversation-tray > header strong { font-size: 16px; font-weight: 600; line-height: 24px; }
+.personal-manager-conversation-tray > header small { color: var(--pw-faint); font-size: 12px; font-weight: 500; line-height: 16px; }
 .personal-manager-conversation-actions { display: flex; align-items: center; gap: 8px; }
-.personal-manager-conversation-btn { display: inline-flex; align-items: center; gap: 5px; min-height: 26px; padding: 3px 9px; border: 1px solid #b9c9ee; border-radius: 8px; background: #f4f7fe; color: var(--pw-blue-ink); font-size: 11px; font-weight: 650; cursor: pointer; transition: all .12s ease; }
+.personal-manager-conversation-btn { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; padding: 5px 10px; border: 1px solid #b9c9ee; border-radius: 8px; background: #f4f7fe; color: var(--pw-blue-ink); font-size: 12px; font-weight: 600; line-height: 16px; cursor: pointer; transition: all .12s ease; }
 .personal-manager-conversation-btn:hover { background: var(--pw-blue-soft); border-color: var(--pw-blue); }
-.personal-manager-conversation-link { display: inline-flex; align-items: center; padding: 3px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--pw-blue); font-size: 11.5px; font-weight: 650; cursor: pointer; transition: background .12s ease; }
+.personal-manager-conversation-link { display: inline-flex; align-items: center; min-height: 32px; padding: 5px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--pw-blue); font-size: 14px; font-weight: 500; line-height: 20px; cursor: pointer; transition: background .12s ease; }
 .personal-manager-conversation-link:hover { background: var(--pw-blue-soft); }
-.personal-manager-conversation-close { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pw-faint); cursor: pointer; transition: all .12s ease; }
+.personal-manager-conversation-close { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--pw-faint); cursor: pointer; transition: all .12s ease; }
 .personal-manager-conversation-close:hover { background: #fee2e2; color: #ef4444; }
 .personal-manager-conversation-messages { display: grid; gap: 7px; overflow-y: auto; max-height: 220px; }
-.personal-manager-conversation-messages article { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 9px; padding: 8px 10px; border-radius: 10px; background: #f5f7fc; font-size: 12px; line-height: 1.55; }
+.personal-manager-conversation-messages article { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 10px; padding: 10px 12px; border-radius: 10px; background: #f5f7fc; font-size: 14px; line-height: 20px; }
 .personal-manager-conversation-messages article.is-user { background: #edf3ff; }
-.personal-manager-conversation-messages article strong { color: var(--pw-muted); font-size: 10.5px; }
+.personal-manager-conversation-messages article strong { color: var(--pw-muted); font-size: 12px; font-weight: 500; line-height: 16px; }
 .personal-manager-conversation-bubble { min-width: 0; }
 .personal-manager-conversation-bubble p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.personal-manager-conversation-bubble .personal-md { font-size: 12px; line-height: 1.55; }
-.personal-manager-conversation-bubble small { display: inline-block; margin-top: 3px; color: var(--pw-blue); font-size: 10.5px; }
+.personal-manager-conversation-bubble .personal-md { font-size: 14px; line-height: 20px; }
+.personal-manager-conversation-bubble small { display: inline-block; margin-top: 4px; color: var(--pw-blue); font-size: 12px; line-height: 16px; }
 .personal-quick-prompts { display: flex; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
 .personal-quick-prompts button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 5px 12px; border: 1px solid var(--pw-line-strong); border-radius: 99px; background: #fff; color: var(--pw-muted); font-size: 12.5px; cursor: pointer; transition: all .14s ease; }
 .personal-quick-prompts button:hover { border-color: var(--pw-blue); color: var(--pw-blue-ink); }
@@ -1180,6 +1181,9 @@
   .personal-task-lane-scroll, .personal-task-lane-scroll.has-overflow-before, .personal-task-lane-scroll.has-overflow-after { flex: none; min-height: auto; padding-right: 8px; overflow: visible; box-shadow: none; scrollbar-gutter: auto; }
   .personal-quick-prompts { overflow-x: auto; }
   .personal-quick-prompts button { flex: 0 0 auto; min-height: 36px; }
+  .personal-manager-conversation-tray > header { align-items: flex-start; flex-wrap: wrap; }
+  .personal-manager-conversation-actions { width: 100%; justify-content: flex-end; }
+  .personal-manager-conversation-messages article { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .personal-timeline-row, .personal-output-row { grid-template-columns: 34px minmax(0, 1fr) 14px; gap: 9px; padding: 10px 12px; }
   .personal-timeline-row > time, .personal-timeline-row > .personal-row-status { display: none; }
   .personal-timeline-row .personal-priority-dot { display: none; }

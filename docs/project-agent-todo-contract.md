@@ -102,6 +102,16 @@ eligible time, `--cadence` is the retry interval, `--monitor-target-key` is the
 stable idempotency key, and optional `--expires-at` is the hard stop after
 which the monitor must not catch up.
 
+Public Todo updates validate the effective waiting state, not just newly supplied
+`resume_when`. Changing a Monitor-waiting Todo's status/task class or successor
+list must preserve the open advancement-task/independent-successor contract.
+To leave that contract, explicitly clear `resume_when` in the same update; this
+also clears its Monitor generation fence. Ordinary text/note corrections do not
+re-arm a wait, reset its baseline, or demand a new successor after its condition
+becomes satisfied. Explicitly re-submitting a satisfied Monitor condition still
+requires clearing it before re-arming. These checks are planning constraints,
+not permission to claim work, commit to a provider, or execute a successor.
+
 Monitor observations are reduced against the Todo under its existing writer lock.
 Callers report a result hash and material-change fact; they must not independently
 increment counters. A material observation with a different result hash increments
@@ -909,3 +919,88 @@ The fourth verifies concurrent todo writers wait on the active-state lock and
 preserve both claim metadata and unrelated updates.
 The fifth verifies per-todo `required_capabilities`, including multiple P0/P1
 candidate selection, bridge repair, and owner-gated capability misses.
+
+### Lease-fenced canonical text/note updates
+
+After explicit canonical-authority promotion, the active lease holder can edit
+`text` and `note` using the existing execution key and current lease version:
+
+```bash
+loopx todo update --goal-id <goal> --todo-id <todo> --agent-id <agent> \
+  --text 'Correct task description' --note 'Correction context' \
+  --task-lease-idempotency-key <execution-key> --task-lease-expected-version <version> \
+  --update-operation-id <stable-update-id>
+```
+
+Reuse the update id, execution proof and edit intent after a lost response.
+The original receipt can be replayed after lease expiry or transfer; it grants no
+current execution authority. Changed proof or edit intent with that id conflicts.
+Omitting the update id preserves a fresh id per CLI invocation. Preview writes
+nothing and does not consume the id. Updates preserve the lease exactly: they
+cannot acquire, renew, release or transfer it. Missing, stale or expired proof
+fails closed. These options do not enable promotion or a legacy Markdown fallback;
+legacy updates without the new options retain their existing behavior.
+An empty or Unicode-whitespace-only `--note` is an omitted note update and keeps
+the persisted note, before and after promotion. It never means clear; clearing a
+note requires a separate explicit contract.
+
+显式切换到 canonical authority 后，当前租约持有者可使用执行 key 和当前租约版本
+修改 `text`／`note`。响应丢失后复用相同 `--update-operation-id`、凭证和修改内容；
+历史回执可在租约过期或转交后回放，但不授予当前执行权。相同 ID 搭配不同凭证或
+内容会冲突；省略 ID 则每次 CLI 调用生成新 ID。Preview 不写入、不消耗 ID。
+更新不获取、续期、释放或转交租约；缺失、陈旧或过期凭证拒绝。此入口不自动
+promotion，也不回退 Markdown；不带新选项的 legacy 更新保持原行为。
+空字符串或仅含 Unicode 空白的 `--note` 视为省略 note 更新，在 promotion 前后都保留
+已持久化 note；它不表示清空。清空 note 需要另行定义显式契约。
+
+### Canonical nonterminal planning updates
+
+An explicitly promoted agent Todo also accepts a bounded planning update through
+the same transaction: `--status open|blocked|deferred`, `--evidence`, `--reason`,
+`--resume-when` / `--clear-resume-when`, `--unblocks-todo-id`, successor links and
+`--no-follow-up`. Text/note may be supplied in the same atomic operation.
+
+```bash
+loopx todo update --goal-id <goal> --todo-id <todo> --agent-id <agent> \
+  --status deferred --resume-when 'pr_merged:#123' --reason 'Await upstream' \
+  --update-operation-id <wait-attempt-id>
+loopx todo update --goal-id <goal> --todo-id <todo> --agent-id <agent> \
+  --status open --clear-resume-when --update-operation-id <resume-attempt-id>
+loopx todo list --goal-id <goal>
+```
+
+Preview with `--dry-run` before the real attempt. A cleared resume condition also
+clears its generation fence; an omitted condition is retained. Empty successor
+arrays and explicit `no_followup=false` in API intent remain meaningful values.
+Dependency validation sees the complete canonical inventory, not a hot-path
+summary or a Markdown buffer. A satisfied Monitor wait is not silently re-armed
+by an evidence edit; changing its topology requires clearing that old condition.
+Planning is transported in the v1 request envelope: an older runtime rejects the
+whole request instead of silently applying only an accompanying text/note patch.
+A planning-only update preserves the existing `last_actor_agent_id`, matching the
+legacy public planner; a combined raw text/note correction retains its established
+copy-edit attribution behavior.
+
+Authority is unchanged: registered, non-excluded peers may edit unclaimed work
+without claiming it; another owner's claim is not writable. A lease-bearing edit
+requires current execution proof and preserves the entire lease. **Changing a
+leased Todo's status is unsupported** until status and lease effects can commit
+together. Monitor planning/observations, ownership, routing, capability fields
+and terminal operations are outside this update intent. Use the existing
+dedicated lifecycle operations where supported; no unsupported update falls
+back to Markdown. Missing display files do not block a canonical update; normal
+post-commit projection delivery restores the managed Todo display.
+
+显式 promotion 后，agent Todo 可在同一事务中修改上述非终态规划字段，并与 text/note
+合并提交。使用 `--dry-run` 预览，重试沿用相同 operation id 与意图；新的修改使用新 ID。
+清除 resume 时一起清除 generation fence，省略则保留。校验读取完整 canonical
+inventory，不依赖摘要条数或 Markdown。补 evidence 不会重新设置已满足的 Monitor
+等待；更改其拓扑需要先清除旧条件。API 中空 successor 数组和 `no_followup=false`
+不是省略值。规划使用 v1 请求，旧 runtime 必须拒绝整次请求，不能只提交 text/note。
+仅包含规划字段的更新保留既有 `last_actor_agent_id`，与 legacy public planner 一致；
+若同时包含 raw text/note 修正，则继续沿用既有文案修正的 actor 归属语义。
+权限不扩大：未 claim 的工作仍可由未被排除的注册 agent 修改，不能改写
+其他 owner 的工作。带租约的编辑须提供当前 proof，保持租约不变；**暂不支持改变
+带租约 Todo 的 status**。Monitor 规划/观察、ownership、routing、capability 与终态
+操作不在此 intent 内。缺失 display 不阻止 canonical 更新；提交后的正常投影恢复
+托管 Todo 展示。不支持的操作不会回退 Markdown，也不自动切换 provider 或 promotion。

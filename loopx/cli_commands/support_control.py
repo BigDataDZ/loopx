@@ -63,6 +63,7 @@ from .support_control_backup import (
     handle_backup_state_command,
     register_backup_state_command,
 )
+from .support_control_agent_runtime import register_agent_runtime_arguments
 from .support_control_chat_endpoint import (
     handle_chat_endpoint_command,
     register_chat_endpoint_command,
@@ -88,6 +89,7 @@ FormatSelector = Callable[..., str]
 AddFormat = Callable[[argparse.ArgumentParser], None]
 
 SUPPORT_CONTROL_COMMANDS = {
+    "automation-prompts",
     "backup-state",
     "chat",
     "chat-endpoint",
@@ -108,6 +110,8 @@ def register_support_control_commands(
     subparsers: argparse._SubParsersAction,
     add_subcommand_format: AddFormat,
 ) -> None:
+    from .automation_prompts import register_automation_prompts
+    register_automation_prompts(subparsers, add_subcommand_format)
     register_backup_state_command(subparsers, add_subcommand_format)
     register_heartbeat_control_commands(subparsers, add_subcommand_format)
 
@@ -322,31 +326,7 @@ def register_support_control_commands(
         "--host", default=DEFAULT_CHAT_HOST, help="Loopback bind host."
     )
     chat_parser.add_argument("--port", type=int, default=DEFAULT_CHAT_PORT)
-    chat_parser.add_argument(
-        "--codex-bin",
-        default="codex",
-        help="Codex CLI executable used for the read-only app-server session.",
-    )
-    chat_parser.add_argument(
-        "--claude-bin",
-        default="claude",
-        help="Claude Code CLI executable used for read-only Agent sessions.",
-    )
-    chat_parser.add_argument(
-        "--kiro-cli-bin",
-        default=KIRO_CLI_BIN,
-        help=(
-            "Kiro CLI executable used for read-only ACP Agent sessions "
-            "(`<bin> acp`)."
-        ),
-    )
-    chat_parser.add_argument(
-        "--lark-cli-bin",
-        help=(
-            "Optional explicit lark-cli executable. When omitted, LoopX uses its bounded "
-            "runtime discovery order."
-        ),
-    )
+    register_agent_runtime_arguments(chat_parser, kiro_cli_bin=KIRO_CLI_BIN)
     chat_parser.add_argument(
         "--startup-timeout-seconds",
         type=float,
@@ -421,31 +401,7 @@ def register_support_control_commands(
         "--host", default=DEFAULT_CHAT_HOST, help="Loopback bind host."
     )
     dashboard_parser.add_argument("--port", type=int, default=DEFAULT_CHAT_PORT)
-    dashboard_parser.add_argument(
-        "--codex-bin",
-        default="codex",
-        help="Codex CLI executable used for the read-only app-server session.",
-    )
-    dashboard_parser.add_argument(
-        "--claude-bin",
-        default="claude",
-        help="Claude Code CLI executable used for read-only Agent sessions.",
-    )
-    dashboard_parser.add_argument(
-        "--kiro-cli-bin",
-        default=KIRO_CLI_BIN,
-        help=(
-            "Kiro CLI executable used for read-only ACP Agent sessions "
-            "(`<bin> acp`)."
-        ),
-    )
-    dashboard_parser.add_argument(
-        "--lark-cli-bin",
-        help=(
-            "Optional explicit lark-cli executable. When omitted, LoopX uses its bounded "
-            "runtime discovery order."
-        ),
-    )
+    register_agent_runtime_arguments(dashboard_parser, kiro_cli_bin=KIRO_CLI_BIN)
     dashboard_parser.add_argument(
         "--assets-dir",
         help="Optional LoopX Chat web bundle directory. Defaults to packaged assets.",
@@ -500,6 +456,15 @@ def handle_support_control_command(
 ) -> int | None:
     if args.command not in SUPPORT_CONTROL_COMMANDS:
         return None
+
+    if args.command == "automation-prompts":
+        from .automation_prompts import run, render
+        try:
+            payload = run(args, registry_path)
+        except Exception as error:
+            payload = {"ok": False, "error": str(error)}
+        print_payload(payload, output_format(args), render)
+        return 0 if payload.get("ok") else 1
 
     if args.command == "chat-endpoint":
         return handle_chat_endpoint_command(

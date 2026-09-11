@@ -127,6 +127,8 @@ def _run_gh_json(args: list[str], *, cwd: Path | None = None) -> Any:
         cwd=cwd,
         check=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
@@ -195,6 +197,7 @@ def resolve_current_github_login(*, cwd: Path | None = None) -> str | None:
     if not isinstance(payload, dict):
         return None
     return str(payload.get("login") or "").strip() or None
+
 
 def _parse_timestamp(value: object) -> datetime | None:
     text = str(value or "").strip()
@@ -871,6 +874,7 @@ def _review_conclusion(
             "status": "missing",
             "valid": False,
             "state": None,
+            "verdict": None,
             "reviewer": None,
             "submitted_at": None,
             "invalid_reasons": ["no_review_conclusion_available"],
@@ -915,6 +919,7 @@ def _review_conclusion(
             "status": "valid" if not reasons else "invalid",
             "valid": not reasons,
             "state": state or None,
+            "verdict": english_verdict,
             "reviewer": review_author or reviewer_login,
             "submitted_at": review.get("submittedAt"),
             "invalid_reasons": reasons,

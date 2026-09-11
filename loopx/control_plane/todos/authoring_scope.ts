@@ -4,11 +4,16 @@ import type { JsonObject } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
 import { requireJsonObject } from "../runtime_decode.ts";
 import { normalizeRegisteredTodoAgents, normalizeTodoAgent, stripPythonWhitespace } from "../coordination/todo_agents.ts";
-import { normalizeTodoResumeWhen, TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION } from "./resume_condition.ts";
+import {
+  normalizeTodoResumeWhen,
+  TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION,
+  UNSUPPORTED_TODO_RESUME_CONDITION_MESSAGE,
+} from "./resume_condition.ts";
 
 export const TODO_AUTHORING_SCOPE_REQUEST_SCHEMA = "todo_authoring_scope_request_v0";
 export const TODO_AUTHORING_SCOPE_RESULT_SCHEMA = "todo_authoring_scope_result_v0";
 export const USER_TODO_TASK_CLASSES: ReadonlySet<string> = new Set(["user_action", "user_gate"]);
+export const AGENT_TODO_TASK_CLASSES: ReadonlySet<string> = new Set(["advancement_task", "continuous_monitor", "blocker"]);
 function fail(message: string): never { throw new EffectRuntimeRequestError(message); }
 const INTENT_FIELDS = new Set(["task_class", "status", "actor_agent_id", "claimed_by", "bound_agent",
   "goal_bound", "blocks_agent", "global_gate", "clear_global_gate", "clear_blocks_agent", "excluded_agents",
@@ -156,7 +161,7 @@ export function planTodoAuthoringScope(value: unknown): JsonObject {
   }
   const resume = intent.resume_when ? normalizeTodoResumeWhen({schema_version: TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION,
     resume_when: intent.resume_when}) : null;
-  if (intent.resume_when && !resume) fail("unsupported Todo resume condition");
+  if (intent.resume_when && !resume) fail(UNSUPPORTED_TODO_RESUME_CONDITION_MESSAGE);
   if (resume && intent.clear_resume_when) fail("todo update accepts either resume_when or clear_resume_when, not both");
   const existingResume = todo.resume_when ? normalizeTodoResumeWhen({schema_version: TODO_RESUME_NORMALIZE_REQUEST_SCHEMA_VERSION,
     resume_when: todo.resume_when}) : null;

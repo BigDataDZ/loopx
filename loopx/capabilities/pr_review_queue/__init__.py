@@ -1,6 +1,7 @@
 """Deterministic observation and review contracts for pull-request queues."""
 
 from .core import build_pull_request_review_queue_observation
+from .merge_readiness import build_merge_readiness
 from .review_contract import (
     build_agent_response_contract,
     build_review_execution_contract,
@@ -23,6 +24,7 @@ from .scheduling import (
 
 __all__ = [
     "build_agent_response_contract",
+    "build_merge_readiness",
     "build_pull_request_review_queue_observation",
     "build_review_execution_contract",
     "build_review_plan",

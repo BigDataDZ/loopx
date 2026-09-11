@@ -37,6 +37,7 @@ workflow or the merge-focused `loopx-pr-merge` skill.
 | Command | CLI reference | Intent |
 | --- | --- | --- |
 | `/loopx-pr-review` | `loopx pr-review [--repo owner/repo] [--state open\|merged\|all] [--since ISO] [--fresh-audit-exact-head NUMBER@HEAD_OID]` | List open and merged PRs for the current project or explicit repository, provide concrete main-regression analysis for each actionable PR, and include a blank five-block template that agentloop fills after reading the selected PR body/diff. A typed exact-head option is required to re-audit an unchanged concluded head. |
+| pre-merge readback | `loopx pr-review --repo owner/repo --check-merge-readiness NUMBER@HEAD_OID` | Immediately before merge, fail closed unless the remote PR is still open at the reviewed head, its standalone conclusion approves that head, all checks are successful or skipped, review-thread pagination is complete with no unresolved thread, and merge state is compatible. This read grants no merge authority. |
 
 The slash command must run the CLI first. Agentloop must not reconstruct the
 review window by manually calling `gh pr view` / `gh pr list` for every PR. The
@@ -349,7 +350,16 @@ state transition, author-owned conclusions use `COMMENTED` plus one exact title:
 `Approval conclusion (author-owned PR; GitHub blocks formal self-approval)` or
 `Request changes conclusion (author-owned PR; GitHub blocks formal self-review)`.
 The compact result is versioned as `pull_request_review_conclusion_v0` and
-reports typed invalid-reason codes.
+reports a typed verdict and invalid-reason codes.
+
+`pull_request_merge_readiness_v0` is a separate, read-only last-mile gate. It
+re-reads the named PR instead of trusting a saved review packet. In particular,
+GitHub may retain or reassociate an approval after an update-from-base commit;
+the gate still requires the public review body to name the observed exact head.
+It also rejects missing, pending, failed, or unknown checks and incomplete or
+unresolved review threads. An admin bypass may satisfy GitHub's author-owned
+self-review limitation, but it never overrides this capability gate or supplies
+user merge authority.
 
 They must not include raw logs, private connector payloads, credentials, local
 absolute paths, private source bodies, or hidden CI artifacts.
@@ -607,8 +617,12 @@ Keeping a legacy storage writer does not justify keeping its independent
 eligibility, retention, ordering or successor rules. Name actual retired rules
 and justified compatibility/effect code, not a net-deletion quota. A positive
 twin with shared decisions and necessary extra adapter code must remain
-approvable. Verified evidence rows must fill their declared fields; the checker
-validates this completeness only, never the truth of their contents.
+approvable. Verified evidence rows must fill their declared fields and structured
+shapes. `symbol_map.items` obeys the declared count and item fields;
+`walkthroughs.positive` plus any applicable `walkthroughs.negative` fill their
+declared fields; `validation_matrix.items[].case_id` proves coverage of the
+packet's typed required cases. The checker validates this completeness only,
+never the truth of their contents.
 
 Behavioral qualification lives in `tests/capabilities/test_pr_review_behavior.py`:
 paired synthetic cases include valid designs as well as counterexamples. The optional
@@ -646,7 +660,8 @@ The packet should let a reviewer move through PRs in order:
 7. Treat `metadata_risk_hint` only as queue-ordering metadata. It must not be
    copied as the final risk judgement.
 8. Recheck the exact head, then decide `approve`, `request changes`, `defer`, or
-   `merge after checks`.
+   `merge after checks`. Immediately before merge, require
+   `--check-merge-readiness NUMBER@HEAD_OID` to return `ready=true`.
 
 A response that only lists `Open` and `Merged` PRs, scale, and recommended next
 order is incomplete for `/loopx-pr-review`; it should continue into the
@@ -676,6 +691,9 @@ A first implementation is acceptable when:
 - `--fresh-audit-exact-head NUMBER@HEAD_OID` is the only packet-level way to
   turn an unchanged valid conclusion into an actionable fresh audit, and
   malformed, absent, or already-actionable targets fail closed;
+- `--check-merge-readiness NUMBER@HEAD_OID` rejects head drift, stale review
+  prose, non-approval conclusions, red/pending/unknown checks, incomplete or
+  unresolved review-thread evidence, and incompatible merge state;
 - the default limit is 100, and exhaustive requests only proceed when
   `result_completeness.complete=true`; truncated packets provide a larger
   `recommended_limit` for the next read;

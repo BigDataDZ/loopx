@@ -30,7 +30,10 @@ from .chat_goal_subagent_api import (
 )
 from .chat_status_api import ChatStatusRequestMixin
 from .chat_runtime import ChatRuntimeController, TERMINAL_TURN_STATES
-from .chat_manager import MANAGER_AGENT_GOAL_ID, MANAGER_AGENT_OBJECTIVE, is_manager_channel
+from .chat_manager import (
+    MANAGER_AGENT_GOAL_ID, MANAGER_AGENT_OBJECTIVE, is_manager_channel,
+    manager_workspace, manager_model_config,
+)
 from .chat_ssh_source_api import SSH_SOURCE_ENSURE_PATH, SshSourceRequestMixin
 from .chat_store import ChatSessionStore
 from .control_plane.status.ssh_host_catalog import (
@@ -59,6 +62,7 @@ from .extensions.lark.goal_channel import (
 )
 from .extensions.lark.goal_topic_connections import list_lark_apps
 from .extensions.lark.goal_topic_runtime import LarkGoalTopicRuntimeService
+from .extensions.lark.manager_routing import authorized_manager_goal_ids
 from .extensions.lark.presentation.kanban import (
     CommandRunner,
 )
@@ -513,6 +517,13 @@ class ChatRequestHandler(
             raise ValueError("goal_id was not found in the active LoopX registry")
         return registry, goal
 
+    def _session_context(self, session: dict[str, object]) -> dict[str, object]:
+        if is_manager_channel(session.get("channel_id")):
+            return {"project": manager_workspace(self.server.chat_store.root, str(session["channel_id"])),
+                    "objective": MANAGER_AGENT_OBJECTIVE, "title": "LoopX global manager"}
+        registry, goal = self._registry_and_goal(str(session["goal_id"]))
+        return _goal_public_context(registry, goal)
+
     def _serve_asset(self, path: str) -> None:
         relative = "index.html" if path in {"/chat", "/chat/"} else path.removeprefix("/chat/")
         root = self.server.assets_dir.resolve()
@@ -547,20 +558,18 @@ class ChatRequestHandler(
             if unknown:
                 raise ValueError("unknown session field")
             goal_id = _compact_text(body.get("goal_id"), limit=160) or self.server.selected_goal_id or ""
-            if not goal_id:
-                raise ValueError("goal_id is required when multiple Goals are available")
             agent_id = _compact_text(body.get("agent_id"), limit=80) or "codex"
             mode = _compact_text(body.get("mode"), limit=40) or "resume_latest"
             context_kind = _compact_text(body.get("context_kind"), limit=40) or "goal"
             if context_kind not in {"goal", "manager"}:
                 raise ValueError("context_kind must be goal or manager")
-            registry, goal = self._registry_and_goal(goal_id)
-            context = _goal_public_context(registry, goal)
-            runtime_objective = (
-                MANAGER_AGENT_OBJECTIVE
-                if context_kind == "manager"
-                else str(context["objective"] or context["title"])
-            )
+            if context_kind == "manager":
+                goal_id = MANAGER_AGENT_GOAL_ID
+                context = self._session_context({"channel_id": "manager"})
+            else:
+                registry, goal = self._registry_and_goal(goal_id)
+                context = _goal_public_context(registry, goal)
+            runtime_objective = str(context["objective"] or context["title"])
             project = context["project"]
             if not project.is_dir():
                 raise CodexChatAgentError(
@@ -670,13 +679,8 @@ class ChatRequestHandler(
                 raise ValueError("message is required")
             attachments = normalize_chat_image_attachments(body.get("attachments"))
             client_turn_id = _compact_text(body.get("client_turn_id"), limit=160) or uuid.uuid4().hex
-            registry, goal = self._registry_and_goal(str(session["goal_id"]))
-            context = _goal_public_context(registry, goal)
-            runtime_objective = (
-                MANAGER_AGENT_OBJECTIVE
-                if is_manager_channel(session.get("channel_id"))
-                else str(context["objective"] or context["title"])
-            )
+            context = self._session_context(session)
+            runtime_objective = str(context["objective"] or context["title"])
             turn, created = self.server.runtime_controller.submit_turn(
                 session_id=session_id,
                 client_turn_id=client_turn_id,
@@ -844,13 +848,8 @@ class ChatRequestHandler(
             session = self.server.chat_store.load_session(session_id)
             if session is None:
                 raise KeyError("chat session was not found")
-            registry, goal = self._registry_and_goal(str(session["goal_id"]))
-            context = _goal_public_context(registry, goal)
-            objective = (
-                MANAGER_AGENT_OBJECTIVE
-                if is_manager_channel(session.get("channel_id"))
-                else str(context["objective"] or context["title"])
-            )
+            context = self._session_context(session)
+            objective = str(context["objective"] or context["title"])
             restored = self.server.runtime_controller.resume_session(
                 session_id=session_id,
                 work_dir=context["project"],
@@ -1266,6 +1265,7 @@ class ChatRequestHandler(
             capabilities = {
                 "ok": True,
                 "schema_version": "loopx_chat_capabilities_v1",
+                "manager": {"scope": "owner_global", **manager_model_config()},
                 "runtime_identity": release_runtime_identity(),
                 "agent_backend": "multi_adapter",
                 "sandbox": "read-only",
@@ -1461,6 +1461,12 @@ def serve_chat(
     server.action_store = ChatActionStore(runtime_root / "chat" / "actions")
     server.runtime_controller = ChatRuntimeController(
         store=server.chat_store,
+        registry_path=resolved_registry_path,
+        manager_scope_resolver=lambda session: authorized_manager_goal_ids(
+            build_lark_goal_topic_runtime_snapshot(
+                registry_path=server.registry_path, runtime_root_override=server.runtime_root_override,
+            ), session, runtime_root=runtime_root,
+        ),
         codex_bin=codex_bin,
         claude_bin=claude_bin,
         kiro_cli_bin=kiro_cli_bin,

@@ -25,6 +25,15 @@ automatically.
 
 ## Slash Command Fallback
 
+When asked to upgrade LoopX on a machine with the desktop App, inspect the App
+bundle and its runtime as well as the CLI. `loopx doctor` exposes
+`desktop_installation` for standard macOS install locations; a paired bundle
+still does not prove which App process is running. Upgrade the App and its
+bundled runtime together, then restart and verify the App, CLI and service
+source revisions. Never claim a desktop upgrade from CLI/HTTP checks alone:
+opening an older App can replace a separately upgraded CLI with its bundle.
+Keep SSH host verification separate; a host without an App needs no App install.
+
 When the visible user message is exactly a LoopX slash command or starts with a
 LoopX slash command plus arguments, do not treat it as ordinary chat.
 
@@ -451,8 +460,13 @@ any losing high-value candidate that should not be forgotten. Include a product
 bottleneck lens: ask whether the core goal is currently bottlenecked by user
 experience, agent capability, evidence quality, adapter readiness, or
 priority-rule gaps, and promote one concrete bottleneck candidate when it should
-outrank the nearest local TODO. Then choose exactly one bounded, verifiable step
-from that audit.
+outrank the nearest local TODO. Choose scope-bounded work toward a verifiable
+result. Size the work by the task, evidence and risk, not tool calls, file count
+or heartbeat interval. Related implementation, research, validation and writeback
+may form one coherent effort; a focused correction can also be sufficient.
+One operation or writeback alone is not a reason to stop. Budget, scope, explicit
+stop conditions, settlement and replan requirements still apply; this guidance
+does not authorize a new Todo, lease, direction or external action.
 
 When you tell the user a connected LoopX plan, top-todo list, priority
 stack, or route change, treat that as a writeback trigger, not chat memory. If

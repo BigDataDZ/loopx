@@ -92,7 +92,6 @@ from .control_plane.todos.goal_todo_projection import (
     todo_summaries_from_fields,
 )
 from .control_plane.todos import monitor_metadata as todo_monitor_metadata
-from .control_plane.todos.external_wait_writeback import plan_todo_external_wait_update
 from .control_plane.todos.mutation_authority import authorize_todo_lifecycle_mutation, todo_update_authority_action
 from .control_plane.todos.succession_warning import build_open_parent_successor_advisory
 from .control_plane.todos.successor_derivation import (
@@ -121,7 +120,7 @@ from .control_plane.coordination.local_authority import (
     local_authority_is_promoted,
     read_canonical_todos_if_promoted,
 )
-from .control_plane.todos.provider_compatibility_edit import edit_canonical_todo_if_promoted
+from .control_plane.todos.provider_update import update_canonical_todo_if_promoted
 from .control_plane.todos.provider_create import create_canonical_todo_if_promoted
 from .control_plane.todos.path_resolution import resolve_todo_state_path
 from .control_plane.todos.provider_terminal_lifecycle import provider_first_terminal_lifecycle
@@ -1037,6 +1036,7 @@ def update_goal_todo(
     clear_claim: bool = False,
     claim_only: bool = False,
     claim_operation_id: str | None = None,
+    update_operation_id: str | None = None,
     task_lease_idempotency_key: str | None = None,
     task_lease_expected_version: int | None = None,
     project: Path | None = None,
@@ -1068,7 +1068,7 @@ def update_goal_todo(
         raise ValueError(
             "--task-lease-expected-version requires --task-lease-idempotency-key"
         )
-    if task_lease_idempotency_key is not None and not promoted_claim:
+    if task_lease_idempotency_key is not None and claim_only and not promoted_claim:
         raise ValueError(
             "--task-lease-idempotency-key on todo claim requires promoted canonical authority; no legacy write attempted"
         )
@@ -1112,28 +1112,41 @@ def update_goal_todo(
         )
         if canonical_claim is not None:
             return canonical_claim
-    # A narrow compatibility editor is admitted through provider CAS. All
-    # other legacy writes still encounter the existing promotion fence.
-    if not claim_only and (text is not None or note is not None) and not any((
+    # Transport explicit planning intent; TS owns its meaning at the canonical
+    # commit revision. Unsupported fields still encounter the promotion fence.
+    planning_intent = {key: value for key, value in {
+        "status": status, "evidence": evidence, "reason": reason,
+        "resume_when": resume_when, "clear_resume_when": clear_resume_when or None,
+        "unblocks_todo_id": unblocks_todo_id, "successor_todo_ids": successor_todo_ids,
+        "no_followup": no_followup,
+    }.items() if value is not None}
+    if not claim_only and (text is not None or note is not None or planning_intent) and not any((
         monitor_metadata,
         goal_bound, clear_blocks_agent, clear_excluded_agents, global_gate,
-        clear_global_gate, clear_resume_when, clear_claim, authority_reason,
+        clear_global_gate, clear_claim, authority_reason,
     )) and all(value is None for value in (
-        status, evidence, reason, task_class, action_kind, task_domain,
+        task_class, action_kind, task_domain,
         task_repository, continuation_policy, required_write_scopes,
         required_capabilities, target_capabilities, explore_result_node_refs,
         decision_scope, required_decision_scopes, claimed_by, bound_agent,
-        blocks_agent, excluded_agents, unblocks_todo_id, successor_todo_ids,
-        resume_when, no_followup, authority_reason,
+        blocks_agent, excluded_agents, authority_reason,
     )):
-        canonical_edit = edit_canonical_todo_if_promoted(
+        canonical_edit = update_canonical_todo_if_promoted(
             registry_path=registry_path, runtime_root=shadow_runtime_root,
             goal_id=goal_id, todo_id=normalize_todo_id(todo_id) or todo_id,
             actor_agent_id=agent_id, role=role, text=text, note=note, dry_run=dry_run,
             project=project, state_file=state_file,
+            operation_id=update_operation_id,
+            task_lease_idempotency_key=task_lease_idempotency_key,
+            task_lease_expected_version=task_lease_expected_version,
+            planning_intent=planning_intent,
         )
         if canonical_edit is not None:
             return canonical_edit
+    if update_operation_id is not None or (not claim_only and (
+        task_lease_idempotency_key is not None or task_lease_expected_version is not None
+    )):
+        raise ValueError("update operation id and lease proof require a supported promoted update; no legacy write attempted")
     resolved_project, resolved_state_file = resolve_todo_state_path(
         registry_path=registry_path,
         goal_id=goal_id,
@@ -1160,8 +1173,6 @@ def update_goal_todo(
         validation_failure = completion_validation_gate.get("failure")
         if validation_failure is not None:
             return validation_failure
-    external_wait_transition: dict[str, Any] | None = None
-    resume_monitor_generation: int | None = None
     with legacy_todo_write_transaction(
         registry_path, goal_id, resolved_state_file, agent_id or claimed_by, "todo_update", dry_run,
         runtime_root=shadow_runtime_root,
@@ -1267,21 +1278,6 @@ def update_goal_todo(
                 registry_path=registry_path, goal_id=goal_id, excluded_agents=excluded_agents,
             ) if excluded_agents is not None else None
         )
-        authoring_scope = plan_todo_authoring_scope(
-            command="update", role=target_role, goal_id=goal_id, todo=existing_block,
-            registered_agents=registered_agent_ids_from_registry(registry_path, goal_id),
-            intent={
-                "task_class": task_class, "status": status, "actor_agent_id": effective_agent_id,
-                "claimed_by": effective_claimed_by, "bound_agent": effective_bound_agent,
-                "goal_bound": goal_bound, "blocks_agent": effective_blocks_agent,
-                "clear_blocks_agent": clear_blocks_agent, "global_gate": global_gate,
-                "clear_global_gate": clear_global_gate, "excluded_agents": effective_excluded_agents,
-                "task_repository": task_repository, "task_domain": task_domain,
-                "resume_when": resume_when, "clear_resume_when": clear_resume_when,
-            },
-        )
-        target_task_class = authoring_scope["task_class"]
-        target_status = authoring_scope["status"]
         completion_metadata_updates_override = None
         if completion_validation_gate is not None:
             locked_completion = locked_todo_completion_transaction(
@@ -1304,30 +1300,10 @@ def update_goal_todo(
                     ),
                 )
             )
-        target_bound_agent = authoring_scope["bound_agent"]
-        target_goal_bound = authoring_scope["goal_bound"]
         normalized_unblocks_todo_id = normalize_todo_id(unblocks_todo_id) if unblocks_todo_id else None
         if unblocks_todo_id and not normalized_unblocks_todo_id:
             raise ValueError("unblocks_todo_id must use the public token shape todo_<letters-digits-underscore-hyphen>")
         normalized_successor_todo_ids = requested_successor_todo_ids
-        normalized_resume_when = authoring_scope["normalized_resume_when"]
-        effective_resume_when = authoring_scope["effective_resume_when"]
-        external_wait_transition, resume_monitor_generation = (
-            plan_todo_external_wait_update(
-                lines=lines,
-                todo_id=todo_id,
-                resume_when=normalized_resume_when,
-                successor_todo_ids=(
-                    normalized_successor_todo_ids
-                    if successor_todo_ids is not None
-                    else None
-                ),
-                existing_successor_todo_ids=existing_block.get("successor_todo_ids"),
-                role=target_role,
-                status=target_status,
-                task_class=target_task_class,
-            )
-        )
         update_result = apply_todo_update_to_lines(
             lines,
             todo_id=todo_id,
@@ -1349,13 +1325,8 @@ def update_goal_todo(
             decision_scope=decision_scope,
             required_decision_scopes=required_decision_scopes,
             claimed_by=effective_claimed_by,
-            bound_agent=target_bound_agent if target_role == "user" else None,
-            goal_bound=(
-                True
-                if target_role == "user" and target_goal_bound
-                else None
-            ),
-            clear_user_binding=authoring_scope["clear_user_binding"],
+            bound_agent=effective_bound_agent,
+            goal_bound=goal_bound,
             blocks_agent=effective_blocks_agent,
             clear_blocks_agent=clear_blocks_agent,
             excluded_agents=effective_excluded_agents,
@@ -1363,17 +1334,19 @@ def update_goal_todo(
             clear_global_gate=clear_global_gate,
             unblocks_todo_id=normalized_unblocks_todo_id,
             successor_todo_ids=normalized_successor_todo_ids if successor_todo_ids is not None else None,
-            resume_when=normalized_resume_when,
-            resume_monitor_generation=resume_monitor_generation,
+            resume_when=resume_when,
             clear_resume_when=clear_resume_when,
             no_followup=no_followup,
             completion_metadata_updates_override=(
                 completion_metadata_updates_override
             ),
-            monitor_context={
-                **monitor_intent, "role": target_role, "task_class": target_task_class,
-                "resume_when": effective_resume_when,
-                "enforce_boundedness": enforce_monitor_boundedness,
+            monitor_metadata=monitor_intent["metadata"],
+            public_context={
+                "goal_id": goal_id, "role": target_role,
+                "actor_agent_id": effective_agent_id,
+                "registered_agents": registered_agent_ids_from_registry(registry_path, goal_id),
+                "monitor_observation": monitor_intent["observation"],
+                "enforce_monitor_boundedness": enforce_monitor_boundedness,
             },
             clear_claim=clear_claim,
             claim_only=claim_only,
@@ -1408,8 +1381,6 @@ def update_goal_todo(
         )
         if parent_successor_advisory:
             payload["parent_successor_advisory"] = parent_successor_advisory
-    if external_wait_transition is not None:
-        payload["external_wait_transition"] = external_wait_transition
     payload = _attach_todo_write_correctness_dry_run_packet(
         payload,
         goal_id=goal_id,

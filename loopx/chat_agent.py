@@ -53,6 +53,44 @@ def _approval_gate(summary: str) -> dict[str, str]:
     }
 
 
+def _terminal_turn_error(error: Any, fallback: str) -> CodexChatAgentError:
+    """Project only the app-server's typed error, never its arbitrary prose."""
+    info = error.get("codexErrorInfo") if isinstance(error, dict) else None
+    # App-server v2 exposes camel-case discriminators. Unknown/new variants
+    # retain the generic failure; message/additionalDetails are not evidence
+    # of a policy decision and may contain private upstream content.
+    known = {
+        "cyberPolicy": ("cyber_policy", "Codex 上游返回了安全策略拦截，本轮未完成。"),
+        "misalignmentPolicyViolation": (
+            "misalignment_policy_violation", "Codex 上游返回了策略违规拦截，本轮未完成。",
+        ),
+        "usageLimitExceeded": ("usage_limit_exceeded", "Codex 上游用量已达限制，本轮未完成。"),
+        "rateLimitExceeded": ("rate_limit_exceeded", "Codex 上游请求频率受限，本轮未完成。"),
+        "contextWindowExceeded": ("context_window_exceeded", "Codex 上下文超过限制，本轮未完成。"),
+        "unauthorized": ("unauthorized", "Codex 上游身份验证失败，本轮未完成。"),
+    }
+    selected = known.get(info) if isinstance(info, str) else None
+    if selected is None:
+        return CodexChatAgentError(
+            fallback,
+            gate=_host_tool_gate(fallback, "Inspect the Codex host error before continuing."),
+        )
+    code, summary = selected
+    policy = info in {"cyberPolicy", "misalignmentPolicyViolation"}
+    return CodexChatAgentError(
+        summary,
+        error_code=code,
+        gate={
+            "kind": "policy_gate" if policy else "host_tool_gate",
+            "summary": summary,
+            "next_action": (
+                "本轮已终止，不会自动重放；请查看上游说明。"
+                if policy else "请处理对应的上游限制后再继续。"
+            ),
+        },
+    )
+
+
 def _is_legacy_model_catalog_error(value: Any) -> bool:
     # App-server currently reports catalog schema failures only as JSON-RPC
     # prose. Keep this compatibility classifier bound to its three stable
@@ -192,6 +230,7 @@ def _turn_prompt(
             }
         ],
         "protected_action": None,
+        "context_handoff": None,
         "gate": None,
     }
     role = (
@@ -224,9 +263,13 @@ def _turn_prompt(
         + "The operator message below is the current task. Answer it directly and do not replace it "
         + "with an autonomous project task. "
         + planning_limits
-        + "When the operator requests a durable Goal, Todo, Agent binding, heartbeat, monitor, gate, or correction change, "
+        + "Outside manager intent delegation, when the operator requests a durable Goal, Todo, Agent binding, heartbeat, monitor, gate, or correction change, "
         "describe the bounded proposal clearly so LoopX can route it through typed preview and explicit apply. "
         + protected_action_contract
+        + "Exception for the manager's supplied context_delegation catalog: when the current user explicitly asks "
+        "to delegate ordinary work or forward context for another Agent to assess/replan, emit context_handoff={goal_id,agent_id} using "
+        "one exact catalog recipient, proposals=[], and no confirmation gate. Otherwise context_handoff=null. "
+        "The host delivers the original user message, with no model-authored priority or task edits. "
         + "Never claim the change has been written without a verified control-plane receipt. "
         "If you encounter an identity, approval, or host-tool gate, stop and describe it in gate. "
         "Reply in Chinese unless the operator asks for another language. Keep proposals bounded and reviewable. "
@@ -251,12 +294,15 @@ class CodexChatAgentSession:
     work_dir: Path
     context_summary: str = ""
     execution_mode: bool = False
+    model: str | None = None
+    reasoning_effort: str | None = None
     response_timeout_sec: float = 30.0
     idle_timeout_sec: float = 180.0
     hard_timeout_sec: float = 900.0
     next_request_id: int = 5
     current_turn_id: str = ""
     model_catalog_compatibility_applied: bool = False
+    read_tool_handler: Callable[[str, Any], dict[str, Any]] | None = field(default=None, repr=False)
     _pending_events: "queue.Queue[dict[str, Any]]" = field(default_factory=queue.Queue, repr=False)
     _response_waiters: dict[int, "queue.Queue[dict[str, Any]]"] = field(
         default_factory=dict,
@@ -281,6 +327,9 @@ class CodexChatAgentSession:
         resume_thread_id: str | None = None,
         execution_mode: bool = False,
         codex_home: Path | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        dynamic_tools: list[dict[str, Any]] | None = None,
         _compatibility_catalog_path: Path | None = None,
     ) -> "CodexChatAgentSession":
         resolved = shutil.which(codex_bin)
@@ -342,6 +391,8 @@ class CodexChatAgentSession:
             idle_timeout_sec=idle_timeout_sec,
             hard_timeout_sec=hard_timeout_sec,
             execution_mode=execution_mode,
+            model=model,
+            reasoning_effort=reasoning_effort,
             model_catalog_compatibility_applied=_compatibility_catalog_path is not None,
         )
         try:
@@ -363,11 +414,18 @@ class CodexChatAgentSession:
                 {
                     **({"threadId": resume_thread_id, "excludeTurns": True} if resume_thread_id else {}),
                     "cwd": str(root),
+                    **({"model": model} if model else {}),
+                    **({"config": {"model_reasoning_effort": reasoning_effort}} if reasoning_effort else {}),
                     "sandbox": "workspace-write" if execution_mode else "read-only",
                     "approvalPolicy": "never",
+                    **({"dynamicTools": dynamic_tools} if dynamic_tools and not resume_thread_id else {}),
                 },
                 request_id=2,
             )
+            if model and thread_result.get("model") not in {None, model}:
+                raise session._runtime_error("Codex did not apply the requested manager model.")
+            if reasoning_effort and thread_result.get("reasoningEffort") not in {None, reasoning_effort}:
+                raise session._runtime_error("Codex did not apply the requested manager reasoning effort.")
             session.thread_id = _extract_id(thread_result, "thread", "threadId")
             if not session.thread_id:
                 raise session._runtime_error("Codex app-server did not return a thread id.")
@@ -395,6 +453,9 @@ class CodexChatAgentSession:
                     resume_thread_id=resume_thread_id,
                     execution_mode=execution_mode,
                     codex_home=runtime_home,
+                    model=model,
+                    reasoning_effort=reasoning_effort,
+                    dynamic_tools=dynamic_tools,
                     _compatibility_catalog_path=catalog_path,
                 )
         except Exception:
@@ -440,7 +501,7 @@ class CodexChatAgentSession:
 
     def _route_response(self, message: dict[str, Any]) -> bool:
         response_id = message.get("id")
-        if not isinstance(response_id, int):
+        if message.get("method") or not isinstance(response_id, int):
             return False
         with self._response_waiters_lock:
             waiter = self._response_waiters.get(response_id)
@@ -461,12 +522,31 @@ class CodexChatAgentSession:
                     continue
                 return message
 
-    def _check_server_gate(self, message: dict[str, Any]) -> None:
+    def _check_server_gate(self, message: dict[str, Any]) -> bool:
+        if message.get("id") is not None and message.get("method") == "item/tool/call" and self.read_tool_handler:
+            params = message.get("params") or {}
+            valid = (
+                isinstance(params, dict) and params.get("threadId") == self.thread_id
+                and bool(self.current_turn_id) and params.get("turnId") == self.current_turn_id
+                and params.get("namespace") is None
+            )
+            try:
+                result = self.read_tool_handler(params.get("tool", ""), params.get("arguments")) if valid else {
+                    "ok": False, "error": "tool_turn_mismatch",
+                }
+            except Exception:
+                result = {"ok": False, "error": "read_tool_unavailable"}
+            self._write({"id": message["id"], "result": {
+                "contentItems": [{"type": "inputText", "text": json.dumps(result, ensure_ascii=False)}],
+                "success": result.get("ok") is True,
+            }})
+            return True
         if message.get("id") is not None and message.get("method"):
             raise CodexChatAgentError(
                 "Codex app-server requested host approval",
                 gate=_approval_gate("Codex requested host approval during a read-only chat turn."),
             )
+        return False
 
     def _request(
         self,
@@ -509,13 +589,16 @@ class CodexChatAgentSession:
                                     "Codex app-server returned an unreadable response."
                                 )
                             message = raw
+                            if message.get("method") and self._check_server_gate(message):
+                                continue
                             if (
                                 message.get("id") != request_id
                                 and self._route_response(message)
                             ):
                                 continue
                             if message.get("id") != request_id:
-                                self._check_server_gate(message)
+                                if self._check_server_gate(message):
+                                    continue
                                 self._pending_events.put(message)
                                 continue
                 if message.get("id") == request_id:
@@ -609,6 +692,8 @@ class CodexChatAgentSession:
                 "threadId": self.thread_id,
                 "input": turn_input,
                 "cwd": str(self.work_dir),
+                **({"model": self.model} if self.model else {}),
+                **({"effort": self.reasoning_effort} if self.reasoning_effort else {}),
                 "approvalPolicy": "never",
             },
             request_id=request_id,
@@ -645,7 +730,8 @@ class CodexChatAgentSession:
                     )
                 raise
             last_activity_at = time.monotonic()
-            self._check_server_gate(message)
+            if self._check_server_gate(message):
+                continue
             event_thread_id = _event_thread_id(message)
             event_turn_id = _event_turn_id(message)
             if event_thread_id and event_thread_id != self.thread_id:
@@ -700,7 +786,10 @@ class CodexChatAgentSession:
                 turn = params.get("turn") if isinstance(params, dict) else None
                 turn_status = str(turn.get("status") or "") if isinstance(turn, dict) else ""
                 if turn_status == "failed":
-                    raise self._runtime_error("Codex app-server reported a terminal turn failure.")
+                    raise _terminal_turn_error(
+                        turn.get("error"),
+                        "Codex app-server reported a terminal turn failure.",
+                    )
                 if turn_status == "interrupted":
                     raise CodexChatAgentError(
                         "Codex app-server reported an interrupted turn.",
@@ -719,7 +808,10 @@ class CodexChatAgentSession:
                             {"label": "Codex 正在重试", "method": method},
                         )
                     continue
-                raise self._runtime_error("Codex app-server reported a turn error.")
+                raise _terminal_turn_error(
+                    params.get("error") if isinstance(params, dict) else None,
+                    "Codex app-server reported a turn error.",
+                )
         visible_tail = display_filter.finish()
         if visible_tail and on_event:
             visible_delta_count += 1

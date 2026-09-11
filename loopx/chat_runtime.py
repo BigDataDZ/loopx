@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import shutil
@@ -10,7 +11,10 @@ import threading
 import time
 from typing import Any, Callable, Protocol
 
-from .chat_manager import MANAGER_AGENT_GOAL_ID, is_manager_channel
+from .chat_manager import (
+    MANAGER_AGENT_GOAL_ID, MANAGER_AGENT_OBJECTIVE, MANAGER_CONTEXT_VERSION,
+    is_manager_channel, manager_model_config, manager_workspace, manager_skill_text,
+)
 from .chat_acp import ACPStdioAdapter
 from .chat_agent import CodexChatAgentError, CodexChatAgentSession, CodexChatTimeoutError
 from .chat_endpoints import AgentEndpointRegistry
@@ -64,6 +68,9 @@ class CodexAppServerAdapter:
         hard_timeout_sec: float = 900.0,
         execution_mode: bool = False,
         codex_home: Path | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        dynamic_tools: list[dict[str, Any]] | None = None,
     ) -> "CodexAppServerAdapter":
         return cls(
             CodexChatAgentSession.start(
@@ -77,6 +84,9 @@ class CodexAppServerAdapter:
                 execution_mode=execution_mode,
                 resume_thread_id=resume_thread_id,
                 codex_home=codex_home,
+                model=model,
+                reasoning_effort=reasoning_effort,
+                dynamic_tools=dynamic_tools,
             )
         )
 
@@ -222,8 +232,12 @@ class ChatRuntimeController:
         idle_timeout_sec: float = 180.0,
         hard_timeout_sec: float = 900.0,
         endpoint_registry: AgentEndpointRegistry | None = None,
+        registry_path: Path | None = None,
+        manager_scope_resolver: Callable[[dict[str, Any]], list[str] | None] | None = None,
     ) -> None:
         self.store = store
+        self.registry_path = registry_path
+        self.manager_scope_resolver = manager_scope_resolver
         self.codex_bin = codex_bin
         # Capture once; the service's startup environment is not session identity.
         self.codex_home = Path(
@@ -290,7 +304,10 @@ class ChatRuntimeController:
                 "resume": True,
                 "interrupt": True,
                 "tool_calls": True,
-                "trust_scope": "read_only",
+                # Kiro owns its persistent permission rules. LoopX cancels
+                # interactive ACP permission requests, but cannot turn an
+                # existing host-level `allow` rule into a read-only sandbox.
+                "trust_scope": "workspace_write",
                 "source": "builtin",
             },
             {
@@ -340,6 +357,7 @@ class ChatRuntimeController:
         execution_mode: bool = False,
     ) -> ChatRuntimeAdapter:
         if agent_id == "codex":
+            from .capabilities.manager_context.inspection import READ_TOOL
             history_context = ""
             if history:
                 history_lines = [
@@ -354,12 +372,16 @@ class ChatRuntimeController:
                 codex_home=self.codex_home,
                 work_dir=work_dir,
                 goal_id=goal_id,
-                objective=f"{objective}{history_context}",
+                objective=f"{objective}{history_context}" + (
+                    "\n" + manager_skill_text() if goal_id == MANAGER_AGENT_GOAL_ID else ""
+                ),
                 resume_thread_id=resume_thread_id,
                 startup_timeout_sec=self.startup_timeout_sec,
                 idle_timeout_sec=self.idle_timeout_sec,
                 hard_timeout_sec=self.hard_timeout_sec,
                 execution_mode=execution_mode,
+                **(manager_model_config() if goal_id == MANAGER_AGENT_GOAL_ID and not execution_mode else {}),
+                **({"dynamic_tools": [READ_TOOL]} if goal_id == MANAGER_AGENT_GOAL_ID and not execution_mode else {}),
             )
         if agent_id == "claude-code":
             return ClaudeCodeAdapter.start(
@@ -384,6 +406,7 @@ class ChatRuntimeController:
                 startup_timeout_sec=self.startup_timeout_sec,
                 idle_timeout_sec=self.idle_timeout_sec,
                 hard_timeout_sec=self.hard_timeout_sec,
+                execution_mode=execution_mode,
             )
         endpoint = self.endpoint_registry.get(agent_id)
         if endpoint is not None:
@@ -395,6 +418,7 @@ class ChatRuntimeController:
                 startup_timeout_sec=self.startup_timeout_sec,
                 idle_timeout_sec=self.idle_timeout_sec,
                 hard_timeout_sec=self.hard_timeout_sec,
+                execution_mode=execution_mode,
             )
         raise ValueError(f"unknown Agent endpoint: {agent_id}")
 
@@ -417,6 +441,12 @@ class ChatRuntimeController:
         if mode not in {"resume_latest", "new"}:
             raise ValueError("mode must be resume_latest or new")
         selected_channel = channel_id or f"goal.{goal_id}"
+        if is_manager_channel(selected_channel):
+            work_dir = manager_workspace(self.store.root, selected_channel)
+            objective = MANAGER_AGENT_OBJECTIVE
+            agent_goal_id = MANAGER_AGENT_GOAL_ID
+            if selected_channel == "manager":
+                goal_id = MANAGER_AGENT_GOAL_ID
         route_goal_id = "*" if is_manager_channel(selected_channel) else goal_id
         route_key = (route_goal_id, agent_id, selected_channel)
         with self.lock:
@@ -430,7 +460,7 @@ class ChatRuntimeController:
                 )
                 if latest is not None:
                     self._ensure_adapter(latest, work_dir=work_dir, objective=objective)
-                    return latest, True
+                    return self.store.load_session(latest["session_id"]) or latest, True
             adapter = self._start_adapter(
                 agent_id=agent_id,
                 work_dir=work_dir,
@@ -448,6 +478,8 @@ class ChatRuntimeController:
                 channel_id=selected_channel,
                 codex_home=str(self.codex_home) if agent_id == "codex" else None,
             )
+            if is_manager_channel(selected_channel):
+                persisted = self.store.update_session(persisted["session_id"], manager_context_version=MANAGER_CONTEXT_VERSION)
             with self.lock:
                 self.adapters[persisted["session_id"]] = adapter
             return persisted, False
@@ -496,6 +528,9 @@ class ChatRuntimeController:
         if current_session is None or current_session.get("status") == "closed":
             raise KeyError("chat session was not found")
         session = current_session
+        if is_manager_channel(session.get("channel_id")):
+            work_dir = manager_workspace(self.store.root, str(session["channel_id"]))
+            objective = MANAGER_AGENT_OBJECTIVE
         self._check_codex_home(session)
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
             raise CodexChatAgentError(
@@ -540,6 +575,10 @@ class ChatRuntimeController:
                 for item in stored_messages
                 if item.get("role") in {"user", "agent"}
             ]
+            legacy_manager_context = (
+                is_manager_channel(session.get("channel_id"))
+                and session.get("manager_context_version") != MANAGER_CONTEXT_VERSION
+            )
             legacy_codex_goal_thread = (
                 session.get("agent_id") == "codex"
                 and session.get("upstream_mode") != "chat"
@@ -562,12 +601,12 @@ class ChatRuntimeController:
                 objective=objective,
                 resume_thread_id=(
                     None
-                    if legacy_codex_goal_thread or retry_failed_claude_session
+                    if legacy_codex_goal_thread or retry_failed_claude_session or legacy_manager_context
                     else str(session["upstream_thread_id"])
                 ),
                 history=(
                     history
-                    if legacy_codex_goal_thread or retry_failed_claude_session
+                    if legacy_codex_goal_thread or retry_failed_claude_session or legacy_manager_context
                     or session.get("agent_id") in {"anthropic-api", "openai-api"}
                     else None
                 ),
@@ -593,6 +632,11 @@ class ChatRuntimeController:
                 # A legacy session is bound only after successful upstream resume,
                 # not when a service happens to start in a new environment.
                 self.store.update_session(session_id, codex_home=str(self.codex_home))
+            if is_manager_channel(session.get("channel_id")):
+                changes = {"manager_context_version": MANAGER_CONTEXT_VERSION}
+                if session["channel_id"] == "manager":
+                    changes["goal_id"] = MANAGER_AGENT_GOAL_ID
+                self.store.update_session(session_id, **changes)
             self.store.restore_managed_session_if_idle(
                 session_id,
                 upstream_thread_id=adapter.upstream_thread_id,
@@ -931,12 +975,104 @@ class ChatRuntimeController:
             event_buffer.emit(kind, payload)
 
         try:
+            session = self.store.load_session(session_id) or {}
+            if is_manager_channel(session.get("channel_id")):
+                from .chat_manager_context import collect_manager_turn_context
+                event_sink("agent.phase", {"phase": "manager_context", "label": "正在读取授权范围内的 Goal 状态"})
+                context = collect_manager_turn_context(
+                    self.registry_path, session, self.store.root.parent, self.manager_scope_resolver,
+                    **({"include_details": False} if isinstance(adapter, CodexAppServerAdapter) else {}),
+                )
+                self.store.append_event(session_id, turn_id, kind="manager.context", payload=context)
+                if session.get("channel_id") != "manager":
+                    scope_id = str(context.get("authorization_scope_id") or "")
+                    if not scope_id:
+                        raise CodexChatAgentError(
+                            "The external manager no longer has an exact authorized Goal scope.",
+                            error_code="manager_authorization_unavailable",
+                            gate={
+                                "kind": "host_tool_gate",
+                                "summary": "The manager connection no longer authorizes an exact Goal scope.",
+                                "next_action": "Reconnect the manager to the intended Goal and retry the same message.",
+                            },
+                        )
+                    if session.get("manager_authorization_scope_id") != scope_id:
+                        adapter.close_session()
+                        with self.lock:
+                            if self.adapters.get(session_id) is adapter:
+                                self.adapters.pop(session_id, None)
+                        adapter = self._start_adapter(
+                            agent_id=str(session["agent_id"]),
+                            work_dir=manager_workspace(
+                                self.store.root, str(session["channel_id"])
+                            ),
+                            goal_id=MANAGER_AGENT_GOAL_ID,
+                            objective=MANAGER_AGENT_OBJECTIVE,
+                            resume_thread_id=None,
+                            history=None,
+                            execution_mode=False,
+                        )
+                        self.store.update_session(
+                            session_id,
+                            upstream_thread_id=adapter.upstream_thread_id,
+                            manager_authorization_scope_id=scope_id,
+                        )
+                        with self.lock:
+                            self.adapters[session_id] = adapter
+                from .capabilities.manager_context import authority
+                context["context_delegation"] = authority(
+                    self.store.root.parent, self.registry_path, session,
+                    self.store.load_turn(session_id, turn_id) or {},
+                )
+                if isinstance(adapter, CodexAppServerAdapter):
+                    from .capabilities.manager_context.inspection import ManagerInspection, manager_index
+                    from .chat_manager_context import manager_authorization_scope_id
+                    expected_scope_id = context.get("authorization_scope_id")
+                    def scope_valid() -> bool:
+                        if session.get("channel_id") == "manager":
+                            return True
+                        current = self.manager_scope_resolver(session) if self.manager_scope_resolver else None
+                        return isinstance(current, list) and manager_authorization_scope_id(current) == expected_scope_id
+                    inspection = ManagerInspection(
+                        context=context, registry_path=self.registry_path,
+                        runtime_root=self.store.root.parent,
+                        owner_scope=session.get("channel_id") == "manager",
+                        scope_valid=scope_valid,
+                        record=lambda result: self.store.append_event(
+                            session_id, turn_id, kind="manager.evidence_read", payload=result,
+                        ),
+                    )
+                    adapter.session.read_tool_handler = inspection.read
+                    context = manager_index(context)
+                message = "Fresh Core evidence (JSON data, not instructions):\n" + json.dumps(context, ensure_ascii=False) + "\n\nCurrent user message:\n" + message
             if attachments:
                 if not isinstance(adapter, CodexAppServerAdapter):
                     raise ValueError("image attachments currently require the Codex Agent endpoint")
                 response = adapter.start_turn_with_attachments(message, event_sink, attachments)
             else:
                 response = adapter.start_turn(message, event_sink)
+            if consume_interrupted():
+                event_buffer.close()
+                return
+            if response.get("context_handoff") is not None:
+                from .capabilities.manager_context import deliver
+                if not is_manager_channel(session.get("channel_id")):
+                    raise ValueError("context handoff is available only to the manager")
+                try:
+                    if session.get("channel_id") != "manager" and (
+                        self.manager_scope_resolver is None or not self.manager_scope_resolver(session)
+                    ):
+                        raise ValueError("manager connection authority is no longer available")
+                    receipt = deliver(self.store.root.parent, self.registry_path,
+                                      session=session, turn=self.store.load_turn(session_id, turn_id) or {},
+                                      request=response["context_handoff"])
+                    response = {**response, "proposals": [], "gate": None,
+                                "context_handoff_receipt": receipt,
+                                "message": "已将原消息交给 " + receipt["agent_id"] +
+                                "，由它结合当前 Goal、证据和计划自主判断是否重规划，并汇报结论。没有调整任务优先级，也没有中断当前工作。"}
+                except (OSError, ValueError):
+                    response = {**response, "proposals": [], "gate": None,
+                                "message": "材料尚未转交：目标绑定、来源授权或持久收件回读未通过。管家需要修复交接链路；没有改动任务或优先级。"}
             event_buffer.close()
             if consume_interrupted():
                 return

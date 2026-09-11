@@ -39,6 +39,12 @@ two separate layers:
   runtime source of truth. This makes the Codex thread a replaceable worker and
   leaves durable task truth in LoopX.
 
+Prompt compression must preserve both conditions and required responses. A
+missing concrete user action under `NOTIFY` calls for state-projection repair,
+not just a diagnostic label. Under `DONT_NOTIFY`, repair stays internal; it
+does not grant notification authority. Keep these semantics in brief and thin
+prompts as well as the expanded contract, within their existing size budgets.
+
 Do not paste the full lifecycle protocol into the visible goal text, and do not
 use a short goal text such as "advance TODO" as the recurring automation body.
 The short text names the goal; the generated task body enforces quota, gates,
@@ -446,18 +452,19 @@ If the result says should_run=true:
    turns, do not append a quota spend for the self-cancel turn, and return
    NOTIFY explaining that the automation was cancelled because it was spinning
    without progress.
-4. Choose one bounded, verifiable progress segment from that audit. It may be a
-   coherent batch across related implementation, test, doc, and state-writeback
-   files when the write scope is clear and validation is explicit; it should not
-   be forced into a tiny single-file step.
-5. Do that segment only. Stay inside goal_boundary when present and keep
+4. Choose scope-bounded work toward a verifiable result. Size by task, evidence
+   and risk, not calls, files or wake cadence. Related implementation, research,
+   tests, docs and writeback may form one coherent effort; a focused correction
+   can also be sufficient. One operation/writeback is not a stop condition;
+   obey budgets, explicit stops, settlement and replan requirements.
+5. Execute that scoped work. Stay inside goal_boundary when present and keep
    public/private boundaries intact. Public-safe repo publication is not an
    operator gate by itself: for routine public project work, commit, push, and PR
    creation may proceed autonomously after validation and a clean public/private
    boundary scan. Stop and surface a user/controller gate only for private or
    company-internal material, credentials, destructive git operations,
    production actions, or repository rules that explicitly require review.
-6. Run the smallest useful validation.
+6. Run validation proportionate to the change and risk.
 7. Write back changed files, validation, critic, and next action to the active
    state. If a user/owner todo appears, do not hide it in prose:
    `loopx todo add --goal-id <GOAL_ID> --role user --task-class user_gate --blocks-agent <agent-id>`

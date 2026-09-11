@@ -9,6 +9,7 @@ from pathlib import Path
 
 from ..capabilities.pr_review_queue import (
     build_pull_request_review_queue_observation,
+    normalize_fresh_audit_exact_heads,
 )
 from ..capabilities.pr_review_queue.result_check import check_review_result
 from ..file_lock import exclusive_file_lock
@@ -20,6 +21,11 @@ from ..pr_review import (
     resolve_current_github_login,
     resolve_current_github_repository,
     scan_github_pull_requests,
+)
+from ..pr_review_merge_readiness import (
+    build_pr_merge_readiness_packet,
+    fetch_github_pull_request,
+    fetch_github_review_thread_summary,
 )
 from ..registry import atomic_write_json
 
@@ -87,6 +93,14 @@ def register_pr_review_command(
     parser.add_argument(
         "--check-result",
         help="Check a saved review result for verdict/evidence consistency; no GitHub writes.",
+    )
+    parser.add_argument(
+        "--check-merge-readiness",
+        metavar="NUMBER@HEAD_OID",
+        help=(
+            "Re-read one open PR and fail closed unless this exact reviewed head, "
+            "its checks, and review threads are ready immediately before merge."
+        ),
     )
     parser.add_argument(
         "--packet",
@@ -187,6 +201,7 @@ def handle_pr_review_command(
                 or args.repo
                 or args.since
                 or args.fresh_audit_exact_head
+                or args.check_merge_readiness
             ):
                 raise ValueError(
                     "result checking cannot be combined with scan or observation options"
@@ -207,6 +222,82 @@ def handle_pr_review_command(
                 payload, output_format(args), lambda value: json.dumps(value, indent=2)
             )
             return 0 if payload["ok"] else 1
+        if args.check_merge_readiness:
+            if (
+                args.autonomous_observation
+                or args.observation_state_file
+                or args.previous_observation_json
+                or args.handled_exact_head
+                or args.projected_exact_head
+                or args.since
+                or args.fresh_audit_exact_head
+            ):
+                raise ValueError(
+                    "merge readiness cannot be combined with queue or observation options"
+                )
+            expected = normalize_fresh_audit_exact_heads([args.check_merge_readiness])
+            if len(expected) != 1:
+                raise ValueError("merge readiness requires one exact NUMBER@HEAD_OID")
+            expected_exact_head = next(iter(expected))
+            number = int(expected_exact_head.split("@", 1)[0])
+            repository = args.repo
+            reviewer_login = None
+            if args.fixture:
+                fixture_repository, pull_requests = load_pr_fixture(
+                    Path(args.fixture).expanduser()
+                )
+                repository = repository or fixture_repository
+                matches = [
+                    item for item in pull_requests if item.get("number") == number
+                ]
+                if len(matches) != 1:
+                    raise ValueError(
+                        "merge readiness target must match exactly one fixture PR"
+                    )
+                pull_request = matches[0]
+                raw_threads = pull_request.get("review_thread_summary")
+                review_threads = (
+                    raw_threads
+                    if isinstance(raw_threads, dict)
+                    else {
+                        "schema_version": "github_review_thread_summary_v0",
+                        "complete": False,
+                        "total_count": 0,
+                        "unresolved_count": 0,
+                        "failure_code": "fixture_review_thread_summary_missing",
+                    }
+                )
+                source = "fixture"
+            else:
+                repository = repository or resolve_current_github_repository()
+                if not repository:
+                    raise RuntimeError("GitHub repository could not be resolved")
+                reviewer_login = resolve_current_github_login()
+                pull_request = fetch_github_pull_request(
+                    repo=repository,
+                    number=number,
+                )
+                review_threads = fetch_github_review_thread_summary(
+                    repo=repository,
+                    number=number,
+                )
+                source = "github_cli"
+            if not repository:
+                raise ValueError("repository is required for merge readiness")
+            payload = build_pr_merge_readiness_packet(
+                pull_request=pull_request,
+                repository=repository,
+                expected_exact_head=expected_exact_head,
+                reviewer_login=reviewer_login,
+                review_threads=review_threads,
+                source=source,
+            )
+            print_payload(
+                payload,
+                output_format(args),
+                lambda value: json.dumps(value, indent=2),
+            )
+            return 0 if payload["ready"] else 1
         if args.previous_observation_json and not args.autonomous_observation:
             raise ValueError(
                 "--previous-observation-json requires --autonomous-observation"

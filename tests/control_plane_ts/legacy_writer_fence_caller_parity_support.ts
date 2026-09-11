@@ -315,18 +315,11 @@ async function execute(ws: Workspace, caller: ParityCaller): Promise<JsonObject>
     : await executeTaskLeaseLifecycle(request, CLOCK);
 }
 
-/** Normalize temporary roots and the known Node-version variant of EISDIR diagnostics. */
+/** Replace the temporary runtime root inside an envelope with a stable placeholder. */
 export function normalize(value: unknown, runtimeRoot: string): JsonObject {
-  const directoryReadError = "EISDIR: illegal operation on a directory, read";
-  const fencePath = legacyCoordinationWriterFencePath(runtimeRoot, GOAL);
-  // Node 26 includes the read path; older Node versions omit it. Match the
-  // entire diagnostic so wrong paths, error codes, and extra text still fail.
-  const normalized = JSON.parse(JSON.stringify(value), (key, entry) =>
-    (key === "error" || key === "reason") && entry === `${directoryReadError} '${fencePath}'`
-      ? directoryReadError
-      : entry,
-  );
-  return JSON.parse(JSON.stringify(normalized).split(JSON.stringify(runtimeRoot).slice(1, -1)).join(RUNTIME_ROOT_PLACEHOLDER));
+  const text = JSON.stringify(value)
+    .split(JSON.stringify(runtimeRoot).slice(1, -1)).join(RUNTIME_ROOT_PLACEHOLDER);
+  return JSON.parse(text);
 }
 
 export async function observeRow(row: ParityRow): Promise<Observation> {
