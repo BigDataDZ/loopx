@@ -2061,6 +2061,21 @@ connector_runtime_policy = {
 }
 ```
 
+**Visual Model**
+
+```mermaid
+flowchart TD
+  A["Connector todo or packet proposes a live run"] --> B{"Runtime policy present?"}
+  B -->|"no"| C["fail closed: require the policy before the first run"]
+  B -->|"yes"| D{"access_mode"}
+  D -->|"private_metadata_only"| E["gate projection only, browser open stays closed"]
+  D -->|"public_metadata_only"| F["bounded metadata probe: head-only, forbidden prefixes blocked"]
+  D -->|"synthetic_fixture_only"| G["fixture only, no live route"]
+  E --> H["Owner decision unblocks the next stage"]
+  F --> H
+  G --> H
+```
+
 **Bad smell**
 
 An agent opens a private connector's default web route because the page looks
