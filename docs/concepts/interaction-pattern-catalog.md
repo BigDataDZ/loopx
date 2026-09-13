@@ -613,6 +613,86 @@ IP-003 scope metadata being ignored by the user-todo blocking summary.
   delivery.
 - `docs/archive/incidents/agent-scoped-user-gate-overreach-incident-20260624.md`
 
+#### IP-029 Handoff Todo Gate State
+
+**Trigger**
+
+- a todo carries `blocks_agent=<agent-id>` and represents review, handoff,
+  unblock, or owner work for that agent;
+- the todo status changes among open/blocked, done, deferred, or superseded;
+- the todo may name a follow-up via `unblocks_todo_id`,
+  `resume_when=todo_done:<todo_id>`, or `superseded_by`; and
+- `quota should-run --agent-id <agent-id>` needs to decide whether the agent
+  should wait, replan, or run a concrete successor.
+
+**Expected behavior**
+
+`blocks_agent` todos are not only backlog rows. They are inter-agent gate
+states. Status should project `agent_todos.handoff_gates[]` from the complete
+todo list, not only from open lanes, using `todo_handoff_gate_v0`.
+
+| gate_state | Todo condition | Quota effect |
+| --- | --- | --- |
+| `blocking` | non-terminal handoff todo for the scoped agent | return `agent_scope_wait`; name the owning reviewer/agent rather than waking the blocked agent for delivery |
+| `cleared_without_successor` | done handoff with no stable successor or supersede link | return `successor_replan_required`; reopen, supersede, or record no-follow-up rationale |
+| `cleared_with_successor` | done handoff linked to a successor via `unblocks_todo_id`, `resume_when`, or `superseded_by` | route to the concrete successor through normal todo selection |
+| `cleared_no_followup` | done handoff carries `no_followup=true` with a compact rationale | keep as terminal history; do not wake the blocked agent for successor replan |
+| `superseded` | handoff todo carries `superseded_by` | keep as history; do not wake the blocked agent from the stale gate |
+| `deferred` | handoff todo is parked behind an unsatisfied resume condition | keep diagnostic visibility; IP-027 owns the ready-deferred resume path |
+
+Quota ordering matters. Current-agent ordinary advancement still wins normal
+delivery. If no ordinary current-agent successor is ready, a current-agent
+`blocking` handoff wins over stale done handoffs. A
+`cleared_without_successor` handoff wins over generic IP-026 no-candidate wait
+because it means the handoff state changed but no replayable successor exists.
+Only after those checks may IP-026 classify `scope_exhausted` or
+`agent_scope_wait`.
+
+**Visual Model**
+
+```mermaid
+flowchart TD
+  T["blocks_agent todo"] --> S{"todo lifecycle"}
+  S -->|"open / blocked"| B["handoff gate: blocking"]
+  B --> W["agent_scope_wait for blocked agent"]
+  S -->|"done + successor"| C["handoff gate: cleared_with_successor"]
+  C --> N["run concrete successor normally"]
+  S -->|"done + no successor"| R["handoff gate: cleared_without_successor"]
+  R --> L["successor_replan_required"]
+  L --> F["reopen / supersede / no-follow-up rationale"]
+  S -->|"open + stale closeout"| X["route continuation replan required"]
+  X --> L
+  S -->|"superseded_by"| H["handoff gate: superseded"]
+  H --> I["historical only"]
+  S -->|"deferred"| D["handoff gate: deferred"]
+  D --> P["IP-027 resume rules"]
+```
+
+**Bad smell**
+
+A done review/handoff todo disappears because only open lanes feed quota, so
+the blocked agent falls into a vague `agent_scope_wait`. The opposite bad smell
+is also harmful: a stale done handoff outranks a live open review blocker, so
+the agent replans while a real reviewer-owned gate is still open. Both are
+state-machine bugs, not prompt wording bugs.
+
+A third bad smell is an open handoff gate whose action is already a stale
+handoff closeout. That gate is no longer a live reviewer decision. It should
+project `route_continuation_replan_required` so quota wakes successor replan to
+reopen, supersede, or close the stale route with a no-follow-up rationale.
+
+**Validation**
+
+- `loopx/control_plane/todos/handoff_gate.py` owns the
+  `todo_handoff_gate_v0` projection.
+- `examples/control_plane/quota-cleared-blocker-successor-gate-smoke.py` covers
+  `blocking`, `cleared_without_successor`, `cleared_with_successor`, and
+  `superseded` gate states.
+- `docs/quota-allocation.md`
+- `docs/status-data-contract.md`
+- `skills/loopx-self-repair/references/repair-patterns.md` records
+  `handoff_gate_state_projection_gap` for incident triage.
+
 #### IP-021 Per-Todo Capability Gate
 
 **Trigger**
@@ -991,86 +1071,6 @@ step, so stale or future work outranks live open tasks.
 - `docs/status-data-contract.md`
 - `skills/loopx-self-repair/references/repair-patterns.md` records
   `deferred_gate_resume_misclassified` for incident triage.
-
-#### IP-029 Handoff Todo Gate State
-
-**Trigger**
-
-- a todo carries `blocks_agent=<agent-id>` and represents review, handoff,
-  unblock, or owner work for that agent;
-- the todo status changes among open/blocked, done, deferred, or superseded;
-- the todo may name a follow-up via `unblocks_todo_id`,
-  `resume_when=todo_done:<todo_id>`, or `superseded_by`; and
-- `quota should-run --agent-id <agent-id>` needs to decide whether the agent
-  should wait, replan, or run a concrete successor.
-
-**Expected behavior**
-
-`blocks_agent` todos are not only backlog rows. They are inter-agent gate
-states. Status should project `agent_todos.handoff_gates[]` from the complete
-todo list, not only from open lanes, using `todo_handoff_gate_v0`.
-
-| gate_state | Todo condition | Quota effect |
-| --- | --- | --- |
-| `blocking` | non-terminal handoff todo for the scoped agent | return `agent_scope_wait`; name the owning reviewer/agent rather than waking the blocked agent for delivery |
-| `cleared_without_successor` | done handoff with no stable successor or supersede link | return `successor_replan_required`; reopen, supersede, or record no-follow-up rationale |
-| `cleared_with_successor` | done handoff linked to a successor via `unblocks_todo_id`, `resume_when`, or `superseded_by` | route to the concrete successor through normal todo selection |
-| `cleared_no_followup` | done handoff carries `no_followup=true` with a compact rationale | keep as terminal history; do not wake the blocked agent for successor replan |
-| `superseded` | handoff todo carries `superseded_by` | keep as history; do not wake the blocked agent from the stale gate |
-| `deferred` | handoff todo is parked behind an unsatisfied resume condition | keep diagnostic visibility; IP-027 owns the ready-deferred resume path |
-
-Quota ordering matters. Current-agent ordinary advancement still wins normal
-delivery. If no ordinary current-agent successor is ready, a current-agent
-`blocking` handoff wins over stale done handoffs. A
-`cleared_without_successor` handoff wins over generic IP-026 no-candidate wait
-because it means the handoff state changed but no replayable successor exists.
-Only after those checks may IP-026 classify `scope_exhausted` or
-`agent_scope_wait`.
-
-**Visual Model**
-
-```mermaid
-flowchart TD
-  T["blocks_agent todo"] --> S{"todo lifecycle"}
-  S -->|"open / blocked"| B["handoff gate: blocking"]
-  B --> W["agent_scope_wait for blocked agent"]
-  S -->|"done + successor"| C["handoff gate: cleared_with_successor"]
-  C --> N["run concrete successor normally"]
-  S -->|"done + no successor"| R["handoff gate: cleared_without_successor"]
-  R --> L["successor_replan_required"]
-  L --> F["reopen / supersede / no-follow-up rationale"]
-  S -->|"open + stale closeout"| X["route continuation replan required"]
-  X --> L
-  S -->|"superseded_by"| H["handoff gate: superseded"]
-  H --> I["historical only"]
-  S -->|"deferred"| D["handoff gate: deferred"]
-  D --> P["IP-027 resume rules"]
-```
-
-**Bad smell**
-
-A done review/handoff todo disappears because only open lanes feed quota, so
-the blocked agent falls into a vague `agent_scope_wait`. The opposite bad smell
-is also harmful: a stale done handoff outranks a live open review blocker, so
-the agent replans while a real reviewer-owned gate is still open. Both are
-state-machine bugs, not prompt wording bugs.
-
-A third bad smell is an open handoff gate whose action is already a stale
-handoff closeout. That gate is no longer a live reviewer decision. It should
-project `route_continuation_replan_required` so quota wakes successor replan to
-reopen, supersede, or close the stale route with a no-follow-up rationale.
-
-**Validation**
-
-- `loopx/control_plane/todos/handoff_gate.py` owns the
-  `todo_handoff_gate_v0` projection.
-- `examples/control_plane/quota-cleared-blocker-successor-gate-smoke.py` covers
-  `blocking`, `cleared_without_successor`, `cleared_with_successor`, and
-  `superseded` gate states.
-- `docs/quota-allocation.md`
-- `docs/status-data-contract.md`
-- `skills/loopx-self-repair/references/repair-patterns.md` records
-  `handoff_gate_state_projection_gap` for incident triage.
 
 #### IP-014 Decision Write Preview And Append
 
