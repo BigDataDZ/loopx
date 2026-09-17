@@ -33,12 +33,6 @@ from ..heartbeat_prompt import (
 from ..kiro_cli_goal_mode import KIRO_CLI_BIN
 from ..paths import default_public_scan_root
 from ..presentation.renderers.status_markdown import render_status_markdown
-from ..promotion_gate import (
-    build_promotion_gate,
-    record_promotion_readiness,
-    render_promotion_gate_markdown,
-    render_promotion_readiness_record_markdown,
-)
 from ..registry import (
     inspect_registry,
     inspect_registry_boundary,
@@ -60,7 +54,6 @@ from ..status_server import (
     DEFAULT_STATUS_PORT,
     serve_status,
 )
-from ..upgrade import build_upgrade_plan, render_upgrade_plan_markdown
 from .support_control_backup import (
     handle_backup_state_command,
     register_backup_state_command,
@@ -71,6 +64,10 @@ from .support_control_chat_endpoint import (
 )
 from .support_control_heartbeat_registration import (
     register_heartbeat_control_commands,
+)
+from .support_control_promotion import (
+    handle_promotion_control_command,
+    register_promotion_control_commands,
 )
 from .support_control_registry import (
     explicit_global_registry,
@@ -119,68 +116,7 @@ def register_support_control_commands(
 
     register_supervisor_control_commands(subparsers, add_subcommand_format)
 
-    promotion_gate_parser = subparsers.add_parser(
-        "promotion-gate",
-        help="Emit a compact machine-readable canary promotion readiness gate result.",
-    )
-    add_subcommand_format(promotion_gate_parser)
-
-    promotion_readiness_parser = subparsers.add_parser(
-        "promotion-readiness",
-        help="Record release-scoped canary promotion-readiness evidence.",
-    )
-    promotion_readiness_subparsers = promotion_readiness_parser.add_subparsers(
-        dest="promotion_readiness_command",
-        required=True,
-    )
-    promotion_readiness_record_parser = promotion_readiness_subparsers.add_parser(
-        "record",
-        help="Append one runtime-level readiness event after the canary checks pass.",
-    )
-    add_subcommand_format(promotion_readiness_record_parser)
-    promotion_readiness_record_parser.add_argument(
-        "--dashboard-readiness",
-        choices=("passed", "skipped"),
-        required=True,
-        help="Whether dashboard readiness ran successfully or was explicitly skipped.",
-    )
-    promotion_readiness_record_parser.add_argument(
-        "--execute",
-        action="store_true",
-        help="Append the evidence event. Without this flag, emit a dry-run plan.",
-    )
-
-    upgrade_plan_parser = subparsers.add_parser(
-        "upgrade-plan",
-        help="Plan local default upgrade propagation for managed heartbeat automations.",
-    )
-    add_subcommand_format(upgrade_plan_parser)
-    upgrade_plan_parser.add_argument(
-        "--goal-id",
-        action="append",
-        default=[],
-        help="Only include one goal id. Repeatable.",
-    )
-    upgrade_plan_parser.add_argument(
-        "--installed-manifest",
-        help=(
-            "Optional JSON manifest of installed automations with goal_id, mode, automation_id, and "
-            "prompt_sha256/task_body. If omitted, upgrade-plan auto-discovers Codex App heartbeat "
-            "automations from $CODEX_HOME/automations or ~/.codex/automations."
-        ),
-    )
-    upgrade_plan_parser.add_argument(
-        "--cli-bin",
-        default="loopx",
-        help="CLI command embedded in generated heartbeat prompts for the promoted default.",
-    )
-    upgrade_plan_parser.add_argument(
-        "--mode",
-        action="append",
-        choices=["thin", "brief", "compact"],
-        default=[],
-        help="Prompt mode to compare. Repeatable; defaults to the thin installed heartbeat contract.",
-    )
+    register_promotion_control_commands(subparsers, add_subcommand_format)
 
     update_parser = subparsers.add_parser(
         "update",
@@ -569,90 +505,14 @@ def handle_support_control_command(
     if supervisor_result is not None:
         return supervisor_result
 
-    if args.command == "promotion-gate":
-        try:
-            payload = build_promotion_gate(
-                registry_path=registry_path,
-                runtime_root_override=args.runtime_root,
-            )
-        except Exception as exc:
-            payload = {
-                "ok": False,
-                "registry": str(registry_path),
-                "runtime_root": args.runtime_root,
-                "gate": "promotion_readiness",
-                "gate_state": "error",
-                "can_promote": False,
-                "should_warn": True,
-                "non_blocking": True,
-                "error": str(exc),
-                "recommended_action": "fix promotion readiness gate collection before promotion",
-            }
-        print_payload(payload, output_format(args), render_promotion_gate_markdown)
-        return 0 if payload.get("ok") else 1
-
-    if args.command == "promotion-readiness":
-        try:
-            payload = record_promotion_readiness(
-                registry_path=registry_path,
-                runtime_root_override=args.runtime_root,
-                dashboard_readiness=args.dashboard_readiness,
-                execute=args.execute,
-            )
-        except Exception as exc:
-            payload = {
-                "ok": False,
-                "dry_run": not args.execute,
-                "appended": False,
-                "registry": str(registry_path),
-                "runtime_root": args.runtime_root,
-                "evidence_scope": "runtime_release",
-                "error": str(exc),
-            }
-        print_payload(
-            payload,
-            output_format(args),
-            render_promotion_readiness_record_markdown,
-        )
-        return 0 if payload.get("ok") else 1
-
-    if args.command == "upgrade-plan":
-        try:
-            payload = build_upgrade_plan(
-                registry_path=registry_path,
-                runtime_root_override=args.runtime_root,
-                installed_manifest=Path(args.installed_manifest).expanduser()
-                if args.installed_manifest
-                else None,
-                cli_bin=args.cli_bin,
-                modes=args.mode or None,
-                goal_ids=args.goal_id or None,
-            )
-        except Exception as exc:
-            payload = {
-                "ok": False,
-                "mode": "upgrade-plan",
-                "registry": str(registry_path),
-                "runtime_root": args.runtime_root,
-                "error": str(exc),
-                "summary": {
-                    "managed_goal_count": 0,
-                    "current_prompt_count": 0,
-                    "stale_prompt_count": 0,
-                    "unknown_prompt_count": 0,
-                    "not_installed_prompt_count": 0,
-                    "stage_deferred_goal_count": 0,
-                    "ready_for_default_promotion": False,
-                    "installed_manifest_available": False,
-                    "installed_manifest_source": None,
-                    "installed_manifest_entry_count": 0,
-                    "installed_manifest_task_body_count": 0,
-                    "installed_manifest_has_task_body": False,
-                },
-                "recommended_action": "fix upgrade-plan collection before default promotion",
-            }
-        print_payload(payload, output_format(args), render_upgrade_plan_markdown)
-        return 0 if payload.get("ok") else 1
+    promotion_result = handle_promotion_control_command(
+        args,
+        registry_path=registry_path,
+        print_payload=print_payload,
+        output_format=output_format,
+    )
+    if promotion_result is not None:
+        return promotion_result
 
     if args.command == "update":
         update_action = UpdateAction.PLAN
