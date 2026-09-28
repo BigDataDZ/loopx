@@ -42,6 +42,7 @@ import {
   LOCAL_AUTHORITY_SHADOW_TRANSACTION_PROJECTION_SCHEMA,
   LOCAL_AUTHORITY_SHADOW_TRANSACTION_RECEIPT_SCHEMA,
 } from "./coordination_state_contract.generated.ts";
+import { ENVELOPED_SHA256_PATTERN } from "../content_digest.ts";
 
 export {
   LOCAL_AUTHORITY_SHADOW_EVIDENCE_SCHEMA,
@@ -113,7 +114,7 @@ const READ_REQUEST_FIELDS = new Set([
   "scan_limit",
 ]);
 const ENTRY_ID_PATTERN = /^local-shadow-tx-[0-9a-f]{64}$/u;
-const DIGEST_PATTERN = /^sha256:[a-f0-9]{64}$/u;
+const DIGEST_PATTERN = ENVELOPED_SHA256_PATTERN;
 const MAX_SCAN_LIMIT = 10000;
 const REVISION_RETRY_ATTEMPTS = 3;
 

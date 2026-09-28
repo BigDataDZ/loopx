@@ -19,6 +19,7 @@ import {
   withShadowMaintenanceLock, ShadowManagementError, requireShadowPrimaryWriteAllowed,
 } from "./shadow_management.ts";
 import * as schemas from "./coordination_state_contract.generated.ts";
+import { ENVELOPED_SHA256_PATTERN } from "../content_digest.ts";
 
 export const COORDINATION_RUNTIME_SHADOW_REQUEST_SCHEMA = schemas.COORDINATION_RUNTIME_SHADOW_COMMIT_REQUEST_SCHEMA;
 export const COORDINATION_RUNTIME_SHADOW_RESULT_SCHEMA = schemas.COORDINATION_RUNTIME_SHADOW_COMMIT_RESULT_SCHEMA;
@@ -82,7 +83,7 @@ function sourceSnapshot(request: ShadowRequest): JsonObject {
   if (!isAbsolute(text(snapshot.state_path, "state_path")) ||
       !isAbsolute(text(snapshot.registered_runtime_root, "registered_runtime_root")) ||
       !isAbsolute(text(snapshot.registered_state_path, "registered_state_path")) ||
-      !/^sha256:[0-9a-f]{64}$/.test(text(snapshot.state_bytes_sha256, "state_bytes_sha256")) ||
+      !ENVELOPED_SHA256_PATTERN.test(text(snapshot.state_bytes_sha256, "state_bytes_sha256")) ||
       !Array.isArray(snapshot.lease_inventory) || !Array.isArray(snapshot.evidence_files) ||
       snapshot.projection_sha256 !== canonicalAuthoritySha256(request.projection)) {
     throw new ShadowManagementError("source_snapshot_invalid");

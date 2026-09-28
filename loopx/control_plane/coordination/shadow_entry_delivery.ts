@@ -1,4 +1,5 @@
 import {outboxPartitionProjection} from "./shadow_entry_evidence.ts";
+import { ENVELOPED_SHA256_PATTERN } from "../content_digest.ts";
 /** Native delivery of an immutable, witnessed outbox entry. The host selects
  * evidence, never supplies the projection or decides whether a write committed. */
 import {lstat, readFile} from "node:fs/promises";
@@ -40,8 +41,8 @@ function decode(value: unknown): Selection {
     typeof r.seq === "number" && Number.isSafeInteger(r.seq) && r.seq > 0 && r.seq <= MAX_OUTBOX_SEQUENCE &&
     typeof r.entry_id === "string" && /^local-shadow-tx-[0-9a-f]{64}$/u.test(r.entry_id) &&
     typeof r.capture_lineage_id === "string" && r.capture_lineage_id.trim().length > 0 &&
-    typeof r.prepared_sha256 === "string" && /^sha256:[0-9a-f]{64}$/u.test(r.prepared_sha256) &&
-    (r.committed_sha256 === null || typeof r.committed_sha256 === "string" && /^sha256:[0-9a-f]{64}$/u.test(r.committed_sha256)),
+    typeof r.prepared_sha256 === "string" && ENVELOPED_SHA256_PATTERN.test(r.prepared_sha256) &&
+    (r.committed_sha256 === null || typeof r.committed_sha256 === "string" && ENVELOPED_SHA256_PATTERN.test(r.committed_sha256)),
   "shadow_entry_selection_invalid");
   return {runtime_root: r.runtime_root, goal_id: r.goal_id, partition: r.partition, seq: r.seq,
     entry_id: r.entry_id, capture_lineage_id: r.capture_lineage_id,

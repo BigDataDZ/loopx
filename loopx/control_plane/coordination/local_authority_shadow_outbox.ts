@@ -14,6 +14,7 @@ import {
   LOCAL_AUTHORITY_SHADOW_OUTBOX_COMMIT_SCHEMA,
   LOCAL_AUTHORITY_SHADOW_OUTBOX_ENTRY_SCHEMA,
 } from "./coordination_state_contract.generated.ts";
+import { ENVELOPED_SHA256_PATTERN } from "../content_digest.ts";
 
 /**
  * Lease-partition side of the local authority shadow outbox.
@@ -128,7 +129,7 @@ export function decodeOutboxCursor(value: unknown, partition: string): JsonObjec
       typeof record.last_entry_id !== "string" ||
       !/^local-shadow-tx-[0-9a-f]{64}$/u.test(record.last_entry_id) ||
       (record.last_partition_digest !== null &&
-       (typeof record.last_partition_digest !== "string" || !/^sha256:[0-9a-f]{64}$/u.test(record.last_partition_digest))) ||
+       (typeof record.last_partition_digest !== "string" || !ENVELOPED_SHA256_PATTERN.test(record.last_partition_digest))) ||
       [record.last_cursor, record.last_provider_revision].some((part) => typeof part !== "string" || part.trim().length === 0)) {
     throw invalid();
   }

@@ -29,6 +29,7 @@ import {
   type LocalAuthorityShadowBinding,
 } from "../coordination/local_authority_shadow_outbox.ts";
 import { TASK_LEASE_ACQUIRE_REQUEST_SCHEMA, TASK_LEASE_CANONICAL_ACQUIRE_REQUEST_SCHEMA } from "../coordination/coordination_state_contract.generated.ts";
+import { BARE_SHA256_PATTERN } from "../content_digest.ts";
 
 export const TASK_LEASE_ACQUIRE_REQUEST_SCHEMA_VERSION =
   TASK_LEASE_ACQUIRE_REQUEST_SCHEMA;
@@ -282,7 +283,7 @@ function decodeSourceReceipt(value: unknown, index: number): SourceReceipt {
   const sha256 = receipt.sha256;
   if (
     (state === "file" &&
-      (typeof sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(sha256))) ||
+      (typeof sha256 !== "string" || !BARE_SHA256_PATTERN.test(sha256))) ||
     (state === "missing" && sha256 !== null)
   ) {
     throw new EffectRuntimeRequestError("authority source receipt digest is invalid");
