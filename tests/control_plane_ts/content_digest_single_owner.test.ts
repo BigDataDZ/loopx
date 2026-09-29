@@ -318,7 +318,28 @@ function isImportSpecifier(node: ts.Node): boolean {
   return false;
 }
 
-/** Every RegExp created in this source: literal, `new RegExp(...)` or `RegExp(...)`. */
+/**
+ * True when the callee *names* the `RegExp` constructor: the bare identifier, a property
+ * path ending in `RegExp` (`globalThis.RegExp`, `window.RegExp`), a string-indexed member
+ * (`globalThis["RegExp"]`), or any of those wrapped in parentheses. The path is not
+ * evaluated - the guard has no opinion on what object it reads - so a member named
+ * `RegExp` that is really some other constructor still gets scanned, and fails closed
+ * into the declared inventory. Where the model stops is stated here rather than grown
+ * silently: an aliased or computed reference to the constructor is out of scope, because
+ * seeing through it would mean interpreting every JavaScript expression.
+ */
+function namesRegExpCallee(expression: ts.Expression): boolean {
+  if (ts.isParenthesizedExpression(expression)) return namesRegExpCallee(expression.expression);
+  if (ts.isIdentifier(expression)) return expression.text === "RegExp";
+  if (ts.isPropertyAccessExpression(expression)) return expression.name.text === "RegExp";
+  return (
+    ts.isElementAccessExpression(expression) &&
+    ts.isStringLiteral(expression.argumentExpression) &&
+    expression.argumentExpression.text === "RegExp"
+  );
+}
+
+/** Every RegExp created in this source: a literal, or any construction whose callee names `RegExp`. */
 function matchersInText(text: string, file: string): Matcher[] {
   const source = parse(text, file);
   const written = assignedNames(source);
@@ -369,8 +390,7 @@ function matchersInText(text: string, file: string): Matcher[] {
       push(raw.slice(1, close), raw.slice(close + 1));
     } else if (
       (ts.isNewExpression(node) || ts.isCallExpression(node)) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === "RegExp"
+      namesRegExpCallee(node.expression)
     ) {
       const args = node.arguments ?? [];
       const patternArg = args[0];
@@ -505,6 +525,22 @@ test("restating the shape is the same violation in every spelling", () => {
         "  }\n" +
         "}\n",
     ],
+    [
+      "constructed through the global object",
+      'const CHECK = new globalThis.RegExp("^[0-9a-f]{64}$");\n',
+    ],
+    [
+      "constructed through a string-indexed global member",
+      'const CHECK = new globalThis["RegExp"]("^[0-9a-f]{64}$");\n',
+    ],
+    [
+      "constructed through a parenthesised RegExp-named path",
+      'const CHECK = new (globalThis.RegExp)("^[0-9a-f]{64}$");\n',
+    ],
+    [
+      "two constant halves through a foreign RegExp-named path",
+      'const HEAD = "^[0-9";\nconst TAIL = "a-f]{64}$";\nconst CHECK = new window.RegExp(HEAD + TAIL);\n',
+    ],
   ];
   for (const [name, source] of bypasses) {
     const caught = matchersInText(source, "synthetic.ts").filter((site) => site.envelope !== null);
@@ -536,6 +572,47 @@ test("a binding that cannot be trusted fails closed instead of folding to a neig
     const sites = matchersInText(source, "synthetic.ts").filter((site) => site.spelling.startsWith("new RegExp"));
     assert.equal(sites.length, 1, `${name} produced ${sites.length} sites: ${JSON.stringify(source)}`);
     assert.equal(sites[0]?.pattern, null, `${name} folded to a value it cannot vouch for`);
+  }
+});
+
+test("a RegExp-named callee the scan cannot evaluate still reports its site", () => {
+  // The fourth review's bypass: `new globalThis.RegExp(...)` names RegExp through a
+  // property access, and a scan that accepted only a bare identifier never saw the site
+  // at all - no fold, no declaration, no review event. Every callee that *names* RegExp
+  // now produces a site; when the pattern argument cannot be folded the site is
+  // unfoldable and has to be declared, exactly like any other construction.
+  const unfoldable: [string, string][] = [
+    [
+      "foreign RegExp-named path with a runtime pattern",
+      'const CHECK = new window.RegExp(runtimeShape());\n',
+    ],
+    [
+      "global member with an unfoldable pattern argument",
+      'const CHECK = new globalThis.RegExp(runtimeShape());\n',
+    ],
+  ];
+  for (const [name, source] of unfoldable) {
+    const sites = matchersInText(source, "synthetic.ts");
+    assert.equal(sites.length, 1, `${name} produced ${sites.length} sites: ${JSON.stringify(source)}`);
+    assert.equal(sites[0]?.pattern, null, `${name} folded to a value its callee cannot vouch for`);
+  }
+});
+
+test("the scan's boundary: callees that do not name RegExp are outside its model", () => {
+  // Stated as a contract so it can neither silently widen nor silently shrink. Seeing
+  // through an aliased constructor, a computed member key or Reflect.construct would
+  // mean interpreting every JavaScript expression, which the fourth review explicitly
+  // set out of scope - so these spellings are the honest edge of the gate, recorded
+  // here and in the body rather than left implied (the same class of recorded limit as
+  // the no-RegExp verdict in the mutation battery).
+  const outOfModel: [string, string][] = [
+    ["constructor bound to an alias", 'const ALIAS = RegExp;\nconst CHECK = new ALIAS("^[0-9a-f]{64}$");\n'],
+    ["member keyed by a computed name", 'const KEY = "RegExp";\nconst CHECK = new globalThis[KEY]("^[0-9a-f]{64}$");\n'],
+    ["constructor invoked reflectively", 'const CHECK = Reflect.construct(RegExp, ["^[0-9a-f]{64}$"]);\n'],
+  ];
+  for (const [name, source] of outOfModel) {
+    const sites = matchersInText(source, "synthetic.ts");
+    assert.deepEqual(sites.map(describe), [], `${name} was unexpectedly scanned`);
   }
 });
 
