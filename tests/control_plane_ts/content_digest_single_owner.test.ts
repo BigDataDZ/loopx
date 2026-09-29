@@ -178,28 +178,119 @@ function digestEnvelope(pattern: string): Envelope | null {
   return envelope;
 }
 
-/** Fold an expression to the string it denotes, across `+`, const names and quoting. */
+/**
+ * One lexical scope. A name maps to the declarations seen for it *before the current point in
+ * document order*; a `null` init is a blocker - a parameter, an import, `let`/`var`, a second
+ * declaration of the same name - and a blocker stops the search instead of falling through to an
+ * outer binding, so shadowing cannot silently substitute a different value.
+ */
+type Binding = { init: ts.Expression | null; at: Scope };
+type Scope = { parent: Scope | null; vars: Map<string, Binding[]> };
+
+const SCOPE_OPENERS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.Block,
+  ts.SyntaxKind.CaseBlock,
+  ts.SyntaxKind.CatchClause,
+  ts.SyntaxKind.ClassDeclaration,
+  ts.SyntaxKind.ClassExpression,
+  ts.SyntaxKind.ForInStatement,
+  ts.SyntaxKind.ForOfStatement,
+  ts.SyntaxKind.ForStatement,
+  ts.SyntaxKind.FunctionDeclaration,
+  ts.SyntaxKind.FunctionExpression,
+  ts.SyntaxKind.ArrowFunction,
+  ts.SyntaxKind.MethodDeclaration,
+  ts.SyntaxKind.Constructor,
+  ts.SyntaxKind.GetAccessor,
+  ts.SyntaxKind.SetAccessor,
+]);
+
+function declare(scope: Scope, name: string, init: ts.Expression | null): void {
+  const seen = scope.vars.get(name);
+  if (seen === undefined) scope.vars.set(name, [{ init, at: scope }]);
+  else seen.push({ init, at: scope });
+}
+
+/** The innermost binding for a name, or null when it is absent, blocked or ambiguous. */
+function binding(scope: Scope, name: string): Binding | null {
+  for (let current: Scope | null = scope; current !== null; current = current.parent) {
+    const seen = current.vars.get(name);
+    if (seen === undefined) continue;
+    return seen.length === 1 ? seen[0] as Binding : null;
+  }
+  return null;
+}
+
+/** Names a `const` may not hold: only block-scoped `const` without a later write is foldable. */
+function isConstDeclaration(node: ts.VariableDeclaration): boolean {
+  const list = node.parent;
+  return (
+    ts.isVariableDeclarationList(list) &&
+    (list.flags & ts.NodeFlags.BlockScoped) !== 0 &&
+    (list.flags & ts.NodeFlags.Const) !== 0
+  );
+}
+
+/**
+ * Every identifier written to anywhere in the file. Increment targets are deliberately absent:
+ * `++`/`--` needs a mutable binding, and those are already blockers.
+ */
+function assignedNames(source: ts.SourceFile): Set<string> {
+  const names = new Set<string>();
+  const collect = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) names.add(node.text);
+    ts.forEachChild(node, collect);
+  };
+  (function visit(node: ts.Node): void {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
+      node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
+    ) {
+      collect(node.left);
+    }
+    ts.forEachChild(node, visit);
+  })(source);
+  return names;
+}
+
+/** The names a binding pattern introduces, flattened. */
+function boundNames(node: ts.Node | undefined): string[] {
+  if (node === undefined) return [];
+  if (ts.isIdentifier(node)) return [node.text];
+  if (ts.isNamespaceImport(node)) return [node.name.text];
+  if (ts.isObjectBindingPattern(node) || ts.isArrayBindingPattern(node)) {
+    // An elided element (`const [, a] = …`) carries no name, so only real bindings are collected.
+    return node.elements.flatMap((element) => (ts.isBindingElement(element) ? boundNames(element.name) : []));
+  }
+  return [];
+}
+
+/** Fold an expression to the string it denotes, through scope-resolved const names and `+`. */
 function foldStringExpression(
   expr: ts.Expression,
-  bindings: Map<string, ts.Expression>,
+  scope: Scope,
   source: ts.SourceFile,
   depth = 0,
 ): string | null {
   if (depth > 8) return null;
   if (ts.isParenthesizedExpression(expr)) {
-    return foldStringExpression(expr.expression, bindings, source, depth + 1);
+    return foldStringExpression(expr.expression, scope, source, depth + 1);
   }
   if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
     return expr.getText(source).slice(1, -1);
   }
   if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) {
-    const left = foldStringExpression(expr.left, bindings, source, depth + 1);
-    const right = foldStringExpression(expr.right, bindings, source, depth + 1);
+    const left = foldStringExpression(expr.left, scope, source, depth + 1);
+    const right = foldStringExpression(expr.right, scope, source, depth + 1);
     return left === null || right === null ? null : left + right;
   }
   if (ts.isIdentifier(expr)) {
-    const bound = bindings.get(expr.text);
-    return bound === undefined ? null : foldStringExpression(bound, bindings, source, depth + 1);
+    const found = binding(scope, expr.text);
+    // Absent, blocked or ambiguous all fail closed: the site becomes unfoldable and has to be
+    // declared, rather than folding to whatever a same-named binding elsewhere happens to hold.
+    if (found === null || found.init === null) return null;
+    return foldStringExpression(found.init, found.at, source, depth + 1);
   }
   return null;
 }
@@ -230,32 +321,52 @@ function isImportSpecifier(node: ts.Node): boolean {
 /** Every RegExp created in this source: literal, `new RegExp(...)` or `RegExp(...)`. */
 function matchersInText(text: string, file: string): Matcher[] {
   const source = parse(text, file);
-  const bindings = new Map<string, ts.Expression>();
-  (function collect(node: ts.Node): void {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) {
-      bindings.set(node.name.text, node.initializer);
-    }
-    ts.forEachChild(node, collect);
-  })(source);
-
+  const written = assignedNames(source);
+  const root: Scope = { parent: null, vars: new Map() };
   const found: Matcher[] = [];
-  const push = (node: ts.Node, pattern: string | null, flags: string | null): void => {
-    const spelling = node.getText(source).replace(/\s+/g, " ");
-    found.push({
-      file,
-      line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
-      spelling,
-      flags,
-      pattern,
-      envelope: pattern !== null ? digestEnvelope(pattern) : VISIBLE_HEX64_CLASS.test(spelling) ? "unresolved-visible" : null,
-    });
-  };
 
-  (function visit(node: ts.Node): void {
+  // Imports bind names whose value lives in another module, so they are blockers at file scope.
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    for (const name of boundNames(statement.importClause?.namedBindings)) declare(root, name, null);
+    const defaultName = statement.importClause?.name;
+    if (defaultName !== undefined) declare(root, defaultName.text, null);
+  }
+
+  (function walk(node: ts.Node, scope: Scope): void {
+    const inner =
+      node.kind === ts.SyntaxKind.SourceFile || !SCOPE_OPENERS.has(node.kind)
+        ? scope
+        : { parent: scope, vars: new Map<string, Binding[]>() };
+
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      const foldable = isConstDeclaration(node) && node.initializer !== undefined && !written.has(node.name.text);
+      declare(inner, node.name.text, foldable ? node.initializer : null);
+    } else if (ts.isVariableDeclaration(node)) {
+      for (const name of boundNames(node.name)) declare(inner, name, null);
+    }
+    if (ts.isFunctionLike(node)) {
+      for (const parameter of node.parameters) {
+        for (const name of boundNames(parameter.name)) declare(inner, name, null);
+      }
+    }
+
+    const push = (pattern: string | null, flags: string | null): void => {
+      const spelling = node.getText(source).replace(/\s+/g, " ");
+      found.push({
+        file,
+        line: source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+        spelling,
+        flags,
+        pattern,
+        envelope: pattern !== null ? digestEnvelope(pattern) : VISIBLE_HEX64_CLASS.test(spelling) ? "unresolved-visible" : null,
+      });
+    };
+
     if (ts.isRegularExpressionLiteral(node)) {
       const raw = node.getText(source);
       const close = raw.lastIndexOf("/");
-      push(node, raw.slice(1, close), raw.slice(close + 1));
+      push(raw.slice(1, close), raw.slice(close + 1));
     } else if (
       (ts.isNewExpression(node) || ts.isCallExpression(node)) &&
       ts.isIdentifier(node.expression) &&
@@ -266,16 +377,17 @@ function matchersInText(text: string, file: string): Matcher[] {
       if (patternArg !== undefined) {
         const flagsArg = args[1];
         push(
-          node,
-          foldStringExpression(patternArg, bindings, source),
-          flagsArg === undefined ? "" : foldStringExpression(flagsArg, bindings, source),
+          foldStringExpression(patternArg, inner, source),
+          flagsArg === undefined ? "" : foldStringExpression(flagsArg, inner, source),
         );
       }
     }
-    ts.forEachChild(node, visit);
-  })(source);
+
+    ts.forEachChild(node, (child) => walk(child, inner));
+  })(source, root);
   return found;
 }
+
 
 function importersInText(text: string, file: string): string[] {
   const names: string[] = [];
@@ -355,10 +467,75 @@ test("restating the shape is the same violation in every spelling", () => {
       "pattern a call cannot fold, but its class is visible",
       'const CHECK = new RegExp(compile("^[0-9a-f]{64}$"));\n',
     ],
+    [
+      // The third review round's bypass: a *later* function declares a local of the same name,
+      // and a file-wide name-keyed binding table lets it overwrite the digest constant, so the
+      // earlier `new RegExp` folds to the wrong value. Binding is resolved through scopes.
+      "same-named local in a later function",
+      "function first(value: string): boolean {\n" +
+        '  const PRIVATE_PATTERN = "^[0-9a-f]{64}$";\n' +
+        "  return new RegExp(PRIVATE_PATTERN).test(value);\n" +
+        "}\n" +
+        "function second(value: string): boolean {\n" +
+        '  const PRIVATE_PATTERN = "^unrelated$";\n' +
+        "  return new RegExp(PRIVATE_PATTERN).test(value);\n" +
+        "}\n",
+    ],
+    [
+      "same-named local in an earlier function",
+      "function first(value: string): boolean {\n" +
+        '  const PRIVATE_PATTERN = "^unrelated$";\n' +
+        "  return new RegExp(PRIVATE_PATTERN).test(value);\n" +
+        "}\n" +
+        "function second(value: string): boolean {\n" +
+        '  const PRIVATE_PATTERN = "^[0-9a-f]{64}$";\n' +
+        "  return new RegExp(PRIVATE_PATTERN).test(value);\n" +
+        "}\n",
+    ],
+    [
+      "digest const in a nested block, unrelated const of the same name outside it",
+      'const SHAPE = "^unrelated$";\nif (true) {\n  const SHAPE = "^[0-9a-f]{64}$";\n  new RegExp(SHAPE);\n}\nnew RegExp(SHAPE);\n',
+    ],
+    [
+      "method body with a same-named parameter",
+      "class Holder {\n" +
+        "  check(pattern: string): boolean {\n" +
+        '    const PRIVATE = "^[0-9a-f]{64}$";\n' +
+        "    return new RegExp(PRIVATE).test(pattern);\n" +
+        "  }\n" +
+        "}\n",
+    ],
   ];
   for (const [name, source] of bypasses) {
     const caught = matchersInText(source, "synthetic.ts").filter((site) => site.envelope !== null);
     assert.equal(caught.length, 1, `${name} escaped the scan: ${JSON.stringify(source)}`);
+  }
+});
+
+test("a binding that cannot be trusted fails closed instead of folding to a neighbour's value", () => {
+  // These four are not digest findings: the value is genuinely not a compile-time constant here.
+  // What matters is that the site is reported as unfoldable, because an unfoldable site has to be
+  // declared in the inventory - so a name that shadows, mutates or repeats cannot hide a matcher by
+  // resolving to some other binding with the same spelling.
+  const ambiguous: [string, string][] = [
+    [
+      "parameter shadows the constant",
+      'const DIGEST = "^[0-9a-f]{64}$";\nfunction check(DIGEST: string): boolean {\n  return new RegExp(DIGEST).test("");\n}\n',
+    ],
+    [
+      "mutable binding written later",
+      'let DIGEST = "^[a-f0-9]{64}$";\nDIGEST = "^unrelated$";\nconst CHECK = new RegExp(DIGEST);\n',
+    ],
+    [
+      "two declarations of one name in the same scope",
+      'const DIGEST = "^[0-9a-f]{64}$";\nconst DIGEST = "^unrelated$";\nconst CHECK = new RegExp(DIGEST);\n',
+    ],
+    ["name bound to another module", 'import { DIGEST } from "./elsewhere.ts";\nconst CHECK = new RegExp(DIGEST);\n'],
+  ];
+  for (const [name, source] of ambiguous) {
+    const sites = matchersInText(source, "synthetic.ts").filter((site) => site.spelling.startsWith("new RegExp"));
+    assert.equal(sites.length, 1, `${name} produced ${sites.length} sites: ${JSON.stringify(source)}`);
+    assert.equal(sites[0]?.pattern, null, `${name} folded to a value it cannot vouch for`);
   }
 });
 
