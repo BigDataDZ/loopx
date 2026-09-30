@@ -14,6 +14,7 @@ from ...control_plane.runtime.public_safety import (
     REMOTE_LOCATION_SURFACE_PATTERN,
     SECRET_LIKE_SURFACE_PATTERN,
 )
+from ...public_safe_text import COMPACT_TOKEN_PATTERN as _TOKEN_RE
 
 DECISION_EVIDENCE_PACKET_SCHEMA_VERSION = "decision_evidence_packet_v0"
 DECISION_PROPOSAL_SCHEMA_VERSION = "decision_proposal_v0"
@@ -39,7 +40,6 @@ DECISION_REVIEW_DISPOSITIONS = {
     "no_change",
 }
 
-_TOKEN_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 _LOCAL_PATH_RE = re.compile(r"(^|[\s:=])(?:/Users/|/private/|/tmp/|~/)")
 # Local threshold policy only: the credential *shapes* are decided once by
 # SECRET_LIKE_SURFACE_PATTERN, which this site consults in addition to this list.
