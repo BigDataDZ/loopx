@@ -20,6 +20,9 @@ from typing import Any
 from ..effect_runtime import _node_executable
 
 
+BRIDGE_CLOSE_TIMEOUT_SECONDS = 5.0
+
+
 def _source_snapshot(release: Path) -> tuple:
     """Loaded-code identity only; authority/configuration is read per request."""
     files = []
@@ -59,6 +62,15 @@ def _terminate_bridge(process: subprocess.Popen) -> None:
     process.terminate()
 
 
+def _kill_bridge(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        process.kill()
+    except ProcessLookupError:
+        pass
+
+
 def _close_bridge(process: subprocess.Popen, *, force: bool = False) -> None:
     # Parent EOF cancels the TS-owned group; give its cleanup fence time to run.
     if force:
@@ -69,11 +81,19 @@ def _close_bridge(process: subprocess.Popen, *, force: bool = False) -> None:
         except OSError:
             pass  # A crashed/retired supervisor may already have closed its pipe.
     try:
-        process.wait(timeout=5)
+        process.wait(timeout=BRIDGE_CLOSE_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
-        # SIGTERM asks the supervisor to clean, not to abandon its worker.
-        _terminate_bridge(process)
-        process.wait(timeout=5)
+        if not force:
+            # SIGTERM asks the supervisor to clean, not to abandon its worker.
+            _terminate_bridge(process)
+            try:
+                process.wait(timeout=BRIDGE_CLOSE_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                _kill_bridge(process)
+                process.wait(timeout=BRIDGE_CLOSE_TIMEOUT_SECONDS)
+        else:
+            _kill_bridge(process)
+            process.wait(timeout=BRIDGE_CLOSE_TIMEOUT_SECONDS)
     finally:
         if process.stdout is not None:
             process.stdout.close()
@@ -90,14 +110,15 @@ class DelegationPreviewTransport:
         self._sequence = 0
 
     def _close(self, *, force: bool = False) -> None:
-        if self._process is not None:
-            _close_bridge(self._process, force=force)
-        if self._finalizer is not None:
-            self._finalizer.detach()
+        process, finalizer = self._process, self._finalizer
         self._process = None
         self._finalizer = None
         self._partition = None
         self._sequence = 0
+        if finalizer is not None:
+            finalizer.detach()
+        if process is not None:
+            _close_bridge(process, force=force)
 
     def close(self) -> None:
         with self._lock:

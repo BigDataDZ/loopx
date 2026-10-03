@@ -372,6 +372,43 @@ def test_partial_supervisor_frame_obeys_parent_deadline_and_eof_cleanup():
     assert process.poll() == 0
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX forced cleanup signals")
+def test_forced_cleanup_kills_an_unresponsive_supervisor(monkeypatch):
+    from loopx.control_plane.collaboration import delegation_preview_transport
+
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-c",
+            "import signal,time;"
+            "signal.signal(signal.SIGTERM,lambda *_:None);"
+            "print('ready',flush=True);time.sleep(60)",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    assert process.stdout is not None
+    assert process.stdout.readline() == "ready\n"
+    transport = delegation_preview_transport.DelegationPreviewTransport()
+    transport._process = process
+    transport._partition = ("fixture",)
+    transport._sequence = 1
+    monkeypatch.setattr(
+        delegation_preview_transport,
+        "BRIDGE_CLOSE_TIMEOUT_SECONDS",
+        0.05,
+    )
+
+    transport._close(force=True)
+
+    assert transport._process is None
+    assert transport._partition is None
+    assert transport._sequence == 0
+    assert process.poll() is not None
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="SIGSTOP fault injection requires POSIX")
 def test_backpressured_supervisor_input_uses_original_parent_deadline(tmp_path, monkeypatch):
     from loopx.control_plane.collaboration.delegation_preview_transport import DelegationPreviewTransport
@@ -412,7 +449,7 @@ def test_backpressured_supervisor_input_uses_original_parent_deadline(tmp_path, 
             transport.preview(**options, argv=("x" * 65536,), timeout=0.1)
         assert send_durations[-1] < 0.4, send_durations
         assert transport._process is None
-        assert process.poll() == 0
+        assert process.poll() is not None
     finally:
         if timer:
             timer.cancel()
