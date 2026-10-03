@@ -2332,3 +2332,28 @@ export async function updateGoalOwnership(body: { goal_id: string; mode: Executi
     throw error;
   }
 }
+
+
+const privateConversationSchema = z.object({
+  binding_id: z.string(), app_ref: z.string(), context_kind: z.literal("project"),
+  project_ref: z.string(), project_title: z.string(), context_available: z.boolean(), executor_endpoint_id: z.string(),
+  grant: z.literal("workspace_read"), listener_status: z.string(),
+  pending_count: z.number().int(), recovery_count: z.number().int(),
+});
+const privateConversationsSchema = z.object({ok: z.literal(true), revision: z.number().int(),
+  connections: z.array(privateConversationSchema)});
+export type PrivateConversation = z.infer<typeof privateConversationSchema>;
+export async function fetchPrivateConversations() {
+  return privateConversationsSchema.parse(await requestJson<unknown>("/api/chat/lark/private-conversations"));
+}
+export async function connectPrivateConversation(appRef: string, projectRef: string, executor: string) {
+  return privateConversationsSchema.parse(await requestJson<unknown>("/api/chat/lark/private-conversations", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({app_ref: appRef, project_ref: projectRef, executor_endpoint_id: executor}),
+  }));
+}
+export async function disconnectPrivateConversation(bindingId: string, revision: number) {
+  return privateConversationsSchema.parse(await requestJson<unknown>("/api/chat/lark/private-conversations", {
+    method: "DELETE", headers: {"Content-Type": "application/json"}, body: JSON.stringify({binding_id: bindingId, revision}),
+  }));
+}

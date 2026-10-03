@@ -27,6 +27,7 @@ class ChatProjectContexts:
         # Remember the owner's spelling as well as its initial canonical target.
         # A later symlink retarget must not redirect an accepted Session.
         self.roots = [(root.expanduser().absolute(), root.expanduser().resolve()) for root in roots]
+        self.conversation_bindings: Any | None = None
 
     def available(self) -> list[dict[str, str]]:
         contexts = {}
@@ -52,7 +53,12 @@ class ChatProjectContexts:
         saved = session.get("project_context")
         if not isinstance(saved, dict) or session.get("goal_id") is not None:
             raise ValueError("invalid ordinary project Session")
-        selected = self.resolve(str(saved.get("project_ref") or ""), session_context=saved)
+        if saved.get("audience") == "bound_owner":
+            if self.conversation_bindings is None:
+                raise ValueError("bound project conversation authority is unavailable")
+            selected = self.conversation_bindings.session_context(saved)
+        else:
+            selected = self.resolve(str(saved.get("project_ref") or ""), session_context=saved)
         if session.get("channel_id") != selected["channel_id"]:
             raise ValueError("project conversation channel mismatch")
         return {"project": Path(selected["context"]["workspace_path"]),

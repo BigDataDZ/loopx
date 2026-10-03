@@ -48,6 +48,10 @@ from .chat_manager import (
 from .chat_session_open import open_chat_session
 from .chat_ssh_source_api import SshSourceRequestMixin
 from .chat_store import ChatSessionStore
+from .capabilities.native_chat.conversation_bindings import ChatConversationBindings
+from .capabilities.native_chat.private_conversation_api import PrivateConversationRequestMixin, PRIVATE_CONVERSATIONS_PATH
+from .extensions.lark.conversation_identity import observe_lark_conversation_identity
+from .extensions.lark.private_conversations import LarkPrivateConversations
 from .chat_loopx_mode import handle_loopx_request
 from .capabilities.manager_context.roundtrip import project_chat_session_snapshot
 from .control_plane.goals.active_state_metadata import active_state_section_text
@@ -416,6 +420,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
     lark_cli_resolution: LarkCliResolution
     lark_app_setup_manager: LarkAppSetupManager
     lark_goal_topic_runtime: LarkGoalTopicRuntimeService
+    lark_private_conversations: LarkPrivateConversations
     ssh_config_path: Path | None
     goal_subagent_configuration_enabled: bool
 
@@ -438,6 +443,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
 
 
 class ChatRequestHandler(
+    PrivateConversationRequestMixin,
     CompletedTodoRequestMixin,
     AttachedSessionRequestMixin,
     SshSourceRequestMixin,
@@ -1409,6 +1415,7 @@ class ChatRequestHandler(
             CHAT_LARK_APPS_PATH: self._lark_apps,
             CHAT_LARK_CHATS_PATH: self._lark_chats,
             CHAT_LARK_CONNECTIONS_PATH: self._lark_connections,
+            PRIVATE_CONVERSATIONS_PATH: self._private_conversations,
             CHAT_GOAL_CHANNEL_TARGETS_PATH: self._goal_channel_targets,
             **self._configuration_get_routes(),
             DEFAULT_CHAT_STATUS_PATH: self._status,
@@ -1456,6 +1463,7 @@ class ChatRequestHandler(
             CHAT_GOAL_CHANNEL_CONFIGURE_PATH: self._goal_channel_configure,
             CHAT_LARK_APP_SETUPS_PATH: self._lark_setup_start,
             CHAT_LARK_CONNECTIONS_PATH: self._lark_connect,
+            PRIVATE_CONVERSATIONS_PATH: self._private_conversation_connect,
             **self._configuration_post_routes(),
             **self._ssh_source_post_routes(),
         }
@@ -1500,6 +1508,8 @@ class ChatRequestHandler(
             return self._lark_setup_cancel(setup_parts[4])
         if path == CHAT_LARK_CONNECTIONS_PATH:
             return self._lark_disconnect()
+        if path == PRIVATE_CONVERSATIONS_PATH:
+            return self._private_conversation_disconnect()
         prefix = f"{CHAT_SESSIONS_PATH}/"
         if not path.startswith(prefix):
             return self._send_error("unknown path", status=404)
@@ -1597,6 +1607,21 @@ def serve_chat(
         idle_timeout_sec=idle_timeout_sec,
         hard_timeout_sec=hard_timeout_sec,
     )
+    server.runtime_controller.project_contexts.conversation_bindings = ChatConversationBindings(
+        root=server.chat_store.root, project_contexts=server.runtime_controller.project_contexts,
+        observe=lambda profile: observe_lark_conversation_identity(profile=profile, runner=server.lark_runner,
+            cli_bin=server.lark_cli_resolution.command or "lark-cli"))
+    private_transport = LarkPrivateConversations(controller=server.runtime_controller, runtime_root=runtime_root,
+        runner=server.lark_runner, cli_bin=server.lark_cli_resolution.command or "lark-cli")
+
+    server.lark_private_conversations = private_transport
+
+    def _lark_snapshot():
+        snapshot = build_lark_goal_topic_runtime_snapshot(registry_path=server.registry_path,
+            runtime_root_override=server.runtime_root_override)
+        snapshot["private_profiles"] = private_transport.profiles()
+        return snapshot
+
     server.action_service = ChatActionService(
         store=server.action_store,
         registry_path=resolved_registry_path,
@@ -1612,10 +1637,8 @@ def serve_chat(
         server.action_service.project_team_plan_preview
     )
     server.lark_goal_topic_runtime = LarkGoalTopicRuntimeService(
-        snapshot_provider=lambda: build_lark_goal_topic_runtime_snapshot(
-            registry_path=server.registry_path,
-            runtime_root_override=server.runtime_root_override,
-        ),
+        snapshot_provider=_lark_snapshot,
+        private_conversations=private_transport,
         runtime_root=runtime_root,
         runtime_controller=server.runtime_controller,
         action_service=server.action_service,

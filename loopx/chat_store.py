@@ -273,9 +273,7 @@ class ChatSessionStore(ChatIngressStore):
         }
         if project_context is not None:
             from .control_plane.effect_runtime import effect_runtime_result
-            selected = effect_runtime_result("collaboration.project.context", {
-                "project_ref": project_context.get("project_ref"), "available": [project_context],
-            })
+            selected = effect_runtime_result("collaboration.project.session_identity", {"context": project_context})
             if goal_id is not None or goal_instance_id is not None or channel_id != selected["channel_id"] or normalized_mode != CHAT_SESSION_MODE_MANAGED:
                 raise ValueError("ordinary project Sessions require their exact channel and no Goal")
             project_context = selected["context"]

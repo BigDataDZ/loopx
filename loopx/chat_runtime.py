@@ -112,7 +112,7 @@ class CodexAppServerAdapter:
         *,
         codex_bin: str,
         work_dir: Path,
-        goal_id: str,
+        goal_id: str | None,
         objective: str,
         resume_thread_id: str | None = None,
         startup_timeout_sec: float = 30.0,
@@ -373,7 +373,7 @@ class ChatRuntimeController:
     @staticmethod
     def _session_objective(
         *,
-        goal_id: str,
+        goal_id: str | None,
         objective: str,
         history: list[dict[str, Any]] | None,
         project_coordination: bool = False,
@@ -562,13 +562,31 @@ class ChatRuntimeController:
         agent_goal_id: str | None = None,
         manager_executor_allocation: Mapping[str, Any] | None = None,
         project_ref: str | None = None,
+        conversation_binding_id: str | None = None,
+        source_context: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], bool]:
         capability = next((item for item in self.capabilities() if item["agent_id"] == agent_id), None)
         if mode not in {"resume_latest", "new"}:
             raise ValueError("mode must be resume_latest or new")
         selected_channel = channel_id or f"goal.{goal_id}"
         project_context = None
-        if project_ref is not None:
+        if conversation_binding_id is not None:
+            if goal_id is not None or agent_goal_id is not None or project_ref is not None:
+                raise ValueError("bound project Chat cannot substitute a Goal or workspace")
+            bindings = self.project_contexts.conversation_bindings
+            if bindings is None or source_context is None:
+                raise ValueError("bound project conversation authority is unavailable")
+            selected = bindings.resolve(binding_id=conversation_binding_id, **source_context)
+            if agent_id != selected["binding"]["executor_endpoint_id"]:
+                raise ValueError("executor does not match the conversation grant")
+            if channel_id is not None and channel_id != selected["channel_id"]:
+                raise ValueError("bound conversation channel mismatch")
+            project_context, selected_channel = selected["context"], selected["channel_id"]
+            context = self.project_contexts.session_context({
+                "goal_id": None, "channel_id": selected_channel, "project_context": project_context,
+            })
+            work_dir, objective = context["project"], context["objective"]
+        elif project_ref is not None:
             if goal_id is not None or agent_goal_id is not None:
                 raise ValueError("ordinary project conversations cannot carry a Goal")
             selected = self.project_contexts.resolve(project_ref)
@@ -977,6 +995,8 @@ class ChatRuntimeController:
         if session is None:
             raise KeyError("chat session was not found")
         if session.get("project_context") is not None:
+            if session["project_context"].get("audience") == "bound_owner":
+                raise ValueError("bound project Chat requires its external source admission")
             context = self.project_contexts.session_context(session)
             work_dir, objective = context["project"], context["objective"]
             if loopx_execution:
@@ -1103,6 +1123,10 @@ class ChatRuntimeController:
         session = self.store.load_session(session_id)
         if session is None or session.get("status") == "closed":
             raise KeyError("chat session was not found")
+        if session.get("project_context") is not None:
+            if session["project_context"].get("audience") == "bound_owner":
+                raise ValueError("bound project steering requires its external source admission")
+            self.project_contexts.session_context(session)
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
             session = require_current_attached_session(
                 store=self.store,
@@ -1237,8 +1261,8 @@ class ChatRuntimeController:
         if session is None or session.get("status") == "closed":
             raise KeyError("chat session was not found")
         if session.get("project_context") is not None:
-            if origin != "web":
-                raise ValueError("local project grant does not authorize an external audience")
+            if conversation_scope(session, origin=origin)["kind"] != "project_workspace":
+                raise ValueError("project grant does not authorize this external audience or source")
             context = self.project_contexts.session_context(session)
             work_dir, objective = context["project"], context["objective"]
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:

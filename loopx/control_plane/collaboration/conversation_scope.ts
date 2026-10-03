@@ -6,18 +6,32 @@ export function normalizeProjectContext(value: unknown): Record<string, string> 
   const ref = context.project_ref, workspace = context.workspace_path;
   if (typeof ref !== "string" || !/^[a-f0-9]{24}$/.test(ref)
       || typeof workspace !== "string" || !workspace || context.kind !== "project_workspace"
-      || context.audience !== "local_owner" || context.grant !== "workspace_read"
+      || !["local_owner", "bound_owner"].includes(String(context.audience)) || context.grant !== "workspace_read"
       || (workspace[0] !== "/" && !/^[A-Za-z]:[\\/]/.test(workspace))) {
     throw new Error("invalid project conversation context");
   }
-  return {kind: "project_workspace", project_ref: ref, workspace_path: workspace,
-    audience: "local_owner", grant: "workspace_read"};
+  const normalized: Record<string, string> = {kind: "project_workspace", project_ref: ref, workspace_path: workspace,
+    audience: String(context.audience), grant: "workspace_read"};
+  if (context.audience === "bound_owner") {
+    for (const field of ["binding_id", "source_ref", "provider_ref", "operator_ref"]) {
+      const value = context[field];
+      if (typeof value !== "string" || !/^[a-f0-9]{24}$/.test(value)) throw new Error("incomplete bound project identity");
+      normalized[field] = value;
+    }
+  }
+  return normalized;
+}
+
+export function projectConversationIdentity(input: Record<string, unknown>): Record<string, unknown> {
+  const context = normalizeProjectContext(input.context);
+  return {context, channel_id: context.audience === "local_owner"
+    ? `project.${context.project_ref}` : `project.external.${context.binding_id}.${context.source_ref}`};
 }
 
 type ConversationScope = Record<string, unknown> & (
   | {kind: "owner_portfolio"; goal_ids: null; private_conversation: true}
   | {kind: "owner_goal"; goal_ids: [string]; private_conversation: true}
-  | {kind: "project_workspace"; goal_ids: []; private_conversation: true}
+  | {kind: "project_workspace"; goal_ids: []; private_conversation: boolean}
   | {kind: "external_audience" | "unavailable"; goal_ids: []; private_conversation: false}
 );
 
@@ -27,11 +41,16 @@ type ConversationScope = Record<string, unknown> & (
 export function resolveConversationScope(input: Record<string, unknown>): ConversationScope {
   const channel = input.channel_id;
   const goal = input.goal_id;
-  if (goal === null && (input.origin === undefined || input.origin === "web")) {
+  if (goal === null) {
     try {
       const context = normalizeProjectContext(input.project_context);
-      if (channel === `project.${context.project_ref}`) {
+      if (context.audience === "local_owner" && (input.origin === undefined || input.origin === "web")
+          && channel === `project.${context.project_ref}`) {
         return {kind: "project_workspace", goal_ids: [], private_conversation: true};
+      }
+      if (context.audience === "bound_owner" && (input.origin === undefined || input.origin === "lark")
+          && channel === `project.external.${context.binding_id}.${context.source_ref}`) {
+        return {kind: "project_workspace", goal_ids: [], private_conversation: false};
       }
     } catch { /* Incomplete host identity grants no context. */ }
   }

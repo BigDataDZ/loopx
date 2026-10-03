@@ -1,0 +1,247 @@
+"""Private-message transport for native, Core-bound project Chat.
+
+Only provider provenance, Inbox presentation and delivery receipts live here.
+Core owns audience grants, canonical Sessions, durable Turns and stop/recovery.
+"""
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from pathlib import Path
+from typing import Any
+
+from ...capabilities.native_chat.external_conversations import ChatExternalConversations
+from ...chat_store import _atomic_write_json, _read_json
+from ...file_lock import exclusive_file_lock
+from .conversation_identity import identity_ref, lark_private_source
+from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
+from .goal_channel_transport import call, json_payload, lark_args
+from .inbox_reply import _message, reply_lark_event_inbox, verify_lark_inbox_reply
+
+
+class LarkPrivateConversations:
+    def __init__(self, *, controller: Any, runtime_root: Path, runner: Any, cli_bin: str) -> None:
+        self.core = ChatExternalConversations(controller)
+        self.bindings = self.core.bindings
+        self.runtime_root, self.runner, self.cli_bin = runtime_root, runner, cli_bin
+        self.root = controller.store.root / "lark-private-deliveries"
+
+    def profiles(self) -> dict[str, dict[str, str]]:
+        return {row["transport_ref"]: {"cli_bin": self.cli_bin, "provider_ref": row["provider_ref"],
+                                     "binding_id": row["binding_id"], "consumer_ref": self.bindings.observe(row["transport_ref"])["consumer_ref"]}
+                for row in self.bindings.read()["bindings"]}
+
+    def health(self) -> dict[str, dict[str, int]]:
+        health: dict[str, dict[str, int]] = {}
+        for path in self.root.glob("*.json"):
+            row = _read_json(path)
+            entry = health.setdefault(row["binding_id"], {"pending_count": 0, "recovery_count": 0})
+            if row["status"] != "delivered":
+                entry["pending_count"] += 1
+                entry["recovery_count"] += int(any(phase.get("started") and not phase.get("verified")
+                                                   for phase in row["deliveries"].values()))
+        return health
+
+    def _binding(self, profile: str) -> dict[str, Any]:
+        return next(row for row in self.bindings.read()["bindings"] if row["transport_ref"] == profile)
+
+    def _source_message(self, record: dict[str, Any]) -> Mapping[str, Any] | None:
+        """Read the exact source under this App, then recheck the Core audience.
+
+        A p2p source read proves the destination without requiring group-member
+        scopes. A caller cannot opt into this path with an HTTP boolean.
+        """
+        event = record["event"]
+        try:
+            self.bindings.resolve(binding_id=record["binding_id"], **record["source"])
+            result = call(self.runner, lark_args(cli_bin=self.cli_bin, profile=record["profile"],
+                tail=["im", "+messages-mget", "--message-ids", event["message_id"],
+                      "--as", "bot", "--no-reactions", "--format", "json"]))
+            message = _message(json_payload(result), event["message_id"])
+            sender = message.get("sender") if isinstance(message, Mapping) else None
+            if (result.get("returncode") == 0 and message is not None
+                    and message.get("chat_id") == event["chat_id"] and isinstance(sender, Mapping)
+                    and sender.get("id") == event["sender_id"] and sender.get("sender_type") == "user"):
+                return message
+        except (KeyError, ValueError, OSError):
+            pass
+        return None
+
+    def _source_verified(self, record: dict[str, Any]) -> bool:
+        return self._source_message(record) is not None
+
+    def _inbox(self, record: dict[str, Any]) -> Path:
+        observation = self.bindings.observe(record["profile"])
+        scope = record["source"]["source_ref"]
+        path = self.runtime_root / ".loopx" / "config" / "private-chat" / f"{scope}.json"
+        _atomic_write_json(path, {
+            "schema_version": "lark_event_inbox_config_v0", "enabled": True,
+            "inbox_dir": f".loopx/inbox/private-chat/{scope}", "capture_scope": "configured_chat_all",
+            "reply": {"enabled": True, "sender_profile": record["profile"], "sender_identity": "bot",
+                "bot_display_name": observation["bot_display_name"], "chat_id": record["event"]["chat_id"],
+                "placement_policy": "source_context", "received_reaction_emoji": ""},
+        })
+        event = record["event"]
+        # Some unsupported attachment events have no rendered content. Keep a
+        # source-backed presentation placeholder so the explicit notice can reply.
+        content = event.get("content") or "附件（内容尚不支持）"
+        captured = ingest_lark_event_inbox(project=self.runtime_root, config_path=path,
+            events=[{**event, "content": content, "schema_version": "lark_event_inbox_event_v0"}], execute=True)
+        if captured["invalid_count"]:
+            raise ValueError("private source could not be captured")
+        return path
+
+    def admit(self, profile: str, event: dict[str, Any]) -> dict[str, Any]:
+        try:
+            binding = self._binding(profile)
+            source = lark_private_source(provider_ref=binding["provider_ref"], event=event)
+            self.bindings.resolve(binding_id=binding["binding_id"], **source)
+        except (KeyError, StopIteration, ValueError):
+            return {"status": "audience_rejected"}
+        request = identity_ref(binding["provider_ref"], event["message_id"])
+        path = self.root / f"{request}.json"
+        with exclusive_file_lock(path, operation="capture_private_chat_request"):
+            if path.exists():
+                record = _read_json(path)
+                # event_id can change on redelivery; canonical message content
+                # and audience cannot change underneath the stable message id.
+                if any(record["event"].get(key) != event.get(key) for key in
+                       ["message_id", "sender_id", "chat_id", "content", "message_type"]):
+                    return {"status": "source_conflict"}
+            else:
+                record = {"schema_version": "lark_private_chat_delivery_v0", "request_ref": request,
+                    "profile": profile, "binding_id": binding["binding_id"], "source": source,
+                    "event": event, "deliveries": {}, "status": "captured"}
+                _atomic_write_json(path, record)
+            source_message = self._source_message(record)
+            if source_message is None:
+                return {"status": "source_verification_failed"}
+            message_type = str(event.get("message_type") or "")
+            text = ""
+            if message_type == "text":
+                # lark-cli renders event and mget content as plain text. Read
+                # the full canonical message; do not decode a rendered event.
+                canonical_type = source_message.get("msg_type", source_message.get("message_type"))
+                if canonical_type != "text":
+                    return {"status": "source_conflict"}
+                content = source_message.get("content")
+                if isinstance(content, str):
+                    text = content
+                else:
+                    # Raw provider envelopes are supported by the existing
+                    # readback contract too; keep parsing isolated to body.
+                    try:
+                        raw = json.loads(source_message["body"]["content"])
+                        text = raw["text"]
+                    except (ValueError, KeyError, TypeError):
+                        return {"status": "invalid_text"}
+                    if not isinstance(text, str):
+                        return {"status": "invalid_text"}
+                if not text.strip():
+                    return {"status": "empty_text"}
+            command = {"/status": "status", "/new": "new", "/stop": "stop"}.get(text.strip())
+            if message_type != "text":
+                command = "unsupported"
+            try:
+                admitted = self.core.admit(binding_id=binding["binding_id"], source=source,
+                    request_ref=request, message=text, command=command)
+            except RuntimeError as exc:
+                if str(exc) != "session_queue_full":
+                    raise
+                record.update(status="rejected", response="队列已满，本条没有被受理；请稍后重试。")
+                _atomic_write_json(path, record)
+                return {"status": "queue_rejected"}
+            record.update(status=admitted["status"], session_id=admitted["session_id"],
+                          turn_id=admitted["turn_id"], response=admitted.get("response"), response_code=admitted.get("response_code"))
+            _atomic_write_json(path, record)
+            status = "durably_accepted" if admitted["status"] == "accepted" else (
+                "queue_rejected" if admitted["status"] == "rejected" else "command_recorded")
+            return {"status": status}
+
+    def _reply_runner(self, args: list[str]) -> Any:
+        return self.runner([self.cli_bin, *args[1:]], None, 30)
+
+    def _deliver(self, path: Path, record: dict[str, Any], phase: str, text: str) -> bool:
+        if not text:
+            return False
+        phase_state = record["deliveries"].get(phase, {})
+        if phase_state.get("verified"):
+            return True
+        if phase_state.get("text") not in (None, text):
+            raise ValueError("delivery content changed after an attempt")
+        config = self._inbox(record)
+        kwargs = dict(project=self.runtime_root, config_path=config,
+            message_id=record["event"]["message_id"], text=text, runner=self._reply_runner,
+            source_membership_verifier=lambda: self._source_verified(record))
+        if phase_state.get("attempt"):
+            result = verify_lark_inbox_reply(**kwargs, attempt=phase_state["attempt"])
+        elif phase_state.get("started"):
+            # A crash between provider write and its receipt is ambiguous. Keep
+            # the original source recoverable; never resend blindly.
+            return False
+        else:
+            def before_send(_intent: str) -> dict[str, bool]:
+                phase_state.update(text=text, started=True)
+                record["deliveries"][phase] = phase_state
+                _atomic_write_json(path, record)
+                return {"continue_delivery": True}
+
+            def attempt(value: Any) -> None:
+                phase_state["attempt"] = dict(value)
+                _atomic_write_json(path, record)
+
+            result = reply_lark_event_inbox(**kwargs, execute=True, before_send=before_send,
+                                           delivery_attempt_recorder=attempt, short_message_limit=None)
+        phase_state["verified"] = result.get("reply_verified") is True
+        phase_state["blocker"] = result.get("blocker")
+        record["deliveries"][phase] = phase_state
+        _atomic_write_json(path, record)
+        return bool(phase_state["verified"])
+
+    def reconcile(self) -> int:
+        self.core.recover()
+        # A crash after Core admission but before the transport correlation
+        # record is repaired by replaying the same message identity.
+        for pending in sorted(self.root.glob("*.json")):
+            row = _read_json(pending)
+            if row["status"] == "captured":
+                self.admit(row["profile"], row["event"])
+        delivered = 0
+        for path in sorted(self.root.glob("*.json")):
+            with exclusive_file_lock(path, operation="deliver_private_chat_request"):
+                record = _read_json(path)
+                if record["status"] in {"captured", "delivered"}:
+                    continue
+                try:
+                    self.bindings.resolve(binding_id=record["binding_id"], **record["source"])
+                    if record["status"] == "accepted":
+                        # Receipt follows persistent Core admission and is
+                        # independent of terminal execution and reply delivery.
+                        self._deliver(path, record, "admission", "已持久受理；若已有执行，本条会排队。可发送 /status、/stop 或 /new。")
+                        turn = self.core.controller.store.load_turn(record["session_id"], record["turn_id"])
+                        if not turn or turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
+                            continue
+                        response = str((turn.get("response") or {}).get("message") or "") if turn["status"] == "completed" else (
+                            "本次执行已停止。" if turn["status"] == "interrupted" else
+                            "本次执行失败或已过期，原会话已保留；请发送 /status 后再决定是否重试。")
+                    else:
+                        response = _command_text(str(record.get("response_code") or "")) or str(record.get("response") or "")
+                    if self._deliver(path, record, "terminal", response):
+                        config = self._inbox(record)
+                        acknowledge_lark_event_inbox(project=self.runtime_root, config_path=config,
+                            message_ids=[record["event"]["message_id"]], execute=True)
+                        self.core.record_delivery(record["request_ref"], session_id=record.get("session_id"), turn_id=record.get("turn_id"))
+                        record["status"] = "delivered"
+                        _atomic_write_json(path, record)
+                        delivered += 1
+                except (KeyError, ValueError, OSError):
+                    # Keep pending receipts available for actionable recovery.
+                    continue
+        return delivered
+
+
+def _command_text(code: str) -> str:
+    return {"unsupported_attachment": "此入口目前只支持文字；图片或文件没有交给模型。请发送文字描述。",
+        "no_session": "尚无会话；发送文字即可开始。", "active_session": "正在执行；后续文字会进入同一会话队列。",
+        "ready_session": "会话已就绪，可继续发送文字。", "new_session": "已关闭此前会话；下一条文字将开启新会话。",
+        "stop_requested": "已请求停止这条消息对应的执行。", "no_active_turn": "当前没有正在执行的消息。"}.get(code, "")

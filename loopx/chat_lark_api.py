@@ -581,6 +581,17 @@ class LarkChatRequestMixin:
                 raise ValueError("unknown Lark connection field")
             goal_id = _compact_text(body.get("goal_id"), limit=160)
             app_ref = _compact_text(body.get("app_ref"), limit=100)
+            private = getattr(getattr(getattr(self.server, "runtime_controller", None), "project_contexts", None), "conversation_bindings", None)
+            selected_profiles = [app_ref] if app_ref else [str(row.get("app_ref") or "") for row in body.get("agent_bindings", [])]
+            if private is not None:
+                from .extensions.lark.conversation_identity import identity_ref
+                configured = private.read()["bindings"]
+                for profile in selected_profiles:
+                    if any(row["transport_ref"] == profile for row in configured):
+                        raise ValueError("this App owns a private listener; disconnect it first")
+                    identity = _app_identity_for_private_guard(profile, self._lark_runner(), cli_bin)
+                    if identity and any(row["provider_ref"] == identity_ref(identity) for row in configured):
+                        raise ValueError("this App alias owns a private listener; disconnect it first")
             chat_id = _compact_text(body.get("chat_id"), limit=160)
             chat_name = _compact_text(body.get("chat_name"), limit=120)
             incoming_mode = (
@@ -806,3 +817,16 @@ class LarkChatRequestMixin:
             return
         self._refresh_lark_goal_topic_runtime()
         self._send_json(packet)
+
+
+def _app_identity_for_private_guard(profile: str, runner: Any, cli_bin: str) -> str:
+    from .extensions.lark.goal_channel_transport import APP_ID_PATTERN, call, json_payload, lark_args
+    result = call(runner, lark_args(cli_bin=cli_bin, profile=profile, tail=["auth", "status", "--verify", "--json"]))
+    payload = json_payload(result)
+    app_id = str(payload.get("appId") or "")
+    identities = payload.get("identities")
+    bot = identities.get("bot") if isinstance(identities, Mapping) else None
+    if (result.get("returncode") != 0 or not APP_ID_PATTERN.fullmatch(app_id)
+            or not isinstance(bot, Mapping) or bot.get("available") is not True or bot.get("verified") is not True):
+        raise ValueError("the App identity could not be verified")
+    return app_id
