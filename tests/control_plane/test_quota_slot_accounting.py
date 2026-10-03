@@ -37,6 +37,19 @@ SAFE_BYPASS_CASES = (
 )
 
 
+def test_ledger_readback_legacy_exports_preserve_owner_identity() -> None:
+    from loopx.control_plane.quota import ledger_readback, slot_accounting
+
+    for name in (
+        "QUOTA_SLOT_SPENT_CLASSIFICATION",
+        "QUOTA_SLOT_VOIDED_CLASSIFICATION",
+        "load_quota_event_from_run",
+        "quota_slot_contribution",
+        "net_quota_slot_spend",
+    ):
+        assert getattr(slot_accounting, name) is getattr(ledger_readback, name), name
+
+
 def _write_run_index(runtime: Path, records: list[dict[str, Any]]) -> None:
     index_path = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
     index_path.parent.mkdir(parents=True, exist_ok=True)

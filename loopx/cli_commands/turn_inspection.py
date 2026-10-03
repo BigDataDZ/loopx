@@ -7,12 +7,6 @@ from pathlib import Path
 from ..control_plane.runtime.status_projection_cache import (
     resolve_status_projection_cache_runtime_root,
 )
-from ..control_plane.turn_driver import (
-    LOOPX_TURN_JOURNAL_INSPECTION_SCHEMA_VERSION,
-    codex_cli_session_binding,
-    inspect_loopx_turn_journal,
-    load_loopx_turn_plan_from_journal,
-)
 from .turn_rendering import render_loopx_turn_journal_inspection_markdown
 
 PrintPayload = Callable[
@@ -32,6 +26,13 @@ def handle_turn_journal_inspection(
 ) -> int | None:
     if args.turn_command != "inspect-journal":
         return None
+    from ..control_plane.turn_driver import (
+        LOOPX_TURN_JOURNAL_INSPECTION_SCHEMA_VERSION,
+        codex_cli_session_binding,
+        inspect_loopx_turn_journal,
+        load_loopx_turn_plan_from_journal,
+    )
+
     try:
         runtime_root = resolve_status_projection_cache_runtime_root(
             registry_path=registry_path,

@@ -3633,7 +3633,7 @@ def test_turn_run_once_cli_resumes_session_from_recoverable_failed_turn(
         }
 
     monkeypatch.setattr(
-        "loopx.cli_commands.turn.codex_cli_session_binding",
+        "loopx.control_plane.turn_driver.codex_cli.codex_cli_session_binding",
         fake_session_binding,
     )
     monkeypatch.setattr(

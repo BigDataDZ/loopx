@@ -98,6 +98,16 @@ def _build_turn_decision(
     the status, the scheduler context or the capability hooks behind a decision.
     """
 
+    # run-once executes in its explicit project, not the process that requests
+    # the plan (for example the App or delegation service). Resolve once and
+    # carry only that host fact into the original workspace guard. Commands
+    # without a host project retain the established invocation-cwd boundary.
+    project = getattr(args, "project", None)
+    workspace_path = (
+        Path(project).expanduser().resolve()
+        if getattr(args, "turn_command", None) == "run-once" and project is not None else None
+    )
+
     def build_turn_decision(
         *, requested_action_todo_id: str | None = None
     ) -> dict[str, Any]:
@@ -118,6 +128,7 @@ def _build_turn_decision(
             ),
             requested_action_todo_id=requested_action_todo_id,
             turn_start_hook_dispatch=dict(turn_start_hook_dispatch or {}),
+            workspace_path=workspace_path,
             goal_ref=goal_ref,
             interaction_projection_hooks=(
                 periodic_report_pending_intent_interaction_hook(

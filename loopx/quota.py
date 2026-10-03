@@ -57,22 +57,11 @@ from .control_plane.quota.settlement import (
     read_heartbeat_settlement,
     settlement_result_payload,
 )
-from .control_plane.quota.slot_accounting import (
+from .control_plane.quota.ledger_readback import (
     QUOTA_SLOT_SPENT_CLASSIFICATION,
     QUOTA_SLOT_VOIDED_CLASSIFICATION,
-    build_quota_slot_preview_for_decision,
-    build_quota_slot_spend_event as _build_quota_slot_spend_event,
     net_quota_slot_spend,
     quota_slot_contribution,
-    record_quota_slot_spend_from_preview,
-)
-from .control_plane.quota.spend_commit import replay_quota_spend_by_effect_ref
-from .control_plane.quota.void_commit import (
-    build_quota_slot_void_event as build_quota_slot_void_event,
-    build_quota_slot_void_preview_for_decision,
-    commit_quota_slot_void,
-    normalize_quota_void_goal_id as _normalize_quota_void_goal_id,
-    record_quota_slot_void_from_preview as record_quota_slot_void_from_preview,
 )
 from .control_plane.quota.spend_sources import (
     DEFAULT_SLOT_SPEND_SOURCE,
@@ -124,6 +113,26 @@ _PUBLIC_COMPAT_REEXPORTS = {
     "record_quota_slot_void_from_preview": "loopx.control_plane.quota.void_commit",
     "render_quota_slot_preview_markdown": "loopx.presentation.renderers.quota_event_markdown",
 }
+_LAZY_PUBLIC_COMPAT_REEXPORTS = frozenset({
+    "build_quota_slot_void_event",
+    "record_quota_slot_void_from_preview",
+})
+
+
+def __getattr__(name: str) -> Any:
+    # Only legacy exports from execution adapters are lazy. Return their real
+    # objects, not wrappers or a second implementation of quota transactions.
+    if name not in _LAZY_PUBLIC_COMPAT_REEXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    from importlib import import_module
+
+    value = getattr(import_module(_PUBLIC_COMPAT_REEXPORTS[name]), name)
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(_PUBLIC_COMPAT_REEXPORTS))
 
 
 AUTONOMOUS_REPLAN_ACK_NEUTRAL_CLASSIFICATIONS = {
@@ -913,6 +922,7 @@ def build_quota_should_run(
     receipt_bound_replan_guard_scoped: bool = False,
     turn_instance_id: str | None = None,
     runtime_root: str | Path | None = None,
+    workspace_path: Path | None = None,
     goal_ref: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     from .control_plane.quota.should_run import (
@@ -939,6 +949,7 @@ def build_quota_should_run(
         receipt_bound_replan_guard_scoped=receipt_bound_replan_guard_scoped,
         turn_instance_id=turn_instance_id,
         runtime_root=runtime_root,
+        workspace_path=workspace_path,
         goal_ref=goal_ref,
     )
 
@@ -986,6 +997,8 @@ def build_quota_slot_preview(
     registry_path: Path | None = None,
     goal_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.quota.slot_accounting import build_quota_slot_preview_for_decision
+
     safe_goal_id = _validate_goal_id_path_segment(str(goal_id or ""))
     basis_available, expected_index_digest = _quota_spend_index_basis(
         status_payload,
@@ -1093,6 +1106,8 @@ def build_quota_slot_spend_event(
     source: str = DEFAULT_SLOT_SPEND_SOURCE,
     generated_at: str | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.quota.spend_commit import build_quota_slot_spend_event as _build_quota_slot_spend_event
+
     return _build_quota_slot_spend_event(
         preview,
         self_repair_spend_actions=SELF_REPAIR_SPEND_ACTIONS,
@@ -1344,6 +1359,11 @@ def build_quota_slot_void_preview(
     agent_id: str | None = None,
     operator_inbox_urgency_projector: Callable[..., dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.quota.void_commit import (
+        build_quota_slot_void_preview_for_decision,
+        normalize_quota_void_goal_id as _normalize_quota_void_goal_id,
+    )
+
     safe_goal_id = _normalize_quota_void_goal_id(goal_id)
     before = build_quota_should_run(
         status_payload,
@@ -1372,6 +1392,11 @@ def void_quota_slot(
     registry_path: Path | None = None,
     goal_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.quota.void_commit import (
+        commit_quota_slot_void,
+        normalize_quota_void_goal_id as _normalize_quota_void_goal_id,
+    )
+
     safe_goal_id = _normalize_quota_void_goal_id(goal_id)
     before = build_quota_should_run(
         status_payload,
@@ -1413,6 +1438,9 @@ def spend_quota_slot(
     registry_path: Path | None = None,
     goal_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.quota.spend_commit import replay_quota_spend_by_effect_ref
+    from .control_plane.quota.slot_accounting import record_quota_slot_spend_from_preview
+
     safe_goal_id = _validate_goal_id_path_segment(str(goal_id or ""))
     normalized_effect_ref = str(effect_ref or "").strip()
     raw_runtime_root = status_payload.get("runtime_root")

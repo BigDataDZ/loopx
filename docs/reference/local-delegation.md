@@ -174,6 +174,203 @@ reporting `turn_blocked`. The observation starts no host, Turn journal or quota 
 Normal quota selection may still admit unrelated eligible work; this preflight
 never substitutes another Todo.
 
+The long-lived collaboration MCP server explicitly opts into preview reuse.
+One-shot CLI and per-request Goal Chat services retain the original fresh CLI
+subprocess; they do not start a preview supervisor or pay its cleanup cost.
+This is an internal entrypoint-lifetime choice, not a user setting. Repeated
+inspections in that long-lived `Delegations` service reuse at most one
+fixed-workspace, read-only Python CLI worker. The existing TypeScript Host owner
+supervises that worker: each preview retains its 60-second request deadline;
+timeout, cancellation, malformed output and parent EOF stop its process group
+before a verifiable failure is returned. If cleanup cannot be established, the
+transport fails closed without a preview or an automatic fallback/retry.
+An ordinary idle, lifetime or request-limit retirement emits a terminal fence
+only after the Host has stopped the old process group. If that fence confirms
+a racing request was never accepted, the caller may replace the worker once
+within the same binding and original deadline. An accepted request, missing or
+invalid fence, crash or uncertain cleanup never grants retry permission.
+Input backpressure and partial output reads share the parent's original absolute
+deadline; waiting for the supervised cleanup remains a separate bounded fence.
+POSIX cleanup is process-group scoped; Windows retains the Host owner's
+best-effort process-tree cleanup boundary.
+
+Only loaded modules are reused. Registry/runtime/binding and workspace identity,
+interpreter, environment or packaged-source changes retire the worker. Every
+request still runs the original CLI decision owner and current acceptance,
+validator and workspace reads; no eligibility, authority or result is cached.
+The session is single-flight and bounded to 128 requests, 30 seconds idle and
+five minutes total. Execution and resume keep their original one-shot CLI path,
+including the existing leased Host supervisor's current-execution readback,
+renewal and nested-process cleanup. Lease-bearing commands never enter the
+preview worker; preview reuse grants no lease or execution authority.
+This is an internal transport change, not a new capability setting, execution
+grant or UI source of truth. A one-shot CLI inspection still pays its original cold startup;
+a warm-service measurement is not evidence of a faster cold CLI.
+
+Authority loss at either acceptance read, including the final read after the
+Turn preview, returns the same typed unavailable projection without exposing
+earlier acceptance or executable permission. Workspace loss or replacement
+still takes precedence. A later inspection rereads recovered authority; there
+is no automatic retry, provider promotion or fallback.
+
+中文：长驻 collaboration MCP server 显式启用预检复用；一次性 CLI 和每个请求新建
+服务的 Goal Chat 保留原 fresh CLI subprocess，不启动预检监督进程，也不承担其清理
+成本。这只是入口生命周期选择，不新增用户配置。长驻 `Delegations` 服务的连续预检
+最多复用一个固定工作区的只读 Python CLI
+进程；既有 TS Host owner 负责生命周期。单次预检仍有 60 秒截止时间，超时、取消、
+非法输出或父端 EOF 后，先确认进程组停止，再返回可核验失败；若无法确认清理，
+不给预检结果，也不自动回退或重试。正常空闲、寿命或请求数到期，只有在 TS Host
+确认旧进程组停止后才返回退役屏障。屏障确认竞争中的请求从未被接收时，可在相同
+绑定和原截止时间内更换一次 worker；已接收请求、缺失或非法屏障、崩溃及不确定
+清理均不允许重试。POSIX 按进程组清理，Windows 保留既有的
+best-effort 进程树边界。
+输入管道背压和不完整输出共用父端原绝对截止时间；监督清理仍是另一个有界屏障。
+
+只复用已加载模块，不缓存准入、权限或结果。registry/runtime/binding、工作区身份、
+解释器、环境或包内源码变化时，先退役旧进程；每次仍执行原 CLI 决策 owner，重读
+当前验收、validator 和工作区。单个 session 串行处理，最多 128 次请求、空闲 30 秒、
+总寿命 5 分钟；执行和恢复沿用一次性 CLI，包括既有租约 Host 的当前执行读回、
+续期和嵌套进程清理。带租约的命令不进入预检 worker，预检复用不授予租约或执行
+权限。这不增加配置、授权或 UI 权威。
+一次性 CLI 仍承担原来的冷启动，热服务的加速不能冒充冷 CLI 的加速。
+
+首次验收读取或预检后的末次复读遇到权限存储不可用时，均返回同一类型化不可用
+投影，不返回旧验收或可执行许可；工作区消失或被替换仍优先处理。后续检查重新
+读取已恢复的权限存储，不自动重试、晋升 provider 或回退。
+
+The managed Effect launcher also preloads a small TypeScript module before the
+server's static imports to enable [Node's native compilation cache](https://nodejs.org/api/module.html#module-compile-cache). The default
+cache lives inside the existing private temporary Effect namespace; it stores
+compiled code, not Goal data, decisions or permissions. Node validates module
+contents and separates Node versions. The original source fingerprint, startup
+authentication, readiness checks and request deadlines remain authoritative.
+Cache fill has a first-load cost, and code cache is written on normal Node exit;
+measure first fill separately from populated-cache restart and resident reuse.
+Shutdown drains requests and flushes pending compilation before retiring its
+locator. The locator's existing stop acknowledgement must not let temporary
+namespace cleanup race a later exit-time cache write; request deadlines and
+shutdown authorization are unchanged.
+An unavailable, non-private or symlinked default cache leaves normal source
+execution working, without changing its permissions. Existing explicit
+`NODE_COMPILE_CACHE` behavior is retained. Set `NODE_DISABLE_COMPILE_CACHE=1`
+to disable compilation reuse, including for precise V8 coverage; the default
+preload does not enable it in `NODE_V8_COVERAGE` runs. This internal optimization
+adds no capability setting, frontend/Lark state or authority owner. A faster
+module load alone does not qualify whole-CLI latency or requester adoption.
+
+中文：Effect 启动器在 server 的静态导入之前 preload 一个小型 TS 模块，启用
+Node 原生编译缓存。默认目录位于既有私有临时 Effect namespace；只保存编译后的
+代码，不保存 Goal 数据、判决或权限。Node 校验模块内容并隔离 Node 版本；原源码
+指纹、启动鉴权、就绪校验和请求截止时间保持权威。首次填充有成本，代码缓存在
+Node 正常退出时写出；首次填充、已有缓存的重启和常驻复用须分别测量。
+关闭时先排空请求、刷出待写的编译缓存，再撤销定位文件，避免既有停止回执允许
+临时目录清理后，退出阶段又写入缓存；不延长请求期限或改变关闭授权。默认缓存
+不可用、非私有或为符号链接时，继续执行原源码，不修改既有权限。保留显式
+`NODE_COMPILE_CACHE` 行为；`NODE_DISABLE_COMPILE_CACHE=1` 可关闭编译复用，
+包括精确 V8 coverage 场景；默认 preload 在 `NODE_V8_COVERAGE` 下不启用缓存。
+这不新增 capability 设置、前端／Lark 状态或权限 owner。模块加载变快不等于完整
+CLI 耗时或原请求方采用已验收。
+
+The shared TS Effect dispatcher loads a business owner only when its registered
+method is selected. It retains the resolved handler, not request parameters,
+authority reads or results. The complete source fingerprint still invalidates
+the runtime after source changes; the method table, authentication, source
+transfer, admission and settlement owners remain unchanged. This also changes
+the failure boundary: an unavailable unselected module no longer prevents
+transport startup, while selecting that module rejects the request without a
+fallback. A successful `runtime.ping` proves transport readiness, not execution
+or qualification of every registered method. First-use module cost is included
+in the real caller measurement below, not hidden in a startup-only timer.
+
+Runtime identity also binds the resolved physical source root, not only equal
+source bytes. A copied installer candidate or checkout starts its own loader;
+retiring another copy cannot strand a deferred import or Python bridge in a
+transport that still answers `ping`. Calls within the same resolved source root
+continue to reuse the resident runtime, and every source file remains checked.
+The root is hashed into the existing identity, not published as a new user
+setting or authorization requirement.
+
+中文：共享 TS Effect dispatcher 只在选中已注册方法时加载业务 owner；保留解析后的
+handler，不缓存请求参数、权限读取或结果。完整源码指纹仍负责升级失效，方法表、
+认证、source transfer、准入及结算 owner 不变。错误边界有明确变化：未选模块不可用
+不再阻止传输启动，实际选中该模块时仍拒绝，不静默回退。`runtime.ping` 成功只证明
+传输就绪，不证明全部方法可执行或已验收。首次模块加载计入下方真实调用方测量，
+不能只用启动计时将成本移走后声称提速。
+
+运行时身份也绑定解析后的物理源码目录，而非只比较源码字节。复制出的安装候选或
+工作树使用自己的 loader，避免另一副本被清理后，仍能 `ping` 的传输在延迟导入或
+Python bridge 阶段失效。同一解析目录内仍复用常驻运行时，全部源码文件仍参与校验。
+目录只哈希进既有身份，不新增用户设置或授权要求。
+
+### Preview performance qualification / 预检性能验收
+
+Qualify the useful caller path, not the total duration of a pytest suite. A
+functional suite's execution timeout bounds a stuck test runner; it is not a
+request-latency SLO. Revising a frozen timeout creates a new qualification with
+the old declaration/result retained, never a retroactive pass. For this bounded
+continuous-service slice, use the following calibration profile:
+
+- Run the original preflight suite without dropping cases in a separate
+  qualification stage. A 600-second runner timeout allows real subprocess/
+  backend setup; it does not change the existing
+  60-second preview deadline. Lease lifetime, cancellation, EOF and descendant
+  cleanup regressions remain required separately, as do current validator and
+  workspace drift checks. Passing the timing profile cannot waive these checks.
+  The bounded inline completion validator checks the retained qualification's
+  source, complete results and criteria; it does not rerun the full suite inside
+  an authority transaction or raise that transaction's timeout. Missing or stale
+  evidence refuses completion.
+- Freeze source/interpreter, fixture population, runtime configuration and
+  measurement boundaries before sampling. Compare production-wired reuse with
+  the original fresh-subprocess policy at the same revision, separately for
+  File and SQLite. Use at least six alternating pairs, each with one cold and
+  three warm inspections; isolate runtime processes and retain every sample.
+  Stop the caller's own heavy tests while measuring; disclose shared-host load.
+- Require identical complete unnormalized results and unchanged canonical
+  fixture bytes. Re-read current authority on every inspection; no cached
+  verdict, truncated input, skipped validator or repeated write is admissible.
+- Require each provider's warm median to improve by at least 25%, and the
+  median total of a four-inspection sequence, including its cold request, to
+  improve by at least 15%. These are minimum useful savings, not thresholds
+  fitted to one sample or a promise about a single-use CLI.
+- Permit at most one second of additional cold median and cold maximum versus
+  the paired fresh policy, with no request deadline violation. This explicitly
+  accepts a bounded startup cost only when the sequence still saves time; report
+  cold median/max and the break-even sequence alongside the warm result. A
+  consumer that only inspects once must be assessed as a cold consumer.
+
+CLI and Goal Chat are single-use consumers of this service: verify their real
+entrypoints keep the original subprocess and full readback, separately from the
+MCP repeated-call profile. Do not apply continuous-service gains to HTTP/CLI
+requests or introduce a cross-request authority cache to obtain warm samples.
+
+中文：CLI 和 Goal Chat 是单次消费者，须另验真实入口沿用原 subprocess 与完整读回；
+不能把 MCP 连续调用的收益套到 HTTP/CLI，或为制造热样本引入跨请求权限缓存。
+
+These small-sample median/max checks qualify this transport-policy slice only;
+they establish neither a percentile SLO nor sustained R2, model, installation,
+frontend/Lark or requester-adoption acceptance. A changed workload or source
+needs new qualification. Failure retains the samples and keeps the affected
+acceptance open; do not increase thresholds or sample until a pass appears.
+
+中文：验收有用的调用路径，不再把整套 pytest 总时长当单次请求 SLO。测试执行
+超时仅防挂死；调整已冻结超时属于新一轮验收，保留旧声明与旧失败，不追溯改判。
+本次持续服务切片按以下校准标准验证：原预检套件不删案例，在独立阶段执行，
+runner 超时为 600 秒，
+真实请求的 60 秒截止时间不改；租约生命周期、取消、EOF、子孙进程清理以及当前
+validator／工作区漂移另行必验。内联完成校验只核对对应源码、完整结果及标准，
+不在权威事务内重跑全套或延长事务超时；证据缺失、过期仍拒绝。冻结源码、解释器、
+完整 fixture 与运行配置，
+File／SQLite 分别在同一版本比较真实复用路径和原 fresh 策略；至少六组交替配对，
+每组一冷三热，隔离 runtime、保留全部样本，停止自己的重测试并披露宿主负载。
+完整未改写结果相同、canonical 字节不变，每次仍读当前权限，不能用判决缓存过关。
+每个 provider 热调用中位数至少改善 25%，含冷启动的四次调用总时长中位数至少
+改善 15%；这是最低有用收益，不是对独立 CLI 的承诺。冷启动中位数及最大值最多
+各增加一秒且不违反请求期限；以有界的一次性成本换取整个序列的净收益，同时
+披露冷读与回本调用数。仅调用一次的消费者按冷路径评估。这不认证百分位 SLO、
+R2 持续运行、模型、安装、前端／Lark 或真实请求方采用；变更负载或源码重新验证，
+失败保留样本，不边采边抬线或反复采样挑通过。
+
 中文：预检以 binding 固定的真实 worker 工作树作为安全扫描根。quota 因控制面
 修复延后该精确 Todo 时，返回 `state: turn_blocked`、原选路状态、
 `turn_blocker.reason_code` 和契约错误数；规范验收可能仍已就绪。
@@ -413,6 +610,26 @@ workspace, host, model/effort and validator arguments as an actual delegation,
 through `turn run-once` without `--execute`. It creates no request or Turn,
 does not invoke the host and spends no quota. Host arguments that enable
 execution or retarget the selected work are rejected before the subprocess.
+
+The original workspace guard evaluates `turn run-once` against its explicit
+`--project`, including the scheduler's later decision read. An allowed caller
+directory cannot authorize a different execution destination. Commands without
+a run-once project retain their invocation-directory boundary. This corrects
+the former ambient-directory dependency; it does not change workspace rules,
+binding grants or acceptance. Structured-handler tests exercise the same owner
+from another service directory and concurrent independent registries. Production
+transport selection follows caller lifetime as documented above: short-lived
+callers keep the pinned one-shot subprocess; the long-lived MCP server explicitly
+reuses its supervised preview worker. Both retain the existing timeout. Functional
+parity alone does not establish latency qualification or installed adoption.
+
+中文：原工作区 guard 按 `turn run-once` 的显式 `--project` 校验，包括随后 scheduler
+的决策重读；合格的调用者目录不能授权另一个执行目标。没有 run-once project 的命令
+保留调用目录边界。这修复原先对进程目录的隐式依赖，不改工作区规则、binding grant
+或验收。结构化 handler 测试从不同服务目录、并发独立注册表调用同一 owner。生产传输
+按上文的调用者生命周期选择：短生命周期调用者保留固定的一次性子进程，长生命周期
+MCP 服务显式复用受监督的预览 worker；两者都保留原超时保护。功能一致性通过本身
+不代表耗时达标或已安装采用。
 
 Inspection and its Turn preview load their existing command registrars, not
 unrelated CLI owners. One inspection reuses only the executable TS source

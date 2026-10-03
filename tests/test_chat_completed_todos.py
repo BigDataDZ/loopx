@@ -11,6 +11,13 @@ from loopx.chat_server import ChatHTTPServer, ChatRequestHandler
 from loopx.control_plane.todos.contract import encode_metadata_value
 
 
+def test_history_uses_the_same_readback_owner_through_the_compatibility_facade():
+    from loopx.control_plane.todos.list_readback import list_goal_todos as readback
+    from loopx.todos import list_goal_todos as facade
+
+    assert facade is readback
+
+
 def test_snapshot_pagination_is_bounded_and_stable():
     pages = CompletedTodoPages()
     rows = [{"todo_id": f"todo_{index}"} for index in range(4087)]

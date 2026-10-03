@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .control_plane.runtime.time import chronology_key, now_local_iso
+from .control_plane.goals.state_resolution import resolve_goal_state as resolve_goal_state
 from .control_plane.runtime.run_artifacts import run_file_stem as run_file_stem
 from .control_plane.work_items.delivery_history import require_consistent_delivery_claim
 from .control_plane.work_items.delivery_batch_scale import (
@@ -101,7 +102,7 @@ from .control_plane.goals.goal_frontier import latest_agent_vision_from_runs
 from .control_plane.goals.checkpoint_context_io import (
     checkpoint_commit_guard, commit_checkpoint_run, require_complete_checkpoint_index, inspect_checkpoint_replay,
 )
-from .registry import registry_goals, resolve_state_file
+from .registry import registry_goals as registry_goals, resolve_state_file as resolve_state_file
 from .runtime import validate_goal_id_path_segment
 from .state_projection import (
     active_state_next_action_entries,
@@ -314,46 +315,6 @@ def section_list_items(lines: list[str]) -> list[str]:
             items.append(cleaned)
         index += 1
     return items
-
-
-def resolve_goal_state(
-    *,
-    registry: dict[str, Any],
-    goal_id: str,
-    project_override: Path | None,
-    state_file_override: Path | None,
-) -> tuple[dict[str, Any] | None, Path | None, Path]:
-    goal = next((item for item in registry_goals(registry) if str(item.get("id")) == goal_id), None)
-    project = project_override.expanduser().resolve() if project_override else None
-    if project is None and goal and goal.get("repo"):
-        project = Path(str(goal.get("repo"))).expanduser()
-
-    registered_state_file = (
-        resolve_state_file(project, goal.get("state_file"))
-        if project and goal and goal.get("state_file")
-        else None
-    )
-    state_file = state_file_override.expanduser() if state_file_override else None
-    if state_file is None and goal:
-        state_file = registered_state_file
-    if state_file is None:
-        raise ValueError("state file is required when the goal is not resolvable from registry")
-    if not state_file.is_absolute():
-        if project is None:
-            raise ValueError("relative state file requires --project or registry repo")
-        state_file = project / state_file
-    state_file = state_file.resolve()
-    if state_file_override is not None:
-        if project is None:
-            raise ValueError("--state-file override requires --project or a registry goal with repo")
-        registered_resolved = (
-            registered_state_file.resolve() if registered_state_file is not None else None
-        )
-        if state_file != registered_resolved and not state_file.is_relative_to(project):
-            raise ValueError(
-                f"--state-file {state_file} escapes project root {project}"
-            )
-    return goal, project, state_file
 
 
 def build_state_refresh_record(

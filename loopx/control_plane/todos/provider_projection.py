@@ -18,7 +18,7 @@ from typing import Any
 
 from ...file_lock import exclusive_cross_runtime_file_lock
 from ...history import load_registry
-from ...state_refresh import resolve_goal_state
+from ..goals.state_resolution import resolve_goal_state
 from ..coordination.local_authority import (
     LocalCoordinationAuthorityUnavailable,
     read_canonical_todos_if_promoted,

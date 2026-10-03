@@ -6,12 +6,6 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
-from ..capabilities.agent_turn_recall import (
-    run_configured_agent_turn_recall_fail_open,
-)
-from ..capabilities.periodic_report.cadence_runtime import (
-    extend_cadence_turn_start_dispatch,
-)
 from ..control_plane.goals.first_party_host_admission import (
     FirstPartyHostGoalAdmission,
     capture_first_party_host_goal_ref,
@@ -24,13 +18,10 @@ from ..control_plane.runtime.status_projection_cache import (
 )
 from ..control_plane.turn_driver import (
     build_loopx_turn_plan,
-    codex_cli_session_binding,
     load_loopx_turn_plan_from_journal,
 )
-from .lark_inbox import dispatch_goal_lark_turn_start_hooks
 from .turn_decision import build_fresh_turn_decision_owner
 from .turn_inspection import handle_turn_journal_inspection
-from .turn_managed_step import handle_turn_managed_step
 from .turn_registration import register_turn_commands as register_turn_commands
 from .turn_rendering import (
     build_turn_error_payload,
@@ -69,6 +60,8 @@ def handle_turn_command(
     if inspection_result is not None:
         return inspection_result
     if args.turn_command == "managed-step":
+        from .turn_managed_step import handle_turn_managed_step
+
         return handle_turn_managed_step(
             args, registry_path=registry_path, runtime_root_arg=runtime_root_arg,
             output_format=output_format, print_payload=print_payload,
@@ -113,6 +106,10 @@ def handle_turn_command(
         # Only an executing wake may sync inboxes or reserve a calendar window.
         turn_start_hook_dispatch = {}
         if args.turn_command == "run-once" and args.execute:
+            from ..capabilities.agent_turn_recall import run_configured_agent_turn_recall_fail_open
+            from ..capabilities.periodic_report.cadence_runtime import extend_cadence_turn_start_dispatch
+            from .lark_inbox import dispatch_goal_lark_turn_start_hooks
+
             turn_start_hook_dispatch = dispatch_goal_lark_turn_start_hooks(
                 registry_path=registry_path,
                 runtime_root_arg=runtime_root,
@@ -169,6 +166,8 @@ def handle_turn_command(
             and args.iteration_context != "fresh"
             and turn_envelope.get("effective_action") != EffectiveAction.GOVERNED_CAPABILITY_INTENT.value
         ):
+            from ..control_plane.turn_driver.codex_cli import codex_cli_session_binding
+
             session_binding = (
                 codex_cli_session_binding(
                     runtime_root,
@@ -263,11 +262,8 @@ def handle_turn_command(
                     goal_id=args.goal_id,
                     turn_key=args.resume_turn_key,
                 )
-                envelope = (
-                    payload.get("turn_envelope")
-                    if isinstance(payload.get("turn_envelope"), dict)
-                    else {}
-                )
+                raw_envelope = payload.get("turn_envelope")
+                envelope = raw_envelope if isinstance(raw_envelope, dict) else {}
                 if envelope.get("agent_id") != args.agent_id:
                     raise ValueError(
                         "LoopX Turn resume journal belongs to another agent"

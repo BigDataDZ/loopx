@@ -63,6 +63,8 @@ GOAL_STOPPED_MODE = "goal_stopped"
 def _apply_selected_todo_guards(
     prepared: _QuotaDecisionPreparation,
     route: _QuotaDecisionRoute,
+    *,
+    workspace_path: Path | None = None,
 ) -> _QuotaDecisionRoute:
     """Bind workspace and boundary guards to the exact projected Todo.
 
@@ -118,6 +120,7 @@ def _apply_selected_todo_guards(
             prepared.agent_identity,
             agent_todo_summary=prepared.agent_todo_summary,
             selected_todo=selected_todo,
+            current_path=workspace_path,
         )
     boundary_projection_repair = build_boundary_projection_repair_hint(
         prepared.goal_boundary,
@@ -284,6 +287,7 @@ def build_quota_should_run(
     receipt_bound_replan_guard_scoped: bool = False,
     turn_instance_id: str | None = None,
     runtime_root: str | Path | None = None,
+    workspace_path: Path | None = None,
     goal_ref: Mapping[str, object] | None = None,
 ) -> dict[str, Any]:
     safe_goal_id = str(goal_id or "").strip()
@@ -357,7 +361,7 @@ def build_quota_should_run(
             receipt_bound_replan_guard_scoped=receipt_bound_replan_guard_scoped,
         )
         route = _resolve_quota_should_run_route(prepared)
-        route = _apply_selected_todo_guards(prepared, route)
+        route = _apply_selected_todo_guards(prepared, route, workspace_path=workspace_path)
         return _build_quota_should_run_payload(
             prepared,
             route,

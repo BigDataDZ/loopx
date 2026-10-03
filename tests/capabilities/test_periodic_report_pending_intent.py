@@ -79,8 +79,8 @@ def test_calendar_actual_cli_preserves_capability_action_without_host(tmp_path, 
     prefix = ["--registry", str(registry), "--runtime-root", str(runtime), "--format", "json"]
     scope = ["--goal-id", GOAL_ID, "--agent-id", AGENT_ID, "--scan-path", str(tmp_path)]
     with monkeypatch.context() as read_only:
-        read_only.setattr("loopx.cli_commands.turn.dispatch_goal_lark_turn_start_hooks", no_host)
-        read_only.setattr("loopx.cli_commands.turn.extend_cadence_turn_start_dispatch", no_host)
+        read_only.setattr("loopx.cli_commands.lark_inbox.dispatch_goal_lark_turn_start_hooks", no_host)
+        read_only.setattr("loopx.capabilities.periodic_report.cadence_runtime.extend_cadence_turn_start_dispatch", no_host)
         main([*prefix, "turn", "plan", *scope, "--host", "generic-cli",
               "--execution-mode", "isolated-headless"])
         cold_plan = json.loads(capsys.readouterr().out)

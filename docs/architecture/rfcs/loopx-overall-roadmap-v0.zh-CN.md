@@ -456,7 +456,64 @@ DSH 采用已验收分析并处理修订，Ark 采用已验收的修订证据。
 本地 Goal 对话现可按需读取该持久目录，并按绑定调用实际 Turn dry-run 与所选
 executor/profile 检查启动条件。任务准入、当前 pinned 验收绑定、运行时可用性分开
 表达；未探测的通用/云端运行时保留未知。CLI、已启用 MCP 和新 Chat 工具共用此
-检查，不新增状态账本，也不启动执行。同一 owner 本地面板可打开当前核验产物正文、版本及来源标识，向原协调员收件箱
+检查，不新增状态账本，也不启动执行。
+
+[#5283](https://github.com/loopx-project/loopx/pull/5283) 是拟交付的 S2/S10
+只读预检成本切片：摘要与继承验证共用既有 TS owner 请求，空继承行跳过传输；
+读模型与写适配器分离，未选中的报告、Lark、扩展及 Host 路由延迟加载。兼容导出
+保持原 owner 对象身份，完整源事实、计数、排序与当前验收仍是权威。
+只有长驻 MCP 服务复用由既有 TS Host 监督的私有只读 Python CLI worker，每次
+重新进入原 CLI/Turn owner 并新读权限与 validator；CLI 与 Goal Chat HTTP 保留
+fresh subprocess，执行、恢复和写入沿用原租约传输。固定 workspace/registry/
+runtime/Goal/Agent/Todo 分区、源码/环境失效、单次 60 秒、最多 128 次、空闲 30 秒
+及总寿命 5 分钟形成边界。确认正常退役且请求尚未接收时，才可在原截止时间内换一次
+worker；已接收请求失败或清理不确定不允许重放。源码元数据仍完整新读，目录条目
+遍历只减少调用方 IO，不缓存权限或结果。Git 根目录只在同次新鲜观测内复用。
+投影发现仍拒绝歧义镜像，不选择机器默认、不迁移状态。
+
+按既定[调用路径标准](../../reference/local-delegation.md#preview-performance-qualification--预检性能验收)
+保留全部原功能案例，核对完整结果相等、fixture 未变及每个 File/SQLite provider
+六组交替配对。旧失败保持失败：`b7cb2dc3` 的 File 冷读最大值新增超过 1 秒，虽热读、
+序列净节省及 SQLite 已通过。本次还修复了已复现的空闲/寿命退役竞争，最终头须
+独立验收；导入/RPC 减少或单次加速不算验收。确切头及当前结果由 PR 验证记录维护。
+R2 持续运行、真实调用方采用、冷 CLI/p95 与 provider 准入仍是独立开放验收；
+此 PR 不代表 Python 规划退役或机器默认切换。
+
+English:
+[PR #5283](https://github.com/loopx-project/loopx/pull/5283) is the proposed
+S2/S10 read-preview cost slice. Summary and succession validation share the
+existing TS owner request; empty succession skips transport. Read models are
+isolated from mutation adapters, and unselected report, Lark, extension and Host
+routes load lazily. Compatibility exports retain the original owner objects;
+complete provider facts, counts, ordering and acceptance remain authoritative.
+Only the long-lived MCP service reuses a private read-only Python CLI worker,
+under the existing TS Host supervisor. Each request re-enters the original
+CLI/Turn owner with fresh authority and validation reads. CLI and Goal Chat HTTP
+retain fresh subprocesses; execution, resume and mutations keep their existing
+leased transport. Fixed workspace/registry/runtime/Goal/Agent/Todo partitions,
+source/environment invalidation, 60-second requests, 128 requests, 30-second idle
+and five-minute lifetime limits bound the worker. A confirmed ordinary retirement
+can replace the worker for an unaccepted request within the original deadline;
+accepted-request failures and uncertain cleanup never permit replay. Source
+metadata remains complete and fresh; directory-entry traversal reduces caller
+IO without caching authority or results. Git-root reuse is confined to a single
+fresh observation. Projection discovery still rejects ambiguous mirrors and
+never selects a machine default or migrates state.
+
+Qualification follows the frozen
+[caller-path protocol](../../reference/local-delegation.md#preview-performance-qualification--预检性能验收),
+with all original functional cases, exact complete-result parity, unchanged
+fixtures and six alternating pairs per File/SQLite provider. Historical failed
+experiments remain failed: at `b7cb2dc3`, File's added cold maximum exceeded the
+one-second allowance, although warm/sequence savings and SQLite passed. The
+current repair also closes reproduced idle/lifetime retirement races. Its final
+head needs independent qualification; fewer imports/RPCs or one fast sample are
+not acceptance. Current results and exact head belong in the PR's validation
+record. Sustained R2, real caller adoption, cold-CLI/p95 qualification and provider
+admission remain separate open acceptances; this PR does not retire Python
+planning or establish a machine default.
+
+同一 owner 本地面板可打开当前核验产物正文、版本及来源标识，向原协调员收件箱
 反馈，并显示协调员暂停的实际范围。读取失效时清除旧内容；投递不等于应用、验收
 不等于请求方采用、暂停协调员不等于停止成员。可选的类型化输入现可绑定回应、修订、
 使用所针对的已验收版本；请求方显式采用记录绑定使用该输入的后续已验收结果。面板

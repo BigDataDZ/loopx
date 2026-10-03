@@ -20,7 +20,7 @@ from .control_plane.goals.activation import (
 )
 from .control_plane.goals.legacy_event_source import LEGACY_TODO_EVENT_SOURCE_FIELDS
 from .control_plane.quota.monitor_poll import QUOTA_MONITOR_POLL_CLASSIFICATION
-from .control_plane.quota.slot_accounting import (
+from .control_plane.quota.ledger_readback import (
     QUOTA_SLOT_SPENT_CLASSIFICATION,
     QUOTA_SLOT_VOIDED_CLASSIFICATION,
 )
