@@ -1787,7 +1787,7 @@ function PersonalGoalHome({
           // returning must still find the card. Only the transcript update below
           // belongs to the mounted view, so this runs before the cancellation
           // guard that retires the pending reply.
-          const recoveryGoalId = targetContextId !== "manager" ? activeSnapshot?.session.goal_id : undefined;
+          const recoveryGoalId = targetContextId !== "manager" ? activeSnapshot?.session.goal_id ?? undefined : undefined;
           const proposalsProjected = await projectRecoveredTurnProposals(targetContextId, recoveryGoalId, streamed.turnId, streamed.response.proposals, streamingMessageId);
           if (cancelled) return;
           updateConversationMessage(targetContextId, streamingMessageId, {

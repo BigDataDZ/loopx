@@ -674,7 +674,8 @@ export type ChatStreamEvent = {
 
 export type ChatSessionSummary = {
   session_id: string;
-  goal_id: string;
+  goal_id: string | null;
+  project_ref?: string | null;
   agent_id: string;
   adapter_kind: string;
   channel_id?: string;
@@ -691,6 +692,18 @@ export type ChatSessionSummary = {
   host_surface?: string | null;
   manager_runtime?: ManagerRuntimeSessionReadback | null;
 };
+
+export type ChatProject = {project_ref: string; title: string; grant: "workspace_read"};
+
+export async function fetchChatProjects(signal?: AbortSignal) {
+  return requestJson<{ok: true; projects: ChatProject[]}>("/api/chat/projects", {signal});
+}
+
+export async function createProjectChatSession(projectRef: string, mode: "new" | "resume_latest" = "resume_latest") {
+  return requestJson<{ok: true; session_id: string; resumed: boolean; session: ChatSessionSummary}>("/api/chat/sessions", {
+    method: "POST", body: JSON.stringify({context_kind: "project", project_ref: projectRef, mode}),
+  });
+}
 
 /** ``chat_store`` Session modes; an omitted mode is a managed runtime Session. */
 export type ChatSessionMode = "managed_runtime" | "attached_host";
