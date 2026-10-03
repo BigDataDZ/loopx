@@ -26,7 +26,13 @@ def crowded_turn_probe(monkeypatch: pytest.MonkeyPatch):
             return {}
         return {"loopx_turn_plan": commands(**kwargs)["loopx_turn_plan"]}
 
+    def assert_turn_json_matrix(scenarios):
+        assert set(scenarios) == {"crowded"}
+        assert set(scenarios["crowded"]) == {"loopx_turn_plan"}
+        assert set(scenarios["crowded"]["loopx_turn_plan"]) == {"json"}
+
     monkeypatch.setattr(probe, "_surface_commands", turn_json_only)
+    monkeypatch.setattr(probe, "_assert_scenario_matrix", assert_turn_json_matrix)
     return runpy.run_path(str(RUNNER))["_default_rows"]
 
 
