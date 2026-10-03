@@ -27,9 +27,19 @@ class LarkPrivateConversations:
         self.root = controller.store.root / "lark-private-deliveries"
 
     def profiles(self) -> dict[str, dict[str, str]]:
-        return {row["transport_ref"]: {"cli_bin": self.cli_bin, "provider_ref": row["provider_ref"],
-                                     "binding_id": row["binding_id"], "consumer_ref": self.bindings.observe(row["transport_ref"])["consumer_ref"]}
-                for row in self.bindings.read()["bindings"]}
+        profiles = {}
+        for row in self.bindings.read()["bindings"]:
+            try:
+                observation = self.bindings.observe(row["transport_ref"])
+            except (ValueError, OSError):
+                # One App's expired login must not block the independently
+                # verified App from acquiring its own listener lease.
+                continue
+            if any(observation.get(field) != row[field] for field in ["provider_ref", "operator_ref"]):
+                continue
+            profiles[row["transport_ref"]] = {"cli_bin": self.cli_bin, "provider_ref": row["provider_ref"],
+                "binding_id": row["binding_id"], "consumer_ref": observation["consumer_ref"]}
+        return profiles
 
     def health(self) -> dict[str, dict[str, int]]:
         health: dict[str, dict[str, int]] = {}

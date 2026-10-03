@@ -239,3 +239,23 @@ def test_private_app_alias_guard_rejects_unknown_or_unverified_identity():
             return {"returncode": 0, "stdout": json.dumps(data), "stderr": ""}
         with pytest.raises(ValueError, match="could not be verified"):
             _app_identity_for_private_guard("notes-app", unverified, "lark-cli")
+
+
+def test_one_expired_app_identity_does_not_hide_the_other_listener(ordinary):  # noqa: F811
+    _, runtime, _, transport = connect(ordinary)
+    original = transport.bindings.observe
+    def observe(profile):
+        if profile == "steward-app":
+            raise ValueError("this App owner is no longer verified")
+        return original(profile)
+    transport.bindings.observe = observe
+    try:
+        assert set(transport.profiles()) == {"notes-app"}
+        transport.bindings.observe = lambda profile: {**original(profile), "operator_ref": "f" * 24}
+        assert transport.profiles() == {}
+        transport.bindings.observe = observe
+        rejected = {"message_id": "om_unknown", "chat_id": "oc_steward_app", "sender_id": "ou_steward_app",
+                    "chat_type": "p2p", "sender_type": "user", "message_type": "text", "content": "unverified"}
+        assert transport.admit("steward-app", rejected)["status"] == "audience_rejected"
+    finally:
+        runtime.close()
