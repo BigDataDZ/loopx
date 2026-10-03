@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import json
-import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from test_native_child_replan_guard_cli import AGENT, GOAL, ROOT, TODO, TURN, _fixture
+from test_native_child_replan_guard_cli import AGENT, GOAL, ROOT, TODO, TURN, _admitted_guard, _fixture
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
@@ -17,16 +16,7 @@ def test_closed_replan_only_accepts_existing_native_operations(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str,
 ) -> None:
     call, runtime, index = _fixture(tmp_path, monkeypatch, provider, True)
-    guard = call("quota", "should-run", "--codex-app", "--goal-id", GOAL,
-                 "--agent-id", AGENT, "--turn-instance-id", TURN)
-    obligation_id = guard["autonomous_replan_obligation"]["obligation_id"]
-    assert "settlement_identity" not in guard["heartbeat_receipt"]
-    deferred = call("quota", "should-run", "--codex-app", "--goal-id", GOAL,
-                    "--agent-id", AGENT, "--turn-instance-id", TURN,
-                    "--todo-id", TODO, expected_code=1)
-    assert deferred["action_selection_qualification"]["state"] == "deferred"
-    [reentry] = deferred["interaction_contract"]["cli_channel"]["next_cli_actions"]
-    guard = call(*shlex.split(reentry)[1:])
+    guard = _admitted_guard(call, True)
     original = guard["heartbeat_receipt"]["settlement_identity"]
     base = ("native-child", "--goal-id", GOAL, "--agent-id", AGENT, "--turn-instance-id", TURN)
 
@@ -45,7 +35,7 @@ def test_closed_replan_only_accepts_existing_native_operations(
         "--text", "Independently validate the source artifact", "--task-class", "advancement_task",
         "--action-kind", "validate", "--target-key", "independent-source-artifact",
         "--operation-id", "native-late-source-successor",
-        "--replan-obligation-id", obligation_id)
+        "--replan-obligation-id", guard["autonomous_replan_obligation"]["obligation_id"])
     assert added["replan_transition"]["recorded"] is True
     binding = ("--goal-id", GOAL, "--agent-id", AGENT, "--todo-id", TODO, "--turn-instance-id", TURN)
     refreshed = call("refresh-state", *binding, "--classification", "bounded_replan_progress",
