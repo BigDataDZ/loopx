@@ -10,6 +10,28 @@
 - Evaluation: [steward golden queries](../../product/use-cases/steward/golden-queries.md).
 - Language: [Chinese semantic mirror](app-conversation-and-async-inbox-v0.zh-CN.md).
 
+## Ordinary workspace conversations: bounded implementation checkpoint
+
+The Core Chat entry can now open an ordinary workspace Session independently
+of a Goal or steward. Settings → Project conversation selects an explicitly
+configured host workspace, sends a read-only request, resumes its native thread,
+opens a new Session or closes the selected one. The shared typed context owner
+checks the exact workspace reference and current grant; missing roots, retargeted
+symlinks and changed grants fail closed. No Goal is synthesized, no portfolio
+context is injected, and the workspace grant cannot authorize peer delegation.
+
+This extends the existing conversation-scope owner with `project_workspace` and
+an exact host-observation contract, rather than introducing provider-local Session
+authority. Python owns filesystem observations and the existing durable Chat store;
+the TypeScript owner decides context identity and scope. Native Codex resume retains
+the original upstream thread and workspace. HTTP/protocol fixtures qualify that
+continuity and denial behavior; they do not establish real model adoption.
+
+The initial grant is workspace reading for the local owner. Lark audience grants,
+ordinary private-message selection, durable inbound admission independent of
+terminal delivery, and installed/mobile acceptance remain open work in this RFC.
+The new settings companion does not qualify those journeys or authorize edits.
+
 ## Decision: make the App the place where work conversations continue
 
 Users should be able to say “接着做，结果给我” / “Keep going and bring me the result”
