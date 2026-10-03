@@ -23,9 +23,24 @@ grant 授权 peer delegation。
 store，TypeScript 负责上下文身份及范围。原生 Codex 恢复保留原 upstream thread
 和工作区；HTTP/协议 fixture 验证连续性与拒绝行为，不证明真实模型采用了上下文。
 
-首个 grant 仅面向本机 owner 的工作区读取。Lark 受众授权、普通私聊选择、独立于
-terminal delivery 的 durable 入站 admission，以及安装/手机验收仍是本 RFC 的未完成项。
-新的设置入口不代表这些旅程已通过，也不授权修改文件。
+本机 owner 的只读工作区入口现已接入独立核验的 Lark App 私聊绑定。既有设置 →
+Lark 页面选择一个非默认 App、当前可用工作区和宿主 executor，读回监听状态、待回复
+数量及恢复缺口；重新绑定不会把旧 Session 移到其它工作区。
+
+共享 typed Core 核验 App、本人、受众和当前工作区 grant，拥有稳定 Session、原生
+Turn FIFO 和确切 stop/new/status 目标。传输层保存独立的受理与最终投递意图，通过
+provider 读回确认回复；发生没有 receipt 的不确定写入时不盲目重发。两 App 复用
+现有服务及按 App 获取的 listener lease，不创建第二套队列、模型 runner 或隐藏 Goal。
+
+源码 canary 已验证打包页面的桌面/窄屏、撤权拒绝与恢复、慢会话期间另一 App 完成、
+后续消息持久排队、exact stop，以及重启后原会话恢复和已确认回复不重复发送。
+这些是合成 provider/协议验收；真实原生 Codex 另行验证独立线程与上下文隔离。
+真实 Lark 收发、安装候选、手机旅程、注册 Agent 选择、媒体/增量/权限回调，以及
+新管家的明确长期委托仍未验收。当前私聊绑定仅支持普通只读项目会话。
+
+![合成私聊工作区设置](../../assets/personal-workspace/private-project-conversations.png)
+![窄屏私聊设置](../../assets/personal-workspace/private-project-conversations-narrow.png)
+![工作区撤权读回](../../assets/personal-workspace/private-project-workspace-revoked.png)
 
 ## 决策：让 App 成为工作会话持续进行的地方
 
