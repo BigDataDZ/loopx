@@ -20,7 +20,7 @@ from .chat import (
     redact_local_paths,
 )
 from .chat_agent import CodexChatAgentError
-from .chat_project_context import ChatProjectContexts
+from .capabilities.native_chat.project_context import ChatProjectContexts
 from .chat_attachments import (
     CHAT_JSON_MAX_BYTES,
     CHAT_TURN_MAX_BODY_BYTES,

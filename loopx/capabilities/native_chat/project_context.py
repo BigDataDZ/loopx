@@ -11,7 +11,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-from .control_plane.effect_runtime import EffectRuntimeRejected, effect_runtime_result
+from ...control_plane.effect_runtime import EffectRuntimeRejected, effect_runtime_result
 
 
 PROJECT_CONVERSATION_OBJECTIVE = (

@@ -19,7 +19,7 @@ from .chat_manager import (
     manager_session_model_allocation,
 )
 from .chat_coordination import PROJECT_COORDINATION_GUIDANCE, PROJECT_CONTEXT_VERSION
-from .chat_project_context import ChatProjectContexts
+from .capabilities.native_chat.project_context import ChatProjectContexts
 from .control_plane.collaboration import conversation_scope
 from .capabilities.manager_runtime import (
     load_effective_manager_runtime_profile, manager_runtime_session_fields,

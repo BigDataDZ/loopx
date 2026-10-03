@@ -8,7 +8,7 @@ import threading
 
 import pytest
 
-from loopx.chat_project_context import ChatProjectContexts
+from loopx.capabilities.native_chat.project_context import ChatProjectContexts
 from loopx.chat_runtime import ChatRuntimeController
 from loopx.chat_server import ChatHTTPServer, ChatRequestHandler
 from loopx.chat_store import ChatSessionStore
