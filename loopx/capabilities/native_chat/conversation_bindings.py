@@ -32,9 +32,12 @@ class ChatConversationBindings:
     @staticmethod
     def _core(operation: str, params: dict[str, Any]) -> dict[str, Any]:
         try:
-            return effect_runtime_result(operation, params)
+            result = effect_runtime_result(operation, params)
         except EffectRuntimeRejected as exc:
             raise ValueError(str(exc)) from exc
+        if not isinstance(result, dict):
+            raise ValueError("conversation authority returned an invalid result")
+        return result
 
     def configure(self, *, transport_ref: str, project_ref: str,
                   executor_endpoint_id: str) -> dict[str, Any]:
@@ -69,7 +72,7 @@ class ChatConversationBindings:
                 _atomic_write_json(self.path, result["state"])
             if self.read() != result["state"]:
                 raise OSError("conversation binding revocation did not verify")
-            return result["state"]
+            return dict(result["state"])
 
     def resolve(self, *, binding_id: str, source_ref: str, sender_ref: str,
                 private_human_message: bool, session_context: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -10,7 +10,8 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from .goal_channel_transport import APP_ID_PATTERN, OPEN_ID_PATTERN, call, json_payload, lark_args
+from .goal_channel_transport import APP_ID_PATTERN, call, json_payload, lark_args
+from .identity_shapes import LARK_OPEN_ID_PATTERN as OPEN_ID_PATTERN
 from .goal_topic_connections import _profile_ref
 from .presentation.kanban import CommandRunner
 
@@ -33,7 +34,9 @@ def observe_lark_conversation_identity(*, profile: str, runner: CommandRunner,
     app_id = str(payload.get("appId") or "")
     if result.get("returncode") != 0 or not APP_ID_PATTERN.fullmatch(app_id):
         raise ValueError("the selected App identity could not be verified")
-    if not all(isinstance(row, Mapping) and row.get("available") is True and row.get("verified") is True
+    if not isinstance(bot, Mapping) or not isinstance(owner, Mapping):
+        raise ValueError("verify this App and its owner independently before binding private Chat")
+    if not all(row.get("available") is True and row.get("verified") is True
                for row in [bot, owner]):
         raise ValueError("verify this App and its owner independently before binding private Chat")
     owner_id = str(owner.get("openId") or "")

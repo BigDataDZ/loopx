@@ -49,7 +49,7 @@ from .chat_session_open import open_chat_session
 from .chat_ssh_source_api import SshSourceRequestMixin
 from .chat_store import ChatSessionStore
 from .capabilities.native_chat.conversation_bindings import ChatConversationBindings
-from .capabilities.native_chat.private_conversation_api import PrivateConversationRequestMixin, PRIVATE_CONVERSATIONS_PATH
+from .extensions.lark.private_conversation_api import PrivateConversationRequestMixin, PRIVATE_CONVERSATIONS_PATH
 from .extensions.lark.conversation_identity import observe_lark_conversation_identity
 from .extensions.lark.private_conversations import LarkPrivateConversations
 from .chat_loopx_mode import handle_loopx_request

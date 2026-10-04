@@ -3,7 +3,7 @@ import {connectPrivateConversation, disconnectPrivateConversation, fetchPrivateC
   fetchChatProjects, fetchChatCapabilities, fetchLarkApps, type PrivateConversation,
   type ChatProject, type LarkApp} from "../../data/chat";
 import {useWorkspaceI18n} from "./i18n";
-import "./project-conversation.css";
+import "./private-conversation.css";
 
 export function PrivateConversationPanel() {
   const {locale} = useWorkspaceI18n();
@@ -53,7 +53,7 @@ export function PrivateConversationPanel() {
     try {await operation(); await refresh();} catch (error) {setError(String(error));}
     finally {setBusy(false);}
   }
-  return <section className="personal-detail-card personal-project-conversation" aria-label={zh ? "本人飞书私聊" : "Owner private Chat"}>
+  return <section className="personal-detail-card personal-private-conversation" aria-label={zh ? "本人飞书私聊" : "Owner private Chat"}>
     <h3>{zh ? "本人私聊 · 项目对话" : "Owner private Chat · Project conversation"}</h3>
     <p>{zh ? "每个 App 单独核验登录本人，只读讨论所选工作区。普通私聊不会创建 Goal。" : "Verify the logged-in owner independently for each App. Discuss the selected workspace with a read grant; ordinary private Chat creates no Goal."}</p>
     {rows.map(row => <article key={row.binding_id}>

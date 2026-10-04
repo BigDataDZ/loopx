@@ -172,7 +172,7 @@ def test_new_session_replay_cannot_close_a_later_session(ordinary):  # noqa: F81
 
 def test_private_setup_companion_verifies_each_app_and_redacts_subjects(ordinary, tmp_path):  # noqa: F811
     from types import SimpleNamespace
-    from loopx.capabilities.native_chat.private_conversation_api import PrivateConversationRequestMixin
+    from loopx.extensions.lark.private_conversation_api import PrivateConversationRequestMixin
     _, runtime, _, transport = connect(ordinary)
     registry = tmp_path / "fresh-registry.json"
     registry.write_text(json.dumps({"schema_version": "0.1", "goals": []}))
