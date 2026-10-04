@@ -37,6 +37,7 @@ export type WorkspaceAgentTodo = {
   resumeWhen?: string | null;
   resumeReady?: boolean | null;
   resumeReceiptId?: string | null;
+  blockedReason?: string | null;
   claimedBy?: string | null;
   dependencies?: string[];
   done: boolean;
@@ -55,7 +56,7 @@ export type WorkspaceAgentTodo = {
 
 /** Both active status and retained history carry the same inspector facts. */
 export function workspaceAgentTodoFromItem(todo: Pick<TodoItem,
-  "todo_id" | "text" | "done" | "status" | "claimed_by" | "evidence" | "note"
+  "todo_id" | "text" | "done" | "status" | "claimed_by" | "evidence" | "note" | "reason"
   | "priority" | "task_class" | "task_domain" | "completed_at" | "resume_when"
   | "resume_ready" | "resume_condition" | "completion_validation_sha256"
   | "completion_validation_revision" | "completion_validation_revision_history"
@@ -68,6 +69,7 @@ export function workspaceAgentTodoFromItem(todo: Pick<TodoItem,
     text: todo.text,
     done: todo.status === "deferred" ? false : todo.done,
     status: todo.status ?? null,
+    blockedReason: todo.status === "blocked" ? todo.reason?.trim() || null : null,
     claimedBy: todo.claimed_by ?? null,
     evidence: todo.evidence || todo.note || null,
     priority: todo.priority ?? null,

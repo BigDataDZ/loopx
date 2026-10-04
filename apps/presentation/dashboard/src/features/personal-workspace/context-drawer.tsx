@@ -4,6 +4,7 @@ import type {DecisionOutcome} from "../../../../../../loopx/control_plane/todos/
 import { attentionSuccessor, canDecideAttention, canReviewAttention } from "./attention-details";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
   Bell,
   Bot,
@@ -636,6 +637,10 @@ export function ContextDrawer({ agents, attentionHistory = [], onSelectAttention
                 <span>{selection.item.taskClass === "advancement_task" ? t("drawer.taskAdvancement") : selection.item.taskClass ?? t("drawer.taskOrdinary")}</span>
               </div>
               <h3>{selection.item.text}</h3>
+              {selection.item.status === "blocked" && !selection.item.done ? <section aria-label={t("drawer.blockedReason")} className="personal-task-blocked-reason" data-recorded={selection.item.blockedReason ? "true" : "false"}>
+                <h4><AlertCircle size={14} />{t("drawer.blockedReason")}</h4>
+                <p>{selection.item.blockedReason ?? t("drawer.blockedReasonMissing")}</p>
+              </section> : null}
             </section>
             <section aria-label={t("drawer.taskInfo")} className="personal-task-inspector-fields">
               <h4>{t("drawer.taskInfo")}</h4>
@@ -654,7 +659,7 @@ export function ContextDrawer({ agents, attentionHistory = [], onSelectAttention
                   <div><dt>{t("drawer.validationDigest")}</dt><dd><code>{selection.item.validationDigest}</code></dd></div>
                   {selection.item.validationRevisionActor ? <div><dt>{t("drawer.validationRevisionActor")}</dt><dd>{selection.item.validationRevisionActor}</dd></div> : null}
                 </> : null}
-                <div><dt>{t("drawer.nextTransition")}</dt><dd>{selection.item.nextTransition ?? (selection.item.done ? t("drawer.taskNextCompleted") : selection.item.resumeReady ? t("drawer.taskNextResumeReady") : selection.item.status === "deferred" ? t("drawer.taskNextDeferred") : t("drawer.taskNextOpen"))}</dd></div>
+                <div><dt>{t("drawer.nextTransition")}</dt><dd>{selection.item.nextTransition ?? (selection.item.done ? t("drawer.taskNextCompleted") : selection.item.resumeReady ? t("drawer.taskNextResumeReady") : selection.item.status === "deferred" ? t("drawer.taskNextDeferred") : selection.item.status === "blocked" ? t("drawer.taskNextBlocked") : t("drawer.taskNextOpen"))}</dd></div>
               </dl>
             </section>
             {!readOnly && !selection.item.done ? <div className="personal-task-inspector-actions" aria-label={t("drawer.taskActions")}>
