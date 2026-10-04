@@ -585,6 +585,7 @@ export function createEffectRuntimeHandlers(
     ["collaboration.delegation.observe", lazyHandler(() => import("./collaboration/delegation.ts"), ({transitionDelegationObservation}) => transitionDelegationObservation)],
     ["collaboration.delegation.observe_wake", lazyHandler(() => import("./collaboration/delegation.ts"), ({decideDelegationWakeObservation}) => decideDelegationWakeObservation)],
     ["collaboration.delegation.recover_validated_settlement", lazyHandler(() => import("./collaboration/delegation.ts"), ({recoverValidatedDelegationSettlement}) => recoverValidatedDelegationSettlement)],
+    ["collaboration.delegation.stop", lazyHandler(() => import("./collaboration/delegation.ts"), ({decideDelegationStop}) => decideDelegationStop)],
     ["collaboration.delegation.adoption", lazyHandler(() => import("./collaboration/delegation.ts"), ({recordDelegationAdoption}) => recordDelegationAdoption)],
     [
       "collaboration.request.normalize",

@@ -282,7 +282,12 @@ def test_real_source_edit_reloads_python_module_and_environment(tmp_path):
 def test_concurrent_services_preserve_registry_runtime_and_workspace_partition(service, tmp_path, request, monkeypatch):
     root, first = service
     second_root, second = delegation_service.__wrapped__(
-        tmp_path / "second", SimpleNamespace(param=request.node.callspec.params["delegation_service"]), monkeypatch
+        tmp_path / "second",
+        SimpleNamespace(
+            param=request.node.callspec.params["delegation_service"],
+            addfinalizer=request.addfinalizer,
+        ),
+        monkeypatch
     )
     second = reusable_service(second)
     expected = [runner.inspect("analysis") for runner in (first, second)]
@@ -544,3 +549,36 @@ def test_invalid_retirement_fence_cannot_replay_a_request(tmp_path, monkeypatch,
                           argv=("inspect",), timeout=5)
     assert len(calls) == 2, "invalid fence must not start a second worker"
     assert transport._process is None
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX supervisor cancellation")
+def test_stop_during_preview_delivery_does_not_rearm_idle_retirement(tmp_path):
+    """A result callback resumed after stop must not keep the supervisor alive."""
+    from loopx.control_plane.collaboration.delegation_preview_transport import DelegationPreviewTransport
+
+    worker = ("import json,sys\nfor line in sys.stdin:\n"
+              " r=json.loads(line);print(json.dumps({'kind':'preview','id':r['id'],"
+              "'returncode':0,'value':{'read_only':True}}),flush=True)")
+    # Invoke the real signal handler during emit(), before the result callback
+    # resumes and tries to arm idle retirement. Only the event ordering is forced;
+    # Host execution, cancellation, process cleanup and readback remain real.
+    preload = ("const write=process.stdout.write.bind(process.stdout);"
+               "process.stdout.write=(chunk,...args)=>{"
+               "if(String(chunk).includes('\"kind\":\"preview\"'))process.emit('SIGTERM');"
+               "return write(chunk,...args)}")
+    environment = {**_pinned_release_environment(),
+                   "NODE_OPTIONS": "--import=data:text/javascript," + quote(preload, safe="")}
+    transport = DelegationPreviewTransport()
+    try:
+        assert transport.preview(command=[sys.executable, "-c", worker], workspace=tmp_path,
+                                 release=tmp_path, environment=environment,
+                                 registry=tmp_path / "registry.json", runtime_root=tmp_path / "runtime",
+                                 goal_id="fixture", agent_id="lead", todo_id="todo_fixture",
+                                 argv=("inspect",), timeout=5) == {"read_only": True}
+        process = transport._process
+        assert process is not None
+        transport.close()
+        assert process.poll() == 0
+        assert transport._process is None
+    finally:
+        transport.close()

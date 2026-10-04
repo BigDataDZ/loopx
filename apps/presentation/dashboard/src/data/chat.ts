@@ -1126,14 +1126,17 @@ export function readManagedGoalResult(goalId: string, todoId: string) {
   );
 }
 export type DelegationState = "unavailable" | "accepted" | "rejected" | "recovery_required"
-  | "executing" | "validating" | "dispatched" | "unknown";
+  | "stopped" | "executing" | "validating" | "dispatched" | "unknown";
 type DelegationStateFacts = {status: string; worker_active?: boolean; recovery_required: boolean | null};
 // Keep inventory and selected-operation labels consistent; unknown states stay unknown.
-// "executing" and "validating" require an active worker observation, never the stored status alone.
 export function delegationState(row: DelegationStateFacts): DelegationState {
   if (row.status === "unavailable") return "unavailable";
   if (row.status === "accepted") return "accepted";
   if (row.status === "rejected") return "rejected";
+  // A recorded stop precedes recovery: only the separate stop receipt proves
+  // the original execution released its Host group, so the stored status alone
+  // must not be read as work still needing recovery.
+  if (row.status === "stopped") return "stopped";
   if (row.recovery_required) return "recovery_required";
   if (row.status === "running" && row.worker_active) return "executing";
   if (row.status === "turn_returned" && row.worker_active) return "validating";
@@ -1144,6 +1147,7 @@ const DELEGATION_STATE_LABELS: Record<DelegationState, {zh: string; en: string}>
   unavailable: {zh: "无法核验", en: "Unavailable"},
   accepted: {zh: "已通过当前验收", en: "Currently accepted"},
   rejected: {zh: "未通过验收", en: "Rejected"},
+  stopped: {zh: "停止已登记", en: "Stop recorded"},
   recovery_required: {zh: "需要恢复原执行", en: "Original execution needs recovery"},
   executing: {zh: "执行中", en: "Executing"},
   validating: {zh: "正在验收", en: "Validating"},
