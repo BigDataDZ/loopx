@@ -95,7 +95,7 @@ export function ProjectConversationPanel() {
   }
 
   return <section className="personal-detail-card personal-project-conversation">
-    <p>{zh ? "只读讨论授权工作区，保留连续上下文。普通聊天不会创建长期 Goal。" : "Discuss an authorized workspace with continuous context and a read grant. Ordinary chat does not create a long-running Goal."}</p>
+    <p>{zh ? "按工作区授权执行当前指令，保留连续上下文。默认支持读写；普通聊天不会创建长期 Goal。" : "Carry out requests under the workspace grant with continuous context. Workspace writes are supported by default; ordinary chat does not create a long-running Goal."}</p>
     <label>{zh ? "工作区" : "Workspace"}
       <select aria-label={zh ? "项目对话工作区" : "Project conversation workspace"} disabled={busy} value={project} onChange={event => {
         setProject(event.target.value); setSession(null); setMessages([]); setTurnId(null); setError(""); setStatus(""); attempt.current = null;
@@ -104,6 +104,7 @@ export function ProjectConversationPanel() {
         {projects.map(item => <option key={item.project_ref} value={item.project_ref}>{item.title}</option>)}
       </select>
     </label>
+    {project ? <p>{projects.find(item => item.project_ref === project)?.grant === "workspace_write" ? (zh ? "当前工作区：读写" : "Current workspace: read and write") : (zh ? "当前工作区：只读" : "Current workspace: read-only")}</p> : null}
     {!projects.length && !error ? <p>{zh ? "此宿主尚未提供可用工作区。" : "This host has no available workspace grants."}</p> : null}
     <div className="personal-detail-actions">
       <button disabled={!project || busy} onClick={() => void changeSession("resume_latest")} type="button">{zh ? "打开或恢复对话" : "Open or resume"}</button>

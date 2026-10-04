@@ -330,7 +330,8 @@ def _status_text(snapshot: dict[str, Any], *, help_requested: bool) -> str:
     if snapshot.get("recipient_agent_id"):
         return text + f"\n已选择 Agent：{snapshot['recipient_agent_id']} · {snapshot['recipient_goal_id']}。等待原宿主领取队列；/agents 查看授权，/project 返回普通项目对话。实时停止或新建请在原宿主处理。"
     text += (f"\n已授权新委托：{snapshot['authorized_commission_count']}；执行结束不代表委托验收。" if steward else
-        "\n当前仅有工作区只读授权；没有自动选用注册 Agent 或创建 Goal。")
+        ("\n已明确授权此工作区读写，按项目规则和 skills 执行当前指令；没有自动选用注册 Agent 或创建 Goal。"
+         if snapshot["grant"] == "workspace_write" else "\n当前仅有工作区只读授权；没有自动选用注册 Agent 或创建 Goal。"))
     text += "\n/status 查看状态；/stop 停止当前聊天执行；/new 关闭当前聊天并开启下次新会话；/help 查看用法。"
     if not steward:
         text += "\n/agents 查看本 App 已授权的 Agent；使用列表中的完整 /agent 命令选择，/project 返回此项目会话。"
