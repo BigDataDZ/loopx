@@ -112,6 +112,16 @@ authority inside the Core source fence before creating work. Each locked deliver
 reuses its Inbox configuration; provider writes still verify current identity,
 grants and the exact original message. No observation is cached across requests.
 
+Listener discovery reads the CLI's local profile inventory once per snapshot,
+compares the current App with its Core binding, and derives the existing
+machine/App lease from that App. Network authorization failures are not durable
+disconnects. An unreadable inventory preserves a running stream; an explicit
+binding removal, missing profile or replacement App stops its old route. This
+does not authorize a message: admission and outbound delivery still freshly
+verify the App, owner, source and grants. Actual stream fault/recovery and
+disconnect regressions qualify this boundary; sustained live availability and
+timely end-to-end feedback remain separate acceptance.
+
 This is a bounded provider presentation refactor, not a new Session, queue,
 model runner or control-plane owner. Native state drives both direct conversations
 and explicit commissions. Synthetic queue/stop/replay/isolation regressions and

@@ -5,6 +5,7 @@ Core owns audience grants, canonical Sessions, durable Turns and stop/recovery.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -15,7 +16,7 @@ from ...chat_store import _atomic_write_json, _read_json
 from ...file_lock import exclusive_file_lock
 from .conversation_identity import identity_ref, lark_private_source
 from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
-from .goal_channel_transport import call, json_payload, lark_args
+from .goal_channel_transport import APP_ID_PATTERN, call, json_payload, lark_args
 from .inbox_reply import _message, reply_lark_event_inbox, verify_lark_inbox_reply
 from .inbox_reactions import mark_lark_event_inbox_processing, mark_lark_event_inbox_received
 
@@ -30,18 +31,34 @@ class LarkPrivateConversations:
         self.root = controller.store.root / "lark-private-deliveries"
 
     def profiles(self) -> dict[str, dict[str, str]]:
+        """Discover current App configuration, never authorize a conversation.
+
+        A network/token probe failing is not a durable disconnect. The local
+        profile inventory supplies the actual App lease identity; Core still
+        freshly verifies App/owner/source/grants at admission and delivery.
+        """
+        bindings = self.bindings.read()["bindings"]
+        if not bindings:
+            return {}
+        result = call(self.runner, [self.cli_bin, "profile", "list"])
+        try:
+            configured = json.loads(str(result.get("stdout") or ""))
+        except json.JSONDecodeError as exc:
+            raise OSError("Lark profile configuration could not be read") from exc
+        if result.get("returncode") != 0 or not isinstance(configured, list):
+            # An unreadable inventory is unknown, not an empty configuration.
+            # The existing stream watcher retains its route on read failures.
+            raise OSError("Lark profile configuration could not be read")
+        apps = {str(row.get("name") or ""): str(row.get("appId") or "")
+                for row in configured if isinstance(row, Mapping)}
         profiles = {}
-        for row in self.bindings.read()["bindings"]:
-            try:
-                observation = self.bindings.observe(row["transport_ref"])
-            except (ValueError, OSError):
-                # One App's expired login must not block the independently
-                # verified App from acquiring its own listener lease.
-                continue
-            if any(observation.get(field) != row[field] for field in ["provider_ref", "operator_ref"]):
+        for row in bindings:
+            app_id = apps.get(row["transport_ref"], "")
+            if (row.get("enabled") is not True or not APP_ID_PATTERN.fullmatch(app_id)
+                    or identity_ref(app_id) != row["provider_ref"]):
                 continue
             profiles[row["transport_ref"]] = {"cli_bin": self.cli_bin, "provider_ref": row["provider_ref"],
-                "binding_id": row["binding_id"], "consumer_ref": observation["consumer_ref"]}
+                "binding_id": row["binding_id"], "consumer_ref": hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:32]}
         return profiles
 
     def health(self) -> dict[str, dict[str, int]]:

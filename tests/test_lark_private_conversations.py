@@ -22,6 +22,8 @@ class Provider:
         self.reaction_creates = []
         self.fail_reaction_create = False
         self.fail_reaction_delete = False
+        self.profile_apps = {profile: f"cli_{profile.replace('-', '_')}"
+                             for profile in ["notes-app", "steward-app"]}
 
     def event(self, profile, name, text, kind="text"):
         event = {"schema_version": "lark_event_inbox_event_v0", "event_id": f"event_{name}",
@@ -34,6 +36,10 @@ class Provider:
 
     def __call__(self, args, cwd=None, timeout=None):
         self.calls.append(list(args))
+        if args[1:] == ["profile", "list"]:
+            return {"returncode": 0, "stdout": json.dumps([
+                {"name": profile, "appId": app_id}
+                for profile, app_id in self.profile_apps.items()]), "stderr": ""}
         profile = args[args.index("--profile") + 1]
         if "auth" in args:
             data = {"ok": True, "appId": f"cli_{profile.replace('-', '_')}", "identities": {
@@ -288,7 +294,7 @@ def test_private_app_alias_guard_rejects_unknown_or_unverified_identity():
             _app_identity_for_private_guard("notes-app", unverified, "lark-cli")
 
 
-def test_one_expired_app_identity_does_not_hide_the_other_listener(ordinary):  # noqa: F811
+def test_listener_discovery_is_separate_from_current_owner_authorization(ordinary):  # noqa: F811
     _, runtime, _, transport = connect(ordinary)
     original = transport.bindings.observe
     def observe(profile):
@@ -297,14 +303,120 @@ def test_one_expired_app_identity_does_not_hide_the_other_listener(ordinary):  #
         return original(profile)
     transport.bindings.observe = observe
     try:
-        assert set(transport.profiles()) == {"notes-app"}
+        provider = transport.runner
+        provider.calls.clear()
+        assert set(transport.profiles()) == {"notes-app", "steward-app"}
+        assert provider.calls == [["lark-cli", "profile", "list"]]
         transport.bindings.observe = lambda profile: {**original(profile), "operator_ref": "f" * 24}
-        assert transport.profiles() == {}
+        assert set(transport.profiles()) == {"notes-app", "steward-app"}
         transport.bindings.observe = observe
         rejected = {"message_id": "om_unknown", "chat_id": "oc_steward_app", "sender_id": "ou_steward_app",
                     "chat_type": "p2p", "sender_type": "user", "message_type": "text", "content": "unverified"}
         assert transport.admit("steward-app", rejected)["status"] == "audience_rejected"
+        assert transport.admit("notes-app", provider.event("notes-app", "healthy", "/status"))["status"] == "command_recorded"
     finally:
+        runtime.close()
+
+
+def test_listener_lease_uses_current_app_and_detects_removal_or_retarget(ordinary):  # noqa: F811
+    import hashlib
+
+    _, runtime, provider, transport = connect(ordinary)
+    try:
+        profiles = transport.profiles()
+        assert profiles["notes-app"]["consumer_ref"] == hashlib.sha256(b"cli_notes_app").hexdigest()[:32]
+        # A new App under the old profile must not run under the old App's lease.
+        provider.profile_apps["notes-app"] = "cli_replacement"
+        assert set(transport.profiles()) == {"steward-app"}
+        del provider.profile_apps["notes-app"]
+        assert set(transport.profiles()) == {"steward-app"}
+        provider.profile_apps["notes-app"] = "cli_notes_app"
+        binding = transport._binding("notes-app")
+        transport.bindings.disconnect(binding["binding_id"], expected_revision=transport.bindings.read()["revision"])
+        assert set(transport.profiles()) == {"steward-app"}
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize("result", [
+    {"returncode": 1, "stdout": "", "timed_out": True},
+    {"returncode": 0, "stdout": "not JSON"},
+    {"returncode": 0, "stdout": "{}"},
+])
+def test_unreadable_local_profile_inventory_is_unknown_not_removed(ordinary, result):  # noqa: F811
+    _, runtime, _, transport = connect(ordinary)
+    try:
+        transport.runner = lambda *_args: result
+        with pytest.raises(OSError, match="configuration could not be read"):
+            transport.profiles()
+    finally:
+        runtime.close()
+
+
+def test_actual_stream_survives_probe_and_inventory_fault_then_stops_on_disconnect(ordinary):  # noqa: F811
+    import threading
+    from loopx.extensions.lark.goal_topic_runtime import stream_lark_goal_topic_profile
+
+    _, runtime, provider, transport = connect(ordinary)
+    released, listening, fault_seen, recovered = (threading.Event() for _ in range(4))
+    result = {}
+    fail_inventory = False
+
+    def snapshot():
+        if fail_inventory and not fault_seen.is_set():
+            saved = transport.runner
+            transport.runner = lambda *_args: {"returncode": 1, "stdout": ""}
+            try:
+                return {"private_profiles": transport.profiles()}
+            finally:
+                transport.runner = saved
+                fault_seen.set()
+        profiles = transport.profiles()
+        if fault_seen.is_set():
+            recovered.set()
+        return {"private_profiles": profiles}
+
+    class Lines:
+        def __iter__(self):
+            yield "[event] ready event_key=im.message.receive_v1\n"
+            assert released.wait(10)
+
+    class Consumer:
+        stdout = Lines()
+        def poll(self):
+            return 0 if released.is_set() else None
+        def wait(self, timeout=None):
+            assert released.wait(timeout or 10)
+            return 0
+        def terminate(self):
+            released.set()
+        kill = terminate
+
+    stop = threading.Event()
+    def run():
+        result.update(stream_lark_goal_topic_profile(profile="notes-app", snapshot_provider=snapshot,
+            stop=stop, runtime_root=transport.runtime_root, answer=lambda *_args: "unused",
+            private_admitter=transport.admit, process_factory=lambda *_args: Consumer(),
+            health_sink=lambda update: listening.set() if update.get("status") == "listening" else None))
+
+    worker = threading.Thread(target=run)
+    try:
+        worker.start()
+        assert listening.wait(3)
+        transport.bindings.observe = lambda _profile: (_ for _ in ()).throw(ValueError("verification unavailable"))
+        fail_inventory = True
+        assert fault_seen.wait(3) and recovered.wait(3)
+        assert worker.is_alive() and not released.is_set() and not stop.is_set()
+        assert transport.admit("notes-app", provider.event("notes-app", "unverified", "/status"))["status"] == "audience_rejected"
+        binding = transport._binding("notes-app")
+        transport.bindings.disconnect(binding["binding_id"], expected_revision=transport.bindings.read()["revision"])
+        worker.join(4)
+        assert not worker.is_alive() and stop.is_set()
+        assert result["status"] == "configuration_removed"
+    finally:
+        stop.set()
+        released.set()
+        worker.join(4)
         runtime.close()
 
 

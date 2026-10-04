@@ -102,6 +102,13 @@ prepared/created journal：已知 provider id 恢复回执，写入结果不确�
 Core 只恢复确切请求，沿用原 Session fence。Provider 核验成本与 worker 饱和时延
 仍需独立测量，合成阻塞测试不证明实时 SLO，也不增加模型并发授权。
 
+Listener 每次快照只读一次 CLI 本地 profile 清单，核对当前 App 与 Core binding，
+由实际 App 推导现有的机器/App 消费者锁。网络授权探测失败不再被当成永久解绑。
+本地清单暂时不可读时保留运行中的 stream；明确解绑、profile 移除或替换 App
+则停止旧路由。这不授予消息权限：入站受理和出站投递仍重新核验 App、本人、来源
+与 grants。真实 stream 的故障/恢复及解绑回归覆盖这一边界；持续 live 可用性与
+端到端及时反馈仍需独立验收。
+
 这是现有 provider 呈现边界的有界重构，不新增 Session、queue、model runner 或
 控制面 authority。合成回归与真实 provider canary 分别记录；增量卡片、媒体和
 权限回调仍需独立验收。
