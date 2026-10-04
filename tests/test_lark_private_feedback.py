@@ -29,6 +29,7 @@ def test_default_feedback_tracks_queue_execution_stop_and_app_isolation(ordinary
         assert ('notes-app', slow['message_id'], 'OnIt') in provider.reaction_creates
         assert ('notes-app', queued['message_id'], 'Get') in provider.reaction_creates
         assert ('notes-app', queued['message_id'], 'OnIt') not in provider.reaction_creates
+        assert provider.writes == [('notes-app', '正在处理前一条，这条已排队。')]
         assert any(row[1:] == (slow['message_id'], 'OnIt') for row in provider.reactions.values())
         # A new provider instance reuses durable receipts, not in-memory emoji state.
         replay = LarkPrivateConversations(controller=runtime, runtime_root=transport.runtime_root,
@@ -98,6 +99,7 @@ def test_opt_out_or_missing_reaction_permission_preserves_real_admission(ordinar
         assert provider.reaction_creates == []
         assert bool(any('reactions' in call for call in provider.calls)) == enabled
         assert any(text == 'Runtime response.' for _, text in provider.writes)
+        assert any(text == '已收到，正在处理。' for _, text in provider.writes)
         assert len(store.list_sessions()) == 1
     finally:
         runtime.close()
@@ -117,6 +119,7 @@ def test_native_private_default_post_preserves_general_result_structure_and_safe
         assert transport.reconcile() == 1
         final = provider.messages[f'om_out_{len(provider.writes) - 1}']
         assert final['msg_type'] == 'post'
+        assert len(provider.writes) == 1  # emoji admission does not duplicate the answer
         visible = json.loads(final['body']['content'])['zh_cn']['content'][0][0]['text']
         assert visible == text.replace(f'[本地报告]({workspace}/report.md)', '本地报告')
         assert '[project]' not in visible and str(workspace) not in visible

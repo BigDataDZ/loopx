@@ -117,7 +117,7 @@ def test_native_private_admission_queue_other_app_stop_and_verified_delivery(ord
         assert runtime.wait_for_turn(session_id=other_row["session_id"], turn_id=other_row["turn_id"], timeout_sec=10)["status"] == "completed"
         transport.reconcile()
         assert any(profile == "steward-app" and text == "Runtime response." for profile, text in provider.writes)
-        assert any(profile == "notes-app" and "持久受理" in text for profile, text in provider.writes)
+        assert any(profile == "notes-app" and "已排队" in text for profile, text in provider.writes)
         stop = provider.event("notes-app", "stop", "/stop")
         assert transport.admit("notes-app", stop)["status"] == "command_recorded"
         queued_row = next(row for row in transport.core.pending() if row["message"] == "follow-up")
