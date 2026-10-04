@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import plistlib
 import shutil
@@ -298,10 +299,42 @@ def main() -> int:
         selected_chat_plist = chat_plist.read_text(encoding="utf-8")
         assert "--enable-control-plane-write-api" in write_plist, write_plist
         selected = (home / 'selected-codex-home').resolve()
-        assert f"export CODEX_HOME={selected};" in selected_chat_plist, selected_chat_plist
+        assert f"export LOOPX_CHAT_CODEX_HOME={selected};" in selected_chat_plist, selected_chat_plist
+        assert f"export CODEX_HOME={(home / '.codex').resolve()};" in selected_chat_plist, selected_chat_plist
         run_script(fake_bin, home, ["install"], schema_version=2,
                    extra_env={"CODEX_HOME": str(home / "unrelated-upgrader")})
         assert plistlib.loads(chat_plist.read_bytes())["EnvironmentVariables"]["LOOPX_CHAT_CODEX_HOME"] == str(selected)
+
+        # A coordinator can resume workers from another existing Codex home.
+        # The Chat override must not overwrite that execution profile.
+        execution_home = (home / "worker home").resolve()
+        run_script(fake_bin, home, ["install"], schema_version=2,
+                   extra_env={"CODEX_HOME": str(execution_home),
+                              "LOOPX_CHAT_CODEX_HOME": str(selected)})
+        installed = plistlib.loads(chat_plist.read_bytes())
+        assert installed["EnvironmentVariables"]["CODEX_HOME"] == str(execution_home)
+        assert installed["EnvironmentVariables"]["LOOPX_CHAT_CODEX_HOME"] == str(selected)
+        run_script(fake_bin, home, ["restart"], schema_version=2)
+        preserved = plistlib.loads(chat_plist.read_bytes())
+        assert preserved["EnvironmentVariables"] == installed["EnvironmentVariables"]
+        # Execute the generated wrapper with a bounded fixture entrypoint.
+        # It must transport both settings, including spaces, to the same child.
+        fake_loopx = fake_bin / "loopx"
+        original_entry = fake_loopx.read_bytes()
+        write_executable(fake_loopx, "#!/usr/bin/env python3\nimport json, os\n"
+                         "print(json.dumps({k:os.environ[k] for k in "
+                         "['CODEX_HOME','LOOPX_CHAT_CODEX_HOME']}))\n")
+        try:
+            launched = subprocess.run(preserved["ProgramArguments"],
+                                      capture_output=True, text=True, check=True)
+            assert json.loads(launched.stdout) == preserved["EnvironmentVariables"]
+        finally:
+            fake_loopx.write_bytes(original_entry)
+        before_invalid_home = chat_plist.read_bytes()
+        rejected = run_script(fake_bin, home, ["install"], schema_version=2,
+                              extra_env={"CODEX_HOME": "relative-worker-home"}, check=False)
+        assert rejected.returncode != 0 and "CODEX_HOME must be absolute" in rejected.stderr
+        assert chat_plist.read_bytes() == before_invalid_home
 
         # Legacy generated plists used only a shell export. Preserve quoted
         # paths across upgrades without ever executing their command contents.
