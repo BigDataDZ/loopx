@@ -167,6 +167,28 @@ def test_existing_consumer_dispatches_private_admission_without_waiting_for_mode
     assert admitted == [("notes-app", event)]
 
 
+def test_revocation_during_source_read_prevents_native_admission(ordinary):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    try:
+        event = provider.event("notes-app", "revoked", "must not execute")
+        binding = transport.bindings.read()["bindings"][0]
+
+        def revoke_after_read(args, cwd=None, timeout=None):
+            result = provider(args, cwd, timeout)
+            if "+messages-mget" in args:
+                transport.bindings.disconnect(binding["binding_id"],
+                    expected_revision=transport.bindings.read()["revision"])
+            return result
+
+        transport.runner = revoke_after_read
+        assert transport.admit("notes-app", event)["status"] == "command_rejected"
+        assert transport.core.pending() == []
+        assert store.list_sessions() == []
+        assert provider.writes == []
+    finally:
+        runtime.close()
+
+
 def test_new_session_replay_cannot_close_a_later_session(ordinary):  # noqa: F811
     store, runtime, provider, transport = connect(ordinary)
     try:

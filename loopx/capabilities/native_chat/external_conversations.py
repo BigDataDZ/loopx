@@ -30,7 +30,6 @@ class ChatExternalConversations:
             raise ValueError("invalid external request reference")
         if command not in {None, "agents", "select_agent", "select_project", "status", "help", "new", "stop", "unsupported", "commission", "confirm_commission", "cancel_commission", "stop_commission", "resume_commission"}:
             raise ValueError("unsupported external conversation command")
-        selected = self.bindings.resolve(binding_id=binding_id, **source)
         path = self.root / f"{request_ref}.json"
         with exclusive_file_lock(self.root / "source-fences" / f"{binding_id}.{source['source_ref']}.json", operation="route_external_chat_request"), exclusive_file_lock(path, operation="admit_external_chat_request"):
             selected = self.bindings.resolve(binding_id=binding_id, **source)

@@ -107,6 +107,10 @@ notice or control response; per-request locks and journals retain no-resend
 recovery. Core recovers each exact request under the existing Session fence.
 Provider verification cost and saturated-worker latency remain separate from
 model concurrency and are not certified by a synthetic blocked-readback test.
+Admission reuses its initial App observation for source reading, then rechecks
+authority inside the Core source fence before creating work. Each locked delivery
+reuses its Inbox configuration; provider writes still verify current identity,
+grants and the exact original message. No observation is cached across requests.
 
 This is a bounded provider presentation refactor, not a new Session, queue,
 model runner or control-plane owner. Native state drives both direct conversations
