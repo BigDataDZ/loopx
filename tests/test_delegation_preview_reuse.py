@@ -465,16 +465,26 @@ def test_unaccepted_request_recovers_only_after_owned_retirement(tmp_path, monke
 
     marker = tmp_path / "retiring"
     worker = (
-        "import json,sys,signal\nfrom pathlib import Path\n"
-        f"signal.signal(signal.SIGTERM,lambda *_:Path({str(marker)!r}).touch())\n"
+        "import json,sys,signal,time\nfrom pathlib import Path\n"
+        f"marker=Path({str(marker)!r})\n"
+        "if marker.exists():time.sleep(0.5)\n"
+        "signal.signal(signal.SIGTERM,lambda *_:marker.touch())\n"
         "for line in sys.stdin:\n"
         " r=json.loads(line);print(json.dumps({'kind':'preview','id':r['id'],"
         "'returncode':0,'value':{'read_only':True}}),flush=True)"
     )
-    # Shorten only the production retirement clock. The real Host's 300ms
-    # cleanup grace, framed IO, request deadline and process group stay intact.
+    # Shorten only the original supervisor's production retirement clock.
+    # The replacement starts after the marker proves cleanup began, so it keeps
+    # production timing. Host cleanup, framed IO and request deadlines stay real.
     timer = 300000 if retirement == "lifetime" else 30000
-    preload = "const original=globalThis.setTimeout;globalThis.setTimeout=(f,ms,...a)=>original(f,ms===" + str(timer) + "?200:ms,...a)"
+    preload = (
+        "import{existsSync}from'node:fs';"
+        f"const shortenRetirement=!existsSync({json.dumps(str(marker))});"
+        "const originalSetTimeout=globalThis.setTimeout;"
+        "globalThis.setTimeout=(callback,delay,...args)=>originalSetTimeout(callback,"
+        f"shortenRetirement&&delay==={timer}&&"
+        "new Error().stack?.includes('delegation_preview_bridge.ts')?200:delay,...args)"
+    )
     environment = {**_pinned_release_environment(), "NODE_OPTIONS": "--import=data:text/javascript," + quote(preload, safe="")}
     transport = DelegationPreviewTransport()
     options = dict(command=[sys.executable, "-c", worker], workspace=tmp_path,
