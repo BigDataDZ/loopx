@@ -30,7 +30,7 @@ def image_runner(provider, *, fail=False, content=PNG_BYTES, revoke=None):
     return run
 
 
-@pytest.mark.parametrize("kind,content", [("image", "![Image](img_example)"),
+@pytest.mark.parametrize("kind,content", [("image", "[Image: img_example]"), ("image", "![Image](img_example)"),
     ("post", "Inspect this diagram\n![Image](img_example)\nKeep the caption")])
 def test_default_images_reach_codex_in_original_session_and_replay_once(ordinary, kind, content):  # noqa: F811
     store, runtime, provider, transport = connect(ordinary)

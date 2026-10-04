@@ -17,7 +17,7 @@ from ...chat_attachments import (
 )
 from .goal_channel_transport import call, json_payload, lark_args
 
-_IMAGE = re.compile(r"!\[[^\]]*\]\((img_[A-Za-z0-9_-]+)\)")
+_IMAGE = re.compile(r"(?:!\[[^\]]*\]\(|\[Image: *)(img_[A-Za-z0-9_-]+)[)\]]")
 _OTHER_RESOURCE = re.compile(r"<(?:file|folder|audio|video|media)\b")
 
 
