@@ -1543,6 +1543,7 @@ def serve_chat(
     verbose: bool = False,
     enable_goal_subagent_configuration: bool = False,
     project_workspace_grant: str = "workspace_write",
+    private_reactions: bool = True,
 ) -> None:
     if not is_loopback_host(host):
         raise ValueError("loopx chat requires a loopback --host such as 127.0.0.1")
@@ -1616,7 +1617,8 @@ def serve_chat(
         observe=lambda profile: observe_lark_conversation_identity(profile=profile, runner=server.lark_runner,
             cli_bin=server.lark_cli_resolution.command or "lark-cli"))
     private_transport = LarkPrivateConversations(controller=server.runtime_controller, runtime_root=runtime_root,
-        runner=server.lark_runner, cli_bin=server.lark_cli_resolution.command or "lark-cli")
+        runner=server.lark_runner, cli_bin=server.lark_cli_resolution.command or "lark-cli",
+        reaction_feedback=private_reactions)
 
     server.lark_private_conversations = private_transport
 
@@ -1674,7 +1676,7 @@ def serve_chat(
     ).start()
     url = f"http://{host}:{port}{DEFAULT_CHAT_PATH}"
     print(f"Serving LoopX Chat at {url}", flush=True)
-    print("Agent boundary: local adapters, read-only sandbox, approval policy never", flush=True)
+    print(f"Agent boundary: local adapters, project grant {project_workspace_grant}, approval policy never", flush=True)
     print("Todo writes: preview-locked on loopback", flush=True)
     if enable_goal_subagent_configuration:
         print("Goal sub-agent configuration: preview-locked opt-in enabled", flush=True)

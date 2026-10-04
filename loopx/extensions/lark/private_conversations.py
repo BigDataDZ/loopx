@@ -17,13 +17,16 @@ from .conversation_identity import identity_ref, lark_private_source
 from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
 from .goal_channel_transport import call, json_payload, lark_args
 from .inbox_reply import _message, reply_lark_event_inbox, verify_lark_inbox_reply
+from .inbox_reactions import mark_lark_event_inbox_processing, mark_lark_event_inbox_received
 
 
 class LarkPrivateConversations:
-    def __init__(self, *, controller: Any, runtime_root: Path, runner: Any, cli_bin: str) -> None:
+    def __init__(self, *, controller: Any, runtime_root: Path, runner: Any, cli_bin: str,
+                 reaction_feedback: bool = True) -> None:
         self.core = ChatExternalConversations(controller)
         self.bindings = self.core.bindings
         self.runtime_root, self.runner, self.cli_bin = runtime_root, runner, cli_bin
+        self.reaction_feedback = reaction_feedback
         self.root = controller.store.root / "lark-private-deliveries"
 
     def profiles(self) -> dict[str, dict[str, str]]:
@@ -93,7 +96,8 @@ class LarkPrivateConversations:
             "inbox_dir": f".loopx/inbox/private-chat/{scope}", "capture_scope": "configured_chat_all",
             "reply": {"enabled": True, "sender_profile": record["profile"], "sender_identity": "bot",
                 "bot_display_name": observation["bot_display_name"], "chat_id": record["event"]["chat_id"],
-                "placement_policy": "source_context", "received_reaction_emoji": ""},
+                "placement_policy": "source_context", "received_reaction_emoji": "Get" if self.reaction_feedback else "",
+                "received_reaction_policy": "retain", "processing_reaction_emoji": "OnIt" if self.reaction_feedback else ""},
         })
         event = record["event"]
         # Some unsupported attachment events have no rendered content. Keep a
@@ -192,6 +196,28 @@ class LarkPrivateConversations:
     def _reply_runner(self, args: list[str]) -> Any:
         return self.runner([self.cli_bin, *args[1:]], None, 30)
 
+    def _feedback(self, path: Path, record: dict[str, Any], *, processing: bool = False) -> None:
+        """Render observed Core admission/execution through the shared Inbox owner.
+
+        Presentation failures never reject a persisted Turn. Existing reaction
+        journals prevent uncertain provider writes from being repeated on replay.
+        """
+        if not self.reaction_feedback:
+            return
+        phase = "processing" if processing else "received"
+        feedback = record.setdefault("feedback", {})
+        if feedback.get(phase, {}).get("ok"):
+            return
+        config = self._inbox(record)
+        if processing:
+            result = mark_lark_event_inbox_processing(project=self.runtime_root, config_path=config,
+                message_id=record["event"]["message_id"], execute=True, runner=self._reply_runner)
+        else:
+            result = mark_lark_event_inbox_received(project=self.runtime_root, config_path=config,
+                event=record["event"], runner=self._reply_runner)
+        feedback[phase] = result
+        _atomic_write_json(path, record)
+
     def _deliver(self, path: Path, record: dict[str, Any], phase: str, text: str) -> bool:
         if not text:
             return False
@@ -203,6 +229,7 @@ class LarkPrivateConversations:
         config = self._inbox(record)
         kwargs = dict(project=self.runtime_root, config_path=config,
             message_id=record["event"]["message_id"], text=text, runner=self._reply_runner,
+            finalize_reactions=phase != "admission" and not (phase == "terminal" and record.get("commission_resources")),
             source_membership_verifier=lambda: self._source_verified(record))
         if phase_state.get("attempt"):
             result = verify_lark_inbox_reply(**kwargs, attempt=phase_state["attempt"])
@@ -223,7 +250,9 @@ class LarkPrivateConversations:
 
             result = reply_lark_event_inbox(**kwargs, execute=True, before_send=before_send,
                                            delivery_attempt_recorder=attempt, short_message_limit=None)
-        phase_state["verified"] = result.get("reply_verified") is True
+        # A verified intermediate reply is not completion. A final reply with
+        # cleanup owed recovers its original attempt; it must never be resent.
+        phase_state["verified"] = result.get("reply_verified") is True and result.get("ok") is True
         phase_state["blocker"] = result.get("blocker")
         record["deliveries"][phase] = phase_state
         _atomic_write_json(path, record)
@@ -248,6 +277,7 @@ class LarkPrivateConversations:
                     if record["status"] in {"command_queued", "command_completed", "commission_running"}:
                         native = self.core.read_request(record["request_ref"])
                         if native["status"] == "command_queued":
+                            self._feedback(path, record)
                             self._deliver(path, record, "admission", native["response"])
                             continue
                         record.update(status=native["status"], response=native.get("response"),
@@ -257,16 +287,21 @@ class LarkPrivateConversations:
                         native = self.core.read_request(record["request_ref"])
                         if native.get("agent_target"):
                             self.bindings.resolve_agent_target(self.bindings.resolve(binding_id=record["binding_id"], **record["source"]), native["agent_target"])
+                        self._feedback(path, record)
                         # Receipt follows persistent Core admission and is
                         # independent of terminal execution and reply delivery.
                         self._deliver(path, record, "admission", "已持久受理到原 Agent 会话；等待原宿主领取。/status 查看持久队列，/project 返回普通项目对话。实时停止暂不支持，请在原宿主处理。" if native.get("agent_target") else "已持久受理；若已有执行，本条会排队。可发送 /status、/stop 或 /new。")
                         turn = self.core.controller.store.load_turn(record["session_id"], record["turn_id"])
+                        if turn and turn["status"] in {"starting", "running"}:
+                            self._feedback(path, record, processing=True)
                         if not turn or turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
                             continue
                         response = str((turn.get("response") or {}).get("message") or "") if turn["status"] == "completed" else (
                             "本次执行已停止。" if turn["status"] == "interrupted" else
                             "本次执行失败或已过期，原会话已保留；请发送 /status 后再决定是否重试。")
                     else:
+                        if record["status"] != "rejected":
+                            self._feedback(path, record)
                         response = _command_text(str(record.get("response_code") or "")) or str(record.get("response") or "")
                         if record.get("status_snapshot"):
                             response = _status_text(record["status_snapshot"], help_requested=native.get("command") == "help")
@@ -274,6 +309,8 @@ class LarkPrivateConversations:
                         resources = record.get("commission_resources") or {}
                         if resources.get("session_id") and resources.get("turn_id"):
                             first_turn = self.core.controller.store.load_turn(resources["session_id"], resources["turn_id"])
+                            if first_turn and first_turn["status"] in {"starting", "running"}:
+                                self._feedback(path, record, processing=True)
                             if not first_turn or first_turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
                                 record["status"] = "commission_running"
                                 _atomic_write_json(path, record)
