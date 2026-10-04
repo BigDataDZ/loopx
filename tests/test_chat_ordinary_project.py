@@ -150,3 +150,35 @@ def test_default_project_host_grant_is_write_and_read_only_launch_is_enforced(or
         bindings.configure(transport_ref="notes-app", project_ref=projects["projects"][0]["project_ref"], executor_endpoint_id="codex", project_grant="workspace_write")
     assert bindings.read()["bindings"][0] == binding
     runtime.close()
+
+
+def test_project_codex_defaults_apply_on_exact_resume_without_replacing_context(ordinary):
+    store, runtime, contexts, request, capture, fake, workspace = ordinary
+    settings = workspace / "host-model-fixture.json"
+    settings.write_text(json.dumps({"model": "gpt-6.1-sol", "model_reasoning_effort": "medium"}))
+    fake.write_text(fake.read_text().replace(
+        '    elif method in {"thread/start", "thread/resume"}:',
+        f'    elif method == "config/read":\n        result = {{"config": json.load(open({str(settings)!r}))}}\n'
+        '    elif method in {"thread/start", "thread/resume"}:'))
+    ref = contexts.available()[0]["project_ref"]
+    session, resumed = runtime.open_session(goal_id=None, agent_id="codex", work_dir=workspace,
+        objective="ordinary conversation", project_ref=ref, mode="resume_latest")
+    assert not resumed
+    original = runtime.adapters[session["session_id"]].session
+    assert (original.model, original.reasoning_effort) == ("gpt-6.1-sol", "medium")
+    settings.write_text(json.dumps({"model": "gpt-6.1-sol", "model_reasoning_effort": "high"}))
+    runtime.adapters.pop(session["session_id"]).close_session()
+    restored, resumed = runtime.open_session(goal_id=None, agent_id="codex", work_dir=workspace,
+        objective="ordinary conversation", project_ref=ref, mode="resume_latest")
+    assert resumed and restored["session_id"] == session["session_id"]
+    assert restored["upstream_thread_id"] == session["upstream_thread_id"]
+    adapter = runtime.adapters[session["session_id"]].session
+    assert (adapter.model, adapter.reasoning_effort) == ("gpt-6.1-sol", "high")
+    requests = [json.loads(line) for line in capture.read_text().splitlines()]
+    resume = next(row for row in requests if row["method"] == "thread/resume")
+    assert resume["params"]["model"] == "gpt-6.1-sol"
+    assert resume["params"]["config"]["model_reasoning_effort"] == "high"
+    assert resume["params"]["threadId"] == session["upstream_thread_id"]
+    assert resume["params"]["sandbox"] == "read-only" and resume["params"]["approvalPolicy"] == "never"
+    assert all(row["goal_id"] is None for row in store.list_sessions())
+    runtime.close()

@@ -101,3 +101,47 @@ def test_opt_out_or_missing_reaction_permission_preserves_real_admission(ordinar
         assert len(store.list_sessions()) == 1
     finally:
         runtime.close()
+
+
+def test_native_private_default_post_preserves_general_result_structure_and_safe_links(ordinary):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    fake, workspace = ordinary[-2:]
+    text = (f"**结果**\n\n- [本地报告]({workspace}/report.md)\n"
+            "- [公开来源](https://example.org/source)\n\n> 待确认限制\n\n```python\nprint('ok')\n```")
+    fake.write_text(fake.read_text().replace('"message": "Runtime response.",', f'"message": {text!r},'))
+    try:
+        event = provider.event('notes-app', 'rich_result', 'ordinary work')
+        transport.admit('notes-app', event)
+        row = transport.core.pending()[0]
+        runtime.wait_for_turn(session_id=row['session_id'], turn_id=row['turn_id'], timeout_sec=10)
+        assert transport.reconcile() == 1
+        final = provider.messages[f'om_out_{len(provider.writes) - 1}']
+        assert final['msg_type'] == 'post'
+        visible = json.loads(final['body']['content'])['zh_cn']['content'][0][0]['text']
+        assert visible == text.replace(f'[本地报告]({workspace}/report.md)', '本地报告')
+        assert '[project]' not in visible and str(workspace) not in visible
+        assert transport.core.read_request(row['request_ref'])['delivery_verified'] is True
+    finally:
+        runtime.close()
+
+
+def test_native_post_default_recovers_an_existing_plain_text_attempt_without_resend(ordinary, monkeypatch):  # noqa: F811
+    import loopx.extensions.lark.private_conversations as native
+    store, runtime, provider, transport = connect(ordinary)
+    send = native.reply_lark_event_inbox
+    def old_text_send(**kwargs):
+        return send(**{**kwargs, 'content_format': 'text'})
+    try:
+        event = provider.event('notes-app', 'old_text_receipt', '/status')
+        transport.admit('notes-app', event)
+        provider.verify_replies = False
+        with monkeypatch.context() as patch:
+            patch.setattr(native, 'reply_lark_event_inbox', old_text_send)
+            assert transport.reconcile() == 0
+        assert len(provider.writes) == 1
+        provider.verify_replies = True
+        assert transport.reconcile() == 1
+        assert len(provider.writes) == 1
+        assert provider.messages['om_out_0']['msg_type'] == 'text'
+    finally:
+        runtime.close()

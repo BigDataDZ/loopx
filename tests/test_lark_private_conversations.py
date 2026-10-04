@@ -46,14 +46,15 @@ class Provider:
                 message = {**message, "body": {"content": json.dumps({"text": "not yet visible"})}}
             data = {"ok": True, "data": {"items": [message]}}
         elif "+messages-send" in args:
-            text = args[args.index("--text") + 1]
-            content = json.dumps({"text": text})
+            kind = "post" if "--content" in args else "text"
+            content = args[args.index("--content") + 1] if kind == "post" else json.dumps({"text": args[args.index("--text") + 1]})
+            text = json.loads(content)["zh_cn"]["content"][0][0]["text"] if kind == "post" else json.loads(content)["text"]
             if "--dry-run" in args:
-                data = {"ok": True, "api": [{"body": {"content": content}}]}
+                data = {"ok": True, "api": [{"body": {"content": content, "msg_type": kind}}]}
             else:
                 ref = f"om_out_{len(self.writes)}"
                 self.writes.append((profile, text))
-                self.messages[ref] = {"message_id": ref, "body": {"content": content}}
+                self.messages[ref] = {"message_id": ref, "msg_type": kind, "body": {"content": content}}
                 data = {"ok": True, "data": {"message_id": ref}}
         elif "reactions" in args:
             ref = args[args.index("--message-id") + 1]
