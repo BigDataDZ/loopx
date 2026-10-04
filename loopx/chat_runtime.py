@@ -368,6 +368,25 @@ class ChatRuntimeController:
         )
         return [*builtins, *(endpoint.public_summary() for endpoint in self.endpoint_registry.list())]
 
+    def _validate_project_executor_scope(
+        self,
+        agent_id: str,
+        project_context: Mapping[str, Any],
+        *,
+        capability: Mapping[str, Any] | None = None,
+    ) -> None:
+        if project_context.get("grant") != "workspace_read":
+            return
+        selected = capability or next(
+            (row for row in self.capabilities() if row["agent_id"] == agent_id), None
+        )
+        if selected is None:
+            raise ValueError(f"unknown Agent endpoint: {agent_id}")
+        if selected.get("trust_scope") != "read_only":
+            raise ValueError(
+                "the selected Agent cannot enforce a read-only project workspace"
+            )
+
     @staticmethod
     def _managed_upstream_mode(session: dict[str, Any]) -> str:
         if session.get("agent_id") == "codex":
@@ -595,6 +614,9 @@ class ChatRuntimeController:
             if channel_id is not None and channel_id != selected["channel_id"]:
                 raise ValueError("project conversation channel mismatch")
             project_context = selected["context"]
+            self._validate_project_executor_scope(
+                agent_id, project_context, capability=capability
+            )
             selected_channel = selected["channel_id"]
             context = self.project_contexts.session_context({
                 "goal_id": None, "channel_id": selected_channel, "project_context": project_context,
@@ -753,6 +775,9 @@ class ChatRuntimeController:
             self.project_contexts.session_context(session)
         if session.get("project_context") is not None:
             context = self.project_contexts.session_context(session)
+            self._validate_project_executor_scope(
+                str(session["agent_id"]), session["project_context"]
+            )
             work_dir, objective = context["project"], context["objective"]
         manager_runtime = (
             self.manager_runtime_profile(str(session.get("channel_id") or "manager"))
@@ -1012,6 +1037,9 @@ class ChatRuntimeController:
             if session["project_context"].get("audience") == "bound_owner":
                 raise ValueError("bound project Chat requires its external source admission")
             context = self.project_contexts.session_context(session)
+            self._validate_project_executor_scope(
+                str(session["agent_id"]), session["project_context"]
+            )
             work_dir, objective = context["project"], context["objective"]
             if loopx_execution:
                 raise ValueError("ordinary project conversations do not authorize LoopX execution")
@@ -1286,6 +1314,9 @@ class ChatRuntimeController:
             if conversation_scope(session, origin=origin)["kind"] != "project_workspace":
                 raise ValueError("project grant does not authorize this external audience or source")
             context = self.project_contexts.session_context(session)
+            self._validate_project_executor_scope(
+                str(session["agent_id"]), session["project_context"]
+            )
             work_dir, objective = context["project"], context["objective"]
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
             if attachments:
@@ -1577,6 +1608,9 @@ class ChatRuntimeController:
             session = self.store.load_session(session_id) or {}
             if session.get("project_context") is not None:
                 self.project_contexts.session_context(session)
+                self._validate_project_executor_scope(
+                    str(session["agent_id"]), session["project_context"]
+                )
             from .chat_coordination import prepare_turn_context
             scope = conversation_scope(session, origin=str((self.store.load_turn(session_id, turn_id) or {}).get("origin") or "unknown"))
             if isinstance(adapter, CodexAppServerAdapter):
