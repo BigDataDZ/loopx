@@ -52,7 +52,8 @@ function originalHead() {
 test("terminal continuation observations preserve work while changed requirements invalidate it", () => {
   const work = todo("todo_first");
   const completed = {...work, status: "done", done: true, no_followup: true,
-    completion_continuation: "no_followup", note: "Bounded task completed"};
+    completion_continuation: "no_followup", completion_receipt_id: `tcw_${"a".repeat(64)}`,
+    note: "Bounded task completed"};
   assert.equal(goalAcceptanceTodoDigest(completed), goalAcceptanceTodoDigest(work));
   assert.notEqual(goalAcceptanceTodoDigest({...completed, text: "Deliver different work"}), goalAcceptanceTodoDigest(work));
   assert.notEqual(goalAcceptanceTodoDigest({...completed, completion_validation_required: true}), goalAcceptanceTodoDigest(work));

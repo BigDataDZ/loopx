@@ -187,7 +187,8 @@ export function normalizeGoalAcceptanceDocument(value: unknown): AcceptanceDocum
 const NON_WORK_FIELDS = new Set([
   "schema_version", "source_section", "index", "title", "priority", "status", "done", "archive_state",
   "claimed_by", "created_by", "last_actor_agent_id", "updated_at", "completed_at", "completion_turn_key",
-  "completion_validation_sha256", "completion_recovery", "completion_continuation", "no_followup", "decision_outcome",
+  "completion_validation_sha256", "completion_recovery", "completion_continuation", "completion_receipt_id",
+  "no_followup", "decision_outcome",
   "completion_result",
   "decision_scope_outcomes", "note", "evidence", "reason", "handoff_note", "resume_ready",
   "resume_monitor_generation", "last_checked_at", "result_hash", "consecutive_no_change",
