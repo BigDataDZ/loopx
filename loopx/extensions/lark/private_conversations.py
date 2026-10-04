@@ -249,7 +249,8 @@ class LarkPrivateConversations:
                 _atomic_write_json(path, record)
 
             result = reply_lark_event_inbox(**kwargs, execute=True, before_send=before_send,
-                                           delivery_attempt_recorder=attempt, short_message_limit=None)
+                                           delivery_attempt_recorder=attempt, short_message_limit=None,
+                                           content_format="markdown")
         # A verified intermediate reply is not completion. A final reply with
         # cleanup owed recovers its original attempt; it must never be resent.
         phase_state["verified"] = result.get("reply_verified") is True and result.get("ok") is True

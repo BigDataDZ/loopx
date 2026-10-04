@@ -413,6 +413,8 @@ def _turn_prompt(
         "Do not expose chain-of-thought, tool narration, intended steps, or scratch work. "
         "First write the complete operator-facing answer as safe Markdown text. Give a simple question a direct sourced answer; for a complex task, lead with the judgment and then explain the material evidence, comparisons, decisions and limitations at useful depth. "
         "Use short sentences or lines so the answer can stream. Avoid gratuitous headings, boilerplate, raw ID inventories and more than five actionable items. "
+        "For completed work, explain the useful result and any material limitation; keep routine tool logs, test commands and implementation details out of the default reply unless they help the operator decide or were requested. "
+        "Use readable lists, emphasis, quotes and fenced code when they clarify the answer. Link only to real accessible resources; present local deliverables as workspace-relative inline code with a descriptive label, never a fabricated web link or an absolute machine path. "
         "Do not emit executable HTML. The complete answer must stay in this conversation, even when a separate report artifact also exists. "
         "Then append exactly one machine-readable envelope whose message field repeats that complete answer. This envelope is hidden protocol metadata and is required even for ordinary questions or exact-wording replies; user formatting instructions govern the visible answer, not omission of this metadata. "
         "protected_action must be null or an object shaped as "
@@ -614,6 +616,22 @@ class CodexChatAgentSession:
                 request_id=1,
             )
             session._notify("initialized", {})
+            thread_request_id = 2
+            if project_context is not None:
+                # Codex owns project/default configuration. Resume otherwise
+                # retains the old thread's effort even after an owner edits it.
+                configured = session._request(
+                    "config/read", {"cwd": str(root), "includeLayers": False},
+                    request_id=thread_request_id,
+                ).get("config", {})
+                if not isinstance(configured, dict):
+                    raise session._runtime_error("Codex project configuration is unavailable.")
+                if any(configured.get(key) is not None and not isinstance(configured[key], str)
+                       for key in ("model", "model_reasoning_effort")):
+                    raise session._runtime_error("Codex project model configuration is invalid.")
+                model = model or configured.get("model")
+                reasoning_effort = reasoning_effort or configured.get("model_reasoning_effort")
+                thread_request_id += 1
             thread_result = session._request(
                 "thread/resume" if resume_thread_id else "thread/start",
                 {
@@ -646,18 +664,18 @@ class CodexChatAgentSession:
                         else {}
                     ),
                 },
-                request_id=2,
+                request_id=thread_request_id,
             )
             if model and thread_result.get("model") not in {None, model}:
                 raise session._runtime_error(
-                    "Codex did not apply the requested manager model."
+                    "Codex did not apply the requested model."
                 )
             if reasoning_effort and thread_result.get("reasoningEffort") not in {
                 None,
                 reasoning_effort,
             }:
                 raise session._runtime_error(
-                    "Codex did not apply the requested manager reasoning effort."
+                    "Codex did not apply the requested reasoning effort."
                 )
             session.model = thread_result.get("model") or model
             session.reasoning_effort = thread_result.get("reasoningEffort") or reasoning_effort
@@ -674,7 +692,7 @@ class CodexChatAgentSession:
             # that public-safe context in each Turn prompt. Codex Goal mode is reserved
             # for autonomous execution; enabling it here causes conversational messages
             # to be treated as continuation ticks instead of the current user task.
-            session.next_request_id = 3
+            session.next_request_id = thread_request_id + 1
             return session
         except _LegacyModelCatalogSchemaError as exc:
             session.close()
