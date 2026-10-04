@@ -178,42 +178,20 @@ rebuild, bounded rerank, readable projection, Explore intent, apply, and
 rollback. Concrete legacy parsers, private storage adapters, source profiles,
 and provider credentials remain project owned.
 
-## Explicit Project Source Ownership
+## Project Conversation Intake
 
-Ordinary project conversations can use an explicitly activated material source
-without creating a Goal. Inventory, candidate intake/rollback, rerank packets,
-readable projections and intake-ranking settlement accept `project_scope` in
-place of `goal_id`:
+An explicitly activated project source can pass `MaterialProjectScope` instead
+of `goal_id` to the existing inventory, intake/rollback, ranking, projection and
+settlement builders. Exactly one owner is required; the project path creates
+no Goal. Its project/profile/grant references select existing Core context and
+source ownership, and never grant access by themselves.
 
-```python
-from loopx.capabilities.material_lifecycle import MaterialProjectScope
-
-scope = MaterialProjectScope(
-    project_ref="project:example",
-    source_profile_ref="profile:materials",
-    workspace_grant_ref="grant:workspace-write",
-)
-```
-
-Exactly one owner is required. The project form contains no `goal_id`; the
-existing Goal form and default-off behavior are unchanged. These opaque refs
-select an existing Core project grant and source profile. Constructing a scope
-or packet does not activate a profile, grant writes, register a Goal or expose
-manager context.
-
-A project candidate provider must implement `MaterialProjectScopeVerifier`.
-Its `verify_project_scope` resolves the current Core caller, audience, workspace
-write boundary, exact store/profile and owner gate, including expiry and
-revocation. Intake and rollback require this verifier before provider access
-and again before authority publication. Missing, mismatched or revoked
-verification fails closed. The source adapter must also enforce authorization
-inside its staging/publication transaction; the preflight Boolean is not a
-transaction fence or an authority issuer.
-
-Fresh source initialization, private storage formats and transport integration
-remain source-owner responsibilities. Goal-only migration, rebuild and Explore
-APIs are not widened by this project intake path. A project skill or these
-packet fields alone cannot initialize or mutate a source store.
+Project intake/rollback require the source provider's `verify_project_scope`
+to resolve the current Core caller, audience, exact profile/store, workspace
+write grant and expiring owner gate. Verification runs before source access
+and publication; the source must retain its transaction authorization fence.
+Source initialization stays project owned. Migration, rebuild and Explore keep
+their existing Goal route. No new CLI or transport configuration path is added.
 
 ## Relationship To Other Capabilities
 

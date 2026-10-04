@@ -172,9 +172,3 @@ apply/rollback 编排、受限决策规划、catalog、架构 CLI、聚焦测试
 - 自动重排、provider 调用、自动归档或自动推进 cursor。
 
 这些能力必须经过私有只读 adapter、精确双读对账和显式 owner gate。
-
-## 普通对话的项目来源 scope
-
-inventory、candidate intake/rollback、rerank、readable projection 与 intake-ranking settlement 支持明确的 `project_scope`。packet 必须二选一：保留原 `goal_id`，或使用 `{project_ref, source_profile_ref, workspace_grant_ref}`；项目形式不包含 dummy Goal。capability scope 为 `project`，默认关闭及 source owner 边界不变。
-
-引用仅用于选择既有授权，不发放权限。project candidate adapter 必须通过 `MaterialProjectScopeVerifier.verify_project_scope` 核对当前 Core 调用者、受众、精确 store/profile、工作区写入边界及 owner gate 有效期/撤销状态。访问 provider 与发布 authority 前分别重新核验；真正的 adapter 还必须在写入事务内保持授权 fence。私有 profile 初始化与存储仍由来源 owner 提供，未扩大 migration/rebuild/Explore，也不改变全局 authority 或 scheduler。
