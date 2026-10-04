@@ -415,7 +415,14 @@ export async function fetchPresentationProjection(
   target.searchParams.set("payload_sha256", surface.detail_ref.payload_sha256);
   const response = await fetch(target.toString(), { cache: "no-store" });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status} while loading projection`);
+    let detail = "";
+    try {
+      const failure: unknown = await response.json();
+      if (typeof failure === "object" && failure !== null && "error" in failure && typeof failure.error === "string") {
+        detail = `: ${failure.error.slice(0, 300)}`;
+      }
+    } catch { /* A malformed error response still clears the previous view. */ }
+    throw new Error(`HTTP ${response.status} while loading projection${detail}`);
   }
   const projection = parsePresentationProjection(await response.json());
   const expectedIdentity = surface.detail_ref;

@@ -517,7 +517,10 @@ export async function installApi(page, { goalSubagentConfigurationEnabled = true
       ...(fixture.local_dashboard_api ?? {}),
       periodic_report_index_url: "/periodic-report-workspace",
       periodic_report_detail_url: "/periodic-report-workspace-projection",
-      ...(presentationApi ? {presentation_surfaces_url: "/extension-presentation-surfaces", presentation_detail_url: "/extension-projection"} : {}),
+      ...(presentationApi ? {
+        presentation_surfaces_url: `${typeof presentationApi === "string" ? presentationApi : ""}/extension-presentation-surfaces`,
+        presentation_detail_url: `${typeof presentationApi === "string" ? presentationApi : ""}/extension-projection`,
+      } : {}),
     };
     for (const directoryGoal of directoryGoalFixtures) {
       if (state.deletedGoalIds.has(directoryGoal.id)) continue;

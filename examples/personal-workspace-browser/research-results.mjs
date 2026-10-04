@@ -7,15 +7,15 @@ import {openWorkspacePage} from "./scenario-context.mjs";
 export const researchResultsScenario = {
   id: "research-results",
   async run({browser, collectCoverage, url}) {
-    const fixture = JSON.parse(await readFile(resolve(dashboardDir, "src/data/fixtures/presentation-projection.example.json")));
+    let fixture = JSON.parse(await readFile(resolve(dashboardDir, "src/data/fixtures/presentation-projection.example.json")));
     fixture.projection.goal_id = "product-release";
     fixture.projection.view.metrics.push({id: "precise-supply", label: "Reported supply", value: "123456789.1234567891 SYN",
       detail: "Source height unknown; not a net flow measurement.", tone: "warning"});
     let mode = "ready";
     let reads = 0;
     let indexes = 0;
-    const projection = fixture.projection;
-    const surface = {
+    let projection = fixture.projection;
+    let surface = {
       extension_id: projection.extension_id, extension_revision: projection.extension_revision,
       surface_id: projection.surface_id, surface_kind: projection.surface_kind,
       title: "Investment Research", view_schema: projection.view_schema, visibility: "public-safe",
@@ -25,10 +25,19 @@ export const researchResultsScenario = {
       detail_ref: {extension_id: projection.extension_id, extension_revision: projection.extension_revision,
         surface_id: projection.surface_id, payload_sha256: projection.payload_sha256},
     };
-    const context = await openWorkspacePage(browser, url, {collectCoverage, apiOptions: {presentationApi: true},
+    const nativeUrl = process.env.LOOPX_RESEARCH_NATIVE_URL;
+    if (nativeUrl) {
+      const collection = await (await fetch(`${nativeUrl}/extension-presentation-surfaces`)).json();
+      surface = collection.presentation_surfaces.items.find(item => item.goal_id === "product-release");
+      assert(surface, "An explicitly supplied isolated native fixture must publish product-release research");
+      fixture = await (await fetch(`${nativeUrl}/extension-projection?${new URLSearchParams(surface.detail_ref)}`)).json();
+      projection = fixture.projection;
+    }
+    const context = await openWorkspacePage(browser, url, {collectCoverage, apiOptions: {presentationApi: nativeUrl ?? true},
       beforeGoto: async (_, page) => {
         await page.route("**/extension-presentation-surfaces", route => {
           indexes++;
+          if (nativeUrl && mode === "ready") return route.continue();
           if (mode === "malformed") return route.fulfill({json: {ok: true}});
           const items = mode === "disabled" ? [] : [{...surface, visibility: mode === "owner-only" ? "owner-only" : "public-safe"}];
           return route.fulfill({json: {ok: true, presentation_surfaces: {
@@ -41,6 +50,7 @@ export const researchResultsScenario = {
           const query = new URL(route.request().url()).searchParams;
           assert.equal(query.get("payload_sha256"), projection.payload_sha256);
           assert.equal(query.get("extension_revision"), projection.extension_revision);
+          if (nativeUrl && mode === "ready") return route.continue();
           if (mode === "stale") return route.fulfill({status: 409, json: {error: "revision changed"}});
           return route.fulfill({json: {...fixture, projection: {...projection,
             goal_id: mode === "wrong-goal" ? "research-monitor" : projection.goal_id}}});
@@ -60,6 +70,7 @@ export const researchResultsScenario = {
       assert.match(await results.textContent(), /2026-01-15/);
       assert.match(await results.textContent(), /review_due/);
       assert.equal(reads, 1);
+      assert.equal(await results.getByTestId("research-detail-ref-hash").textContent(), projection.payload_sha256);
       await page.screenshot({path: resolve(outputDir, "research-results-desktop.png"), animations: "disabled"});
       await page.setViewportSize({width: 390, height: 844});
       await results.scrollIntoViewIfNeeded();
@@ -73,7 +84,7 @@ export const researchResultsScenario = {
       assert.equal(await results.getByText("123456789.1234567891 SYN", {exact: true}).count(), 0);
       mode = "stale";
       await refresh.click();
-      await results.getByText(/HTTP 409/).waitFor();
+      await results.getByText(/HTTP 409.*revision changed/).waitFor();
       mode = "disabled";
       await refresh.click();
       await results.getByText("本 Goal 暂无可读取的公开研究成果。", {exact: true}).waitFor();
@@ -102,7 +113,8 @@ export const researchResultsScenario = {
       const english = page.getByRole("region", {name: "Research results", exact: true});
       await english.getByText("123456789.1234567891 SYN", {exact: true}).waitFor();
       assert.match(await english.textContent(), /counterevidence and open questions/);
-      return {note: "Packaged results consume Goal-scoped public research, preserve uncertainty, and clear stale/disabled/wrong-Goal contents; scripted API fixture", coverageEntries: await context.close()};
+      return {note: `Packaged results consume Goal-scoped public research, preserve uncertainty, and clear stale/disabled/wrong-Goal contents; ${nativeUrl ? "real isolated Core publication/HTTP, scripted Goal directory and corruption cases" : "scripted API fixture"}`,
+        projectionSha256: projection.payload_sha256, coverageEntries: await context.close()};
     } finally {if (!page.isClosed()) await context.close();}
   },
 };
