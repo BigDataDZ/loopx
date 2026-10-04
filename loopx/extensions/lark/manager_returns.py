@@ -75,7 +75,7 @@ def _resolve_return(
 
 def _return_inbox(*, root: Path, registry: Path, snapshot_provider: Callable[[], dict[str, Any]],
                   route: dict[str, Any], session: dict[str, Any], turn: dict[str, Any],
-                  cancelled: Callable[[], bool], private_transport: Any) -> tuple[Path, Callable[[], bool] | None, object]:
+                  cancelled: Callable[[], bool], private_transport: Any) -> tuple[Path, Callable[[], bool] | None, object, str]:
     source_verifier: Callable[[], bool] | None
     destination: object
     if isinstance(session.get("steward_context"), dict):
@@ -98,6 +98,7 @@ def _return_inbox(*, root: Path, registry: Path, snapshot_provider: Callable[[],
             return bool(private_transport._source_verified(record))
         source_verifier = verify_source
         destination = {key: record[key] for key in ("profile", "binding_id", "source", "event")}
+        message_id = record["event"]["message_id"]
     else:
         snapshot, routing, target_config = _resolve_return(
             root=root, registry=registry, snapshot_provider=snapshot_provider,
@@ -108,13 +109,13 @@ def _return_inbox(*, root: Path, registry: Path, snapshot_provider: Callable[[],
         )
         source_verifier = None
         destination = (routing, target_config)
-    message_id = route["source_id"].removeprefix("lark:")
+        message_id = route["source_id"].removeprefix("lark:")
     config = load_lark_event_inbox_config(project=root, config_path=config_path)
     if message_id not in _load_processed(config["inbox_path"] / "processed.json"):
         raise ReturnResolutionBlocked(
             "initial_delivery_receipt_unavailable", "initial reply has not been acknowledged"
         )
-    return config_path, source_verifier, destination
+    return config_path, source_verifier, destination, message_id
 
 
 def send_return(
@@ -131,7 +132,7 @@ def send_return(
     delivery_attempt_recorder: Callable[[Mapping[str, str | None]], None] | None = None,
     private_transport: Any = None,
 ) -> dict[str, Any]:
-    def resolve() -> tuple[Path, Callable[[], bool] | None, object]:
+    def resolve() -> tuple[Path, Callable[[], bool] | None, object, str]:
         return _return_inbox(
             root=root,
             registry=registry,
@@ -143,13 +144,12 @@ def send_return(
             private_transport=private_transport,
         )
 
-    config_path, source_verifier, destination = resolve()
+    config_path, source_verifier, destination, message_id = resolve()
     if runner is None and isinstance(session.get("steward_context"), dict):
         runner = private_transport._reply_runner
-    message_id = route["source_id"].removeprefix("lark:")
     def before_send(_intent: str) -> dict[str, bool]:
         current = resolve()
-        return {"continue_delivery": current[0] == config_path and current[2] == destination}
+        return {"continue_delivery": current[0] == config_path and current[2:] == (destination, message_id)}
 
     runner_kwargs: dict[str, Any] = {"runner": runner} if runner else {}
     return reply_lark_event_inbox(
@@ -183,7 +183,7 @@ def verify_return(
     cancelled: Callable[[], bool] = lambda: False,
     private_transport: Any = None,
 ) -> dict[str, Any]:
-    config_path, source_verifier, _destination = _return_inbox(
+    config_path, source_verifier, _destination, message_id = _return_inbox(
         root=root,
         registry=registry,
         snapshot_provider=snapshot_provider,
@@ -193,7 +193,6 @@ def verify_return(
         cancelled=cancelled,
         private_transport=private_transport,
     )
-    message_id = route["source_id"].removeprefix("lark:")
     if runner is None and isinstance(session.get("steward_context"), dict):
         runner = private_transport._reply_runner
     runner_kwargs: dict[str, Any] = {"runner": runner} if runner else {}

@@ -10,8 +10,8 @@ from loopx.chat_store import _atomic_write_json, _read_json
 from loopx.extensions.lark.manager_returns import LarkManagerReturnTransport
 
 
-@pytest.fixture
-def private_return(steward):  # noqa: F811
+@pytest.fixture(params=["native", "legacy"])
+def private_return(steward, request):  # noqa: F811
     store, runtime, provider, transport, binding, _, _ = steward
     transport.admit("steward-app", provider.event("steward-app", "delegate", "/delegate --tokens 12000 Inspect README"))
     transport.reconcile()
@@ -32,10 +32,11 @@ def private_return(steward):  # noqa: F811
     target = {"goal_id": resources["goal_id"], "agent_id": "codex"}
     _write(_root(transport.runtime_root) / "policy.json", {"schema_version": POLICY_SCHEMA, "sources": {
         session["channel_id"]: {"local_delivery_scope": "selected", "sender_ids": [event["sender_id"]], "targets": [target]}}})
+    source_id = row["request_ref"] if request.param == "native" else "lark:" + event["message_id"]
     register_ingress(transport.runtime_root, session_id=session["session_id"], client_turn_id=turn["client_turn_id"],
-        channel=session["channel_id"], sender_id=event["sender_id"], message=turn["message"], source_id="lark:" + event["message_id"])
-    request = deliver(transport.runtime_root, runtime.registry_path, session=session, turn=turn, request=target)
-    route = {**target, "request_id": request["request_id"], "session_id": session["session_id"], "source_id": "lark:" + event["message_id"]}
+        channel=session["channel_id"], sender_id=event["sender_id"], message=turn["message"], source_id=source_id)
+    delivered = deliver(transport.runtime_root, runtime.registry_path, session=session, turn=turn, request=target)
+    route = {**target, "request_id": delivered["request_id"], "session_id": session["session_id"], "source_id": source_id}
     original_runner = provider.__call__
     replies = []
 
@@ -113,7 +114,8 @@ def test_private_return_rejects_changed_authority_or_original_source(private_ret
     elif fault == "workspace":
         monkeypatch.setattr(transport.bindings.projects, "available", lambda: [])
     elif fault == "source":
-        provider.messages[route["source_id"].removeprefix("lark:")]["sender"]["id"] = "ou_other"
+        record = _read_json(transport.root / f"{row['request_ref']}.json")
+        provider.messages[record["event"]["message_id"]]["sender"]["id"] = "ou_other"
     elif fault in {"native_turn", "transport_turn"}:
         root = transport.core.root if fault == "native_turn" else transport.root
         path = root / f"{row['request_ref']}.json"

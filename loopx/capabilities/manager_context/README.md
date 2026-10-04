@@ -356,6 +356,8 @@ Core-bound private stewards use their existing independently verified App/owner
 binding and original admitted source, without requiring a legacy Goal-channel
 binding. Sending and saved-attempt verification both revalidate the steward
 context, portfolio scope, source sender and canonical Session/Turn correlation.
+An opaque native request reference resolves its provider message only through
+those original correlation records; it is never used as a provider message id.
 Revocation or changed provenance blocks the return; a later conversation cannot
 receive it. The same Inbox and manager-context receipt owners handle delivery
 and recovery; ordinary private replies and legacy Goal-channel routes retain

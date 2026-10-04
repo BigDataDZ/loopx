@@ -6,6 +6,7 @@ Core owns audience grants, canonical Sessions, durable Turns and stop/recovery.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -203,20 +204,22 @@ class LarkPrivateConversations:
         """
         saved = session["steward_context"]
         selected = self.bindings.session_context(saved)
-        message_id = route["source_id"].removeprefix("lark:")
-        request = identity_ref(selected["binding"]["provider_ref"], message_id)
+        client = str(turn.get("client_turn_id") or "")
+        request = client.removeprefix("external-")
+        if client != f"external-{request}" or not re.fullmatch(r"[a-f0-9]{24}", request):
+            raise ValueError("original private request unavailable")
         record = _read_json(self.root / f"{request}.json")
         native = self.core.read_request(request)
-        if (not route["source_id"].startswith("lark:")
+        message_id = str(record.get("event", {}).get("message_id") or "")
+        if (route["source_id"] not in (request, f"lark:{message_id}")
+                or identity_ref(selected["binding"]["provider_ref"], message_id) != request
                 or session.get("goal_id") != "loopx-manager"
                 or session.get("channel_id") != selected["channel_id"]
                 or route["goal_id"] not in selected["context"]["goal_ids"]
                 or route["session_id"] != session["session_id"]
                 or turn.get("session_id") != session["session_id"]
-                or turn.get("client_turn_id") != f"external-{request}"
                 or record.get("profile") != selected["binding"]["transport_ref"]
                 or record.get("request_ref") != request
-                or record.get("event", {}).get("message_id") != message_id
                 or record.get("source") != lark_private_source(
                     provider_ref=selected["binding"]["provider_ref"], event=record["event"])
                 or record["source"]["source_ref"] != saved["source_ref"]
