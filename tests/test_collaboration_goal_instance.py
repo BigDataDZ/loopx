@@ -1186,7 +1186,9 @@ def test_failed_external_turn_returns_only_through_its_current_sender_grant(tmp_
     if revoke:
         policy_path = _root(tmp_path) / "policy.json"
         policy = json.loads(policy_path.read_text())
-        policy["sources"][session["channel_id"]]["targets"] = []
+        source = policy["sources"][session["channel_id"]]
+        source["local_delivery_scope"] = "selected"
+        source["targets"] = []
         _write(policy_path, policy)
     calls = []
 
