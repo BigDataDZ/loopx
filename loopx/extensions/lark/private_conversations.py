@@ -6,7 +6,7 @@ Core owns audience grants, canonical Sessions, durable Turns and stop/recovery.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -193,7 +193,7 @@ class LarkPrivateConversations:
                 "queue_rejected" if admitted["status"] == "rejected" else "command_recorded")
             return {"status": status}
 
-    def _reply_runner(self, args: list[str]) -> Any:
+    def _reply_runner(self, args: Sequence[str]) -> Any:
         return self.runner([self.cli_bin, *args[1:]], None, 30)
 
     def _feedback(self, path: Path, record: dict[str, Any], *, processing: bool = False) -> None:
@@ -259,93 +259,100 @@ class LarkPrivateConversations:
         _atomic_write_json(path, record)
         return bool(phase_state["verified"])
 
+    def pending_delivery_paths(self) -> list[Path]:
+        """The durable transport store is the queue; no in-memory admission."""
+        return [path for path in sorted(self.root.glob("*.json"))
+                if _read_json(path)["status"] != "delivered"]
+
     def reconcile(self) -> int:
-        self.core.recover()
-        # A crash after Core admission but before the transport correlation
-        # record is repaired by replaying the same message identity.
-        for pending in sorted(self.root.glob("*.json")):
-            row = _read_json(pending)
-            if row["status"] == "captured":
-                self.admit(row["profile"], row["event"])
-        delivered = 0
-        for path in sorted(self.root.glob("*.json")):
-            with exclusive_file_lock(path, operation="deliver_private_chat_request"):
-                record = _read_json(path)
-                if record["status"] in {"captured", "delivered"}:
-                    continue
-                try:
-                    self.bindings.resolve(binding_id=record["binding_id"], **record["source"])
-                    if record["status"] in {"command_queued", "command_completed", "commission_running"}:
-                        native = self.core.read_request(record["request_ref"])
-                        if native["status"] == "command_queued":
-                            self._feedback(path, record)
-                            self._deliver(path, record, "admission", native["response"])
-                            continue
-                        record.update(status=native["status"], response=native.get("response"),
-                                      commission_resources=native.get("commission_resources"),
-                                      status_snapshot=native.get("status_snapshot"))
-                    if record["status"] == "accepted":
-                        native = self.core.read_request(record["request_ref"])
-                        if native.get("agent_target"):
-                            self.bindings.resolve_agent_target(self.bindings.resolve(binding_id=record["binding_id"], **record["source"]), native["agent_target"])
+        return sum(self.reconcile_request(path) for path in self.pending_delivery_paths())
+
+    def reconcile_request(self, path: Path) -> int:
+        # Repair only this persisted source. Core still owns admission, recovery
+        # and the shared Session queue/fence; transport workers never run models.
+        row = _read_json(path)
+        if row["status"] == "captured":
+            self.admit(row["profile"], row["event"])
+        native_path = self.core.root / f"{row['request_ref']}.json"
+        if native_path.exists():
+            self.core.recover(request_ref=row["request_ref"])
+        with exclusive_file_lock(path, operation="deliver_private_chat_request"):
+            record = _read_json(path)
+            if record["status"] in {"captured", "delivered"}:
+                return 0
+            try:
+                self.bindings.resolve(binding_id=record["binding_id"], **record["source"])
+                if record["status"] in {"command_queued", "command_completed", "commission_running"}:
+                    native = self.core.read_request(record["request_ref"])
+                    if native["status"] == "command_queued":
                         self._feedback(path, record)
-                        # Receipt follows persistent Core admission and is
-                        # independent of terminal execution and reply delivery.
-                        turn = self.core.controller.store.load_turn(record["session_id"], record["turn_id"])
-                        # Get already acknowledges admission. Reserve a text
-                        # notification for a real wait or unavailable feedback;
-                        # resume any old attempt with its original exact text.
-                        admission = (record["deliveries"].get("admission") or {}).get("text")
-                        if not admission:
-                            if native.get("agent_target"):
-                                admission = "已收到，等待原 Agent 宿主处理。/status 查看状态，/project 返回项目对话。"
-                            elif turn and turn["status"] == "queued":
-                                admission = "正在处理前一条，这条已排队。"
-                            elif (record.get("feedback", {}).get("received") or {}).get("ok") is not True:
-                                admission = "已收到，正在处理。"
-                        if admission:
-                            self._deliver(path, record, "admission", admission)
-                        if turn and turn["status"] in {"starting", "running"}:
+                        self._deliver(path, record, "admission", native["response"])
+                        return 0
+                    record.update(status=native["status"], response=native.get("response"),
+                                  commission_resources=native.get("commission_resources"),
+                                  status_snapshot=native.get("status_snapshot"))
+                if record["status"] == "accepted":
+                    native = self.core.read_request(record["request_ref"])
+                    if native.get("agent_target"):
+                        self.bindings.resolve_agent_target(self.bindings.resolve(binding_id=record["binding_id"], **record["source"]), native["agent_target"])
+                    self._feedback(path, record)
+                    # Receipt follows persistent Core admission and is
+                    # independent of terminal execution and reply delivery.
+                    turn = self.core.controller.store.load_turn(record["session_id"], record["turn_id"])
+                    # Get already acknowledges admission. Reserve a text
+                    # notification for a real wait or unavailable feedback;
+                    # resume any old attempt with its original exact text.
+                    admission = (record["deliveries"].get("admission") or {}).get("text")
+                    if not admission:
+                        if native.get("agent_target"):
+                            admission = "已收到，等待原 Agent 宿主处理。/status 查看状态，/project 返回项目对话。"
+                        elif turn and turn["status"] == "queued":
+                            admission = "正在处理前一条，这条已排队。"
+                        elif (record.get("feedback", {}).get("received") or {}).get("ok") is not True:
+                            admission = "已收到，正在处理。"
+                    if admission:
+                        self._deliver(path, record, "admission", admission)
+                    if turn and turn["status"] in {"starting", "running"}:
+                        self._feedback(path, record, processing=True)
+                    if not turn or turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
+                        return 0
+                    response = str((turn.get("response") or {}).get("message") or "") if turn["status"] == "completed" else (
+                        "本次执行已停止。" if turn["status"] == "interrupted" else
+                        "本次执行失败或已过期，原会话已保留；请发送 /status 后再决定是否重试。")
+                else:
+                    if record["status"] != "rejected":
+                        self._feedback(path, record)
+                    response = _command_text(str(record.get("response_code") or "")) or str(record.get("response") or "")
+                    if record.get("status_snapshot"):
+                        response = _status_text(record["status_snapshot"], help_requested=native.get("command") == "help")
+                if self._deliver(path, record, "terminal", response):
+                    resources = record.get("commission_resources") or {}
+                    if resources.get("session_id") and resources.get("turn_id"):
+                        first_turn = self.core.controller.store.load_turn(resources["session_id"], resources["turn_id"])
+                        if first_turn and first_turn["status"] in {"starting", "running"}:
                             self._feedback(path, record, processing=True)
-                        if not turn or turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
-                            continue
-                        response = str((turn.get("response") or {}).get("message") or "") if turn["status"] == "completed" else (
-                            "本次执行已停止。" if turn["status"] == "interrupted" else
-                            "本次执行失败或已过期，原会话已保留；请发送 /status 后再决定是否重试。")
-                    else:
-                        if record["status"] != "rejected":
-                            self._feedback(path, record)
-                        response = _command_text(str(record.get("response_code") or "")) or str(record.get("response") or "")
-                        if record.get("status_snapshot"):
-                            response = _status_text(record["status_snapshot"], help_requested=native.get("command") == "help")
-                    if self._deliver(path, record, "terminal", response):
-                        resources = record.get("commission_resources") or {}
-                        if resources.get("session_id") and resources.get("turn_id"):
-                            first_turn = self.core.controller.store.load_turn(resources["session_id"], resources["turn_id"])
-                            if first_turn and first_turn["status"] in {"starting", "running"}:
-                                self._feedback(path, record, processing=True)
-                            if not first_turn or first_turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
-                                record["status"] = "commission_running"
-                                _atomic_write_json(path, record)
-                                continue
-                            result_text = str((first_turn.get("response") or {}).get("message") or "")
-                            result_text = "委托执行结果：\n" + result_text if first_turn["status"] == "completed" else "委托首轮执行未完成；原 Goal 和回执已保留，请查看状态后决定恢复。"
-                            proposal_id = native.get("proposal_id")
-                            if proposal_id:
-                                result_text += f"\n如需恢复暂停或额度受限的原执行：/resume-commission {proposal_id} --tokens N（N 为包含历史用量的总上限，须大于已用量；不会重开线程）。"
-                            if not self._deliver(path, record, "commission_result", result_text):
-                                continue
-                        config = self._inbox(record)
-                        acknowledge_lark_event_inbox(project=self.runtime_root, config_path=config,
-                            message_ids=[record["event"]["message_id"]], execute=True)
-                        self.core.record_delivery(record["request_ref"], session_id=record.get("session_id"), turn_id=record.get("turn_id"))
-                        record["status"] = "delivered"
-                        _atomic_write_json(path, record)
-                        delivered += 1
-                except (KeyError, ValueError, OSError):
-                    # Keep pending receipts available for actionable recovery.
-                    continue
-        return delivered
+                        if not first_turn or first_turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
+                            record["status"] = "commission_running"
+                            _atomic_write_json(path, record)
+                            return 0
+                        result_text = str((first_turn.get("response") or {}).get("message") or "")
+                        result_text = "委托执行结果：\n" + result_text if first_turn["status"] == "completed" else "委托首轮执行未完成；原 Goal 和回执已保留，请查看状态后决定恢复。"
+                        proposal_id = native.get("proposal_id")
+                        if proposal_id:
+                            result_text += f"\n如需恢复暂停或额度受限的原执行：/resume-commission {proposal_id} --tokens N（N 为包含历史用量的总上限，须大于已用量；不会重开线程）。"
+                        if not self._deliver(path, record, "commission_result", result_text):
+                            return 0
+                    config = self._inbox(record)
+                    acknowledge_lark_event_inbox(project=self.runtime_root, config_path=config,
+                        message_ids=[record["event"]["message_id"]], execute=True)
+                    self.core.record_delivery(record["request_ref"], session_id=record.get("session_id"), turn_id=record.get("turn_id"))
+                    record["status"] = "delivered"
+                    _atomic_write_json(path, record)
+                    return 1
+            except (KeyError, ValueError, OSError):
+                # Keep pending receipts available for actionable recovery.
+                return 0
+        return 0
 
 
 def _command_text(code: str) -> str:

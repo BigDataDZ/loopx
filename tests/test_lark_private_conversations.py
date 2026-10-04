@@ -284,3 +284,107 @@ def test_one_expired_app_identity_does_not_hide_the_other_listener(ordinary):  #
         assert transport.admit("steward-app", rejected)["status"] == "audience_rejected"
     finally:
         runtime.close()
+
+
+def test_slow_reply_readback_does_not_hold_independent_stop_or_other_app(ordinary, monkeypatch):  # noqa: F811
+    import threading
+    from loopx.extensions.lark.goal_topic_runtime_service import LarkGoalTopicRuntimeService
+
+    store, runtime, provider, transport = connect(ordinary)
+    blocked, release = threading.Event(), threading.Event()
+    original = Provider.__call__
+
+    def delayed(self, args, cwd=None, timeout=None):
+        if "+messages-mget" in args and args[args.index("--message-ids") + 1] == "om_out_0":
+            blocked.set()
+            assert release.wait(10)
+        return original(self, args, cwd, timeout)
+
+    monkeypatch.setattr(Provider, "__call__", delayed)
+    transport.admit("notes-app", provider.event("notes-app", "old-status", "/status"))
+    service = LarkGoalTopicRuntimeService(snapshot_provider=lambda: {}, runtime_root=store.root.parent,
+        runtime_controller=runtime, private_conversations=transport)
+    worker = threading.Thread(target=service._reconcile_private)
+    worker.start()
+    try:
+        assert blocked.wait(10)
+        transport.admit("notes-app", provider.event("notes-app", "urgent-stop", "/stop"))
+        transport.admit("steward-app", provider.event("steward-app", "other-status", "/status"))
+        deadline = time.monotonic() + 5
+        while len(provider.writes) < 3:
+            assert time.monotonic() < deadline
+            time.sleep(.01)
+        # The old provider read is still blocked, yet both exact audiences have
+        # received feedback. No Session/model was needed for these controls.
+        assert not release.is_set()
+        assert ("notes-app", "当前没有正在执行的消息。") in provider.writes
+        assert any(profile == "steward-app" and "角色：普通项目对话" in text
+                   for profile, text in provider.writes)
+        assert store.list_sessions() == []
+    finally:
+        release.set()
+        service._closed.set()
+        worker.join(10)
+        runtime.close()
+    assert not worker.is_alive()
+    writes = list(provider.writes)
+    transport.reconcile()
+    assert provider.writes == writes  # Recovery does not resend an attempted reply.
+
+
+def test_private_reply_workers_have_no_executor_backlog_and_stop_scheduling(tmp_path):
+    import threading
+    from loopx.extensions.lark.goal_topic_runtime_service import LarkGoalTopicRuntimeService
+
+    release, full = threading.Event(), threading.Event()
+    lock = threading.Lock()
+    calls = []
+
+    class Pending:
+        def pending_delivery_paths(self):
+            return [tmp_path / str(index) for index in range(9)]
+
+        def reconcile_request(self, path):
+            with lock:
+                calls.append(path)
+                if len(calls) == 4:
+                    full.set()
+            assert release.wait(10)
+            return 0
+
+    service = LarkGoalTopicRuntimeService(snapshot_provider=lambda: {}, runtime_root=tmp_path,
+        runtime_controller=None, private_conversations=Pending())
+    worker = threading.Thread(target=service._reconcile_private)
+    worker.start()
+    try:
+        assert full.wait(5)
+        assert len(calls) == 4 and len(set(calls)) == 4
+        service._closed.set()
+        release.set()
+        worker.join(5)
+        assert not worker.is_alive()
+        assert len(calls) == 4  # Five durable requests remain; none were queued in memory.
+    finally:
+        service._closed.set()
+        release.set()
+        worker.join(10)
+
+
+def test_scoped_recovery_does_not_probe_unrelated_app_and_revocation_blocks_reply(ordinary):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    try:
+        for profile in ["notes-app", "steward-app"]:
+            transport.admit(profile, provider.event(profile, profile, "/status"))
+        first = next(row for row in transport.core.pending()
+                     if row["binding_id"] == transport.bindings.read()["bindings"][0]["binding_id"])
+        observed = []
+        original = transport.bindings.observe
+        transport.bindings.observe = lambda profile: (observed.append(profile), original(profile))[1]
+        transport.core.recover(request_ref=first["request_ref"])
+        assert observed == ["notes-app"]
+        binding = transport.bindings.read()
+        transport.bindings.disconnect(first["binding_id"], expected_revision=binding["revision"])
+        assert transport.reconcile_request(transport.root / f"{first['request_ref']}.json") == 0
+        assert provider.writes == [] and store.list_sessions() == []
+    finally:
+        runtime.close()

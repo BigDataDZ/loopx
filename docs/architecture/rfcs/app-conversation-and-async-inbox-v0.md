@@ -101,6 +101,13 @@ an uncertain write is not repeated. Incomplete paginated readback cannot establi
 that a failed deletion succeeded. Provider permission failure does not cancel
 already admitted work or silently escalate host policy.
 
+Private delivery reconciles at most four persisted requests concurrently, with
+no executor backlog. A blocked reply readback does not hold an independent queue
+notice or control response; per-request locks and journals retain no-resend
+recovery. Core recovers each exact request under the existing Session fence.
+Provider verification cost and saturated-worker latency remain separate from
+model concurrency and are not certified by a synthetic blocked-readback test.
+
 This is a bounded provider presentation refactor, not a new Session, queue,
 model runner or control-plane owner. Native state drives both direct conversations
 and explicit commissions. Synthetic queue/stop/replay/isolation regressions and

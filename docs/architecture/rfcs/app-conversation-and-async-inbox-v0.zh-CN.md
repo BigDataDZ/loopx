@@ -93,6 +93,11 @@ Turn 观测。排队不显示为正在执行；收到表情保留到最终结果
 清理失败保留原回复的恢复路径，不重复发送已核验答案。收到与处理中共享
 prepared/created journal：已知 provider id 恢复回执，写入结果不确定时不盲重试；
 分页未读完不能证明删除成功。缺少表情权限不取消已受理工作，也不提高宿主策略。
+私聊投递最多并行处理 4 条持久请求，没有 executor 内存排队。一个回复读回阻塞
+不再挡住独立的排队提示或控制反馈；每条请求的锁与 journal 保留恢复不重发语义。
+Core 只恢复确切请求，沿用原 Session fence。Provider 核验成本与 worker 饱和时延
+仍需独立测量，合成阻塞测试不证明实时 SLO，也不增加模型并发授权。
+
 这是现有 provider 呈现边界的有界重构，不新增 Session、queue、model runner 或
 控制面 authority。合成回归与真实 provider canary 分别记录；增量卡片、媒体和
 权限回调仍需独立验收。
