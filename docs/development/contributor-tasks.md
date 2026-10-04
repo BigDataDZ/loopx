@@ -146,7 +146,7 @@ anchored row above.
 | Former ID | Was | Why retired | Where the work goes now |
 | --- | --- | --- | --- |
 | GH-C37 | "Curate the interaction pattern catalog with one new public-safe case" | Eight IP entries landed in three weeks with no consuming controller, dashboard copy or test named; the catalog is 3,300 lines and its own admission note now applies. | A new IP is part of the anchored row that consumes it; cite the code, test or copy that reads the pattern. |
-| GH-C102 (open form) | "Extend the shared coordination fixture with one more dimension" | Dimensions were added because the fixture accepted them, not because an invariant was uncovered. | Kept as GH-C102 above with a named RFC invariant required. |
+| GH-C102 (open form) | "Extend the shared coordination fixture with one more dimension" | Dimensions were added because the fixture accepted them, not because an invariant was uncovered. | Retired as a claimable template: admit future work only after it names a specific accepted invariant, consumer, gap, and exit. |
 | Progress-log "contributor implication" hints | "Add one synthetic fixture / negative case / walkthrough" | Hints named a shape, not a gap; they generated test-pin PRs. | Read them in [history](contributor-tasks-history.md); open an anchored issue if a hint maps to an RFC invariant or defect. |
 
 ## Maintainer-Owned / Coordination Required
