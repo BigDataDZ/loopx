@@ -78,6 +78,12 @@ RPC 回执。Lark 专属设置 companion 归 extension；会话、请求、范�
 
 ## 原生私聊反馈：默认开启与投递生命周期
 
+通用个人助手的最终回复复用 Markdown post，保留列表、引用、公开链接和代码；
+本地链接脱敏时保留可读标签，不生成指向 `[project]` 的假链接。旧纯文本投递
+仍按原 attempt 读回恢复，不因新默认而重发。图片/文件交付与真实增量仍需独立验收。
+普通项目 Codex adapter 在启动和确切 resume 时读取宿主当前项目模型/effort 默认；
+显式选择优先，配置修改后空闲重启服务以重新接续 adapter，保留 Session/thread 和 grants。
+
 Lark 原生私聊默认开启收到 `Get` 与处理中 `OnIt`；
 `loopx chat --no-private-reactions` 显式关闭新反馈写入。两个 App 复用现有 Inbox
 provider 生命周期：收到反馈在 Core 持久受理之后出现，处理中必须有原生 active

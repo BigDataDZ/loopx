@@ -259,6 +259,16 @@ provider effects. Intermediate replies pass `finalize_reactions=False`; their
 verified delivery does not clean processing feedback. Final delivery, including
 recovery of a prior verified answer, still owns cleanup.
 
+Native private replies use the shared Markdown `post` renderer, preserving lists,
+links, quotes and code. Recovery verifies the original attempt's format, including
+plain-text replies sent before this default changed, without another send. Local
+inline links keep their readable labels rather than linking to redaction tokens;
+machine paths remain private. This does not deliver local files or images.
+Ordinary project Codex start/resume resolves the host's current project model and
+effort defaults before attaching the exact thread; explicit executor choices win.
+Restart an idle Chat service after changing host defaults to reattach its adapter.
+No new thread, audience, sandbox grant or manager configuration is implied.
+
 For every reply-enabled Inbox, a missing `reply.received_reaction_emoji`
 defaults to `Get`. Set it explicitly to the empty string to disable this
 provider write. The reaction belongs to the same explicit sender boundary as

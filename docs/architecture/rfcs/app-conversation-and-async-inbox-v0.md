@@ -247,6 +247,16 @@ execution. Stopping a conversation does not silently stop delegated work.
 
 ## Product expression: what to borrow and what remains unproven
 
+Native private replies now share Markdown post presentation for lists, quotations,
+public links and code. Final response redaction preserves local inline-link labels
+without publishing fake destinations; it is not local artifact delivery. Existing
+plain-text attempts recover their original verified format without another send.
+Ordinary project Codex adapters resolve current host project model/effort defaults
+on start and exact resume; an explicit executor choice takes precedence. An idle
+service restart reattaches the adapter after configuration edits, preserving its
+Session/thread and grants. Media, incremental presentation and permission journeys
+retain their separate acceptance gaps.
+
 The [Lorca release post](https://x.com/localhost_4173/status/2103454978220470708)
 was inspected on 2026-09-25. It contains a **static screenshot**, not a verified
 interactive or recovery demonstration. The screenshot shows a named conversation
