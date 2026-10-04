@@ -54,6 +54,22 @@ def test_pending_status_readback_recovers_from_files_without_resending(ordinary)
         runtime.close()
 
 
+def test_explicit_write_status_matches_binding_without_opening_a_model_session(ordinary):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    try:
+        runtime.project_contexts.workspace_grant = "workspace_write"
+        transport.bindings.configure(transport_ref="notes-app", project_ref=runtime.project_contexts.available()[0]["project_ref"],
+            executor_endpoint_id="codex", project_grant="workspace_write")
+        transport.admit("notes-app", provider.event("notes-app", "write-status", "/help"))
+        assert transport.reconcile() == 1
+        assert "已明确授权此工作区读写" in provider.writes[-1][1]
+        assert "只读授权" not in provider.writes[-1][1]
+        assert "项目规则和 skills" in provider.writes[-1][1]
+        assert store.list_sessions() == []
+    finally:
+        runtime.close()
+
+
 def test_busy_status_reads_durable_queue_and_duplicate_retains_original_snapshot(ordinary):  # noqa: F811
     store, runtime, provider, transport = connect(ordinary)
     try:
