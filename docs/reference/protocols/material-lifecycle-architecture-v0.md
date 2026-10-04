@@ -208,3 +208,21 @@ focused tests, and a public smoke. It does not ship:
 
 Those require a private read-only adapter, exact dual-read reconciliation, and
 an explicit owner gate.
+
+## Project source scope for ordinary conversations
+
+The inventory, candidate intake/rollback, rerank, readable projection and
+intake-ranking settlement builders also accept an explicit `project_scope`.
+The ownership fields are exclusive: a packet has either its existing `goal_id`
+or `project_scope = {project_ref, source_profile_ref, workspace_grant_ref}`.
+Project packets declare capability scope `project`, remain default-off and
+contain no synthetic Goal. Existing Goal packets retain their representation.
+
+These refs do not authorize actions. Project candidate adapters must resolve
+current source and Core workspace authority through
+`MaterialProjectScopeVerifier.verify_project_scope`, binding the exact store,
+profile, current caller/audience and owner gate with expiry/revocation checks.
+Intake/rollback recheck before provider access and before publication; the
+adapter also enforces its authorization fence within the write transaction.
+Private profile initialization and storage stay source-owned. No migration,
+rebuild, Explore, global authority or scheduler behavior is changed.
