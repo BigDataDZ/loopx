@@ -81,7 +81,8 @@ def test_stale_binding_cannot_replan_another_agents_work_or_disabled_contract():
 
 def test_stale_binding_reaches_quota_frontier_projection():
     context = build_goal_frontier_projection_context_from_status(
-        goal_id="goal-a", agent_id="agent-a", status_payload={}, item={},
+        goal_id="goal-a", agent_id="agent-a",
+        status_payload={"run_history": {"runs": []}}, item={},
         project_asset=None, user_todo_summary={"open_count": 0},
         agent_todo_summary=_summary(), agent_todo_source_items=_source(),
         work_lane_contract={"lane": "advancement_task", "must_attempt_work": True},
