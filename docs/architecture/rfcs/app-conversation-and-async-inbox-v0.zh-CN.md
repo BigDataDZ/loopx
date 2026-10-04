@@ -10,6 +10,26 @@
 - 评估：[steward 黄金查询](../../product/use-cases/steward/golden-queries.md)。
 - 语言：[英文语义镜像](app-conversation-and-async-inbox-v0.md)。
 
+## 普通工作区会话：有界实现检查点
+
+Core Chat 可以独立于 Goal 和管家 portfolio 打开普通工作区 Session。在 App 中，
+工作区是管家对话的一个范围：“范围”选择器列出宿主授权的工作区，选中后继续该
+工作区自己的 Session，输入框、历史、流式输出、停止和图片与其他对话共用同一路径。
+范围不会出现在管家总览或 Goal 列表中；切回管家范围即恢复管家 Session。
+共享 typed context owner 核验确切工作区引用和当前 grant；目录缺失、symlink
+重定向或 grant 变化时拒绝继续。不会合成 Goal、注入 portfolio，也不凭工作区
+grant 授权 peer delegation。
+
+本次扩展现有 conversation-scope owner 的 `project_workspace` 分类及宿主观测合同，
+不增加 provider 自有 Session authority。Python 负责文件系统观测和既有 durable Chat
+store，TypeScript 负责上下文身份及范围。原生 Codex 恢复保留原 upstream thread
+和工作区；HTTP/协议 fixture 验证连续性与拒绝行为，不证明真实模型采用了上下文。
+
+首个 grant 仅面向本机 owner 的工作区读取。Lark 受众授权、普通私聊选择、独立于
+terminal delivery 的 durable 入站 admission，以及安装/手机验收仍是本 RFC 的未完成项。
+App 范围入口不代表这些旅程已通过，也不授权修改文件；grant 撤销后历史仍可读，
+新消息在宿主重新授权前被阻止。
+
 ## 决策：让 App 成为工作会话持续进行的地方
 
 用户应能在 LoopX 中说“接着做，结果给我” / “Keep going and bring me the result”，
@@ -23,6 +43,20 @@ Goal/Todo、lease、quota、验收和 effect 各自保留原有权限归属。�
 
 体验围绕五个问题组织：请求还在吗；谁确实在工作；纠偏或停止生效了吗；
 核验过的结果在哪里；失败后如何回来且不重新启动工作？
+
+### 实时 Bot 入口与接收者职责
+
+原生 Bot 替换是这套对话生命周期的另一个入口，实时连接独立于 Goal 周期工作。
+入口与接收者职责分开：普通项目对话、与既有 Agent 直接交流、持久管家共享机制，
+但目标与授权不同。[管家运行契约](capable-manager-semantic-handoff-v0.zh-CN.md#10-运行契约)
+在 S5 下排列传输隔离、普通私聊/角色选择、进度/媒体/权限及安装态替换验收。
+
+普通项目对话需要共享 Core 会话上下文，明确授权工作区、executor 和受众，
+无需用户创建 Goal，也不自动赋予全局管家目标。这是尚待实现的入口要求，
+不是新增已发布 Session schema。Lark 不能通过创建隐藏 Goal、复制其它 host session
+或另建 executor 来实现。显式接收者选择使用权限范围内的稳定引用，标签不授予权限。
+切换接收者影响未来输入；已受理工作和回报保留原 Session、来源和受众。
+停止针对当前精确请求，不停止 Bot 后面的全部 Agent。
 
 ### Managed 与 attached 是不同的执行关系
 
