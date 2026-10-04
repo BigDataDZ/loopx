@@ -219,17 +219,23 @@ grant for linked Core details. The shipped managed-Goal context grant below is
 a bounded step; full planning/effect inheritance still needs its typed grant
 chain, installed receiver adoption and original-route acceptance.
 
-Use managed Goal scope for an authenticated owner's context-delegation grant:
-all current and future registered Agents within those Goals inherit it. Avoid
-requiring separate enrollment every time a worker joins. Retain exact-recipient
-grants for restricted sources, and explicit recipient revocations that override
-the Goal grant. New Goals, evidence-read scope and execution permissions are
-separate authority; registration or a quoted request cannot expand them.
-The shared `collaboration/source_grants.ts` owner resolves the same current
-policy for the catalog, direct handoff and peer forwarding. The existing local
-operator command can configure a Goal target by omitting `--agent-id`, with
-preview, locked apply and readback. This bounded configuration slice does not
-qualify settings-UI editing, native receiver adoption or the full M1–M3 journey.
+**Local context-delivery default.** An operator-configured source with a verified authorized
+sender defaults to all active registered recipients on its selected local registry,
+across Goals and later registrations. `local_delivery_scope=selected` deliberately
+retains an enrollment boundary; an old enrollment list alone no longer restricts
+the default. Explicit Agent and Goal exclusions survive broad restoration and
+apply at direct delivery, replay and each parent-forwarding hop. Missing or
+malformed source provenance cannot activate the default. Context delivery grants
+no evidence-read expansion, remote delivery, execution, claim/lease or protected
+operation. Shared TypeScript `collaboration/source_grants.ts` owns the decision;
+Python observes registration/provenance and persists operator changes. Qualify
+cross-Goal delivery, future registration, revoked replay and original-route return
+through the existing App/Lark conversation, without claiming worker adoption from
+catalog access. The existing local operator commands preview, apply and read back exceptions.
+Restoring a Goal retains its individually revoked Agents; selected scope can
+enroll a whole Goal by omitting `--agent-id`. Editing source policy in packaged
+settings remains an unqualified configuration journey. Native receiver adoption
+and full M1–M3 execution are separate acceptance gates.
 
 LoopX state mutations always use the existing typed command boundary, even if initiated through shell. The manager does not edit registry/authority files behind the control plane. Repository modifications use the project's normal worktree/review practice. Scoped merge/deploy authorization may be reused; unrelated payment or trading authority cannot be inferred from it.
 

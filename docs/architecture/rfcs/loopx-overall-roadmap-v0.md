@@ -429,6 +429,10 @@ Use scoped discovery and permitted recovery before requesting manual IDs.
 Private-owner discovery is broad by default across registered local resources
 and authorized connected sources; a delivery allowlist, missing live binding or
 bounded first page must not hide an otherwise visible responsible Agent.
+Sender-bound local context delivery now defaults to active registered recipients
+across Goals, with current/future registration and explicit revocations resolved
+by the shared TS source owner. Selected-audience enrollment remains explicit;
+this is neither a remote grant nor proof of worker adoption.
 Keep discovery, audience evidence access, delegation and execution readiness
 separate, as specified by [manager §5.5](capable-manager-semantic-handoff-v0.md#55-responsibility-discovery-and-receiver-owned-planning).
 
