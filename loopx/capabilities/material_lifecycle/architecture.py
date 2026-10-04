@@ -57,6 +57,13 @@ def build_material_lifecycle_architecture_packet() -> dict[str, object]:
             MATERIAL_READABLE_PROJECTION_RECEIPT_SCHEMA_VERSION,
             MATERIAL_EXPLORE_INTENT_SCHEMA_VERSION,
         ],
+        "project_source_scope": {
+            "requires_explicit_source_profile": True,
+            "requires_existing_workspace_write_grant": True,
+            "requires_source_authorization_verifier": True,
+            "creates_goal": False,
+            "creates_source_authority": False,
+        },
         "sibling_capabilities": {
             "decision_context": (
                 "supplies revisioned evidence for bounded rerank proposals"
