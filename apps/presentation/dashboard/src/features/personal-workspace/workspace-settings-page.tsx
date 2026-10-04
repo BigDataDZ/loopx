@@ -8,17 +8,16 @@ import { GoalCapabilitySettings } from "./goal-capability-settings";
 import { GoalOwnershipSettings } from "./goal-ownership-settings";
 import { AutomationCadenceSettings } from "./automation-cadence-settings";
 import { MachineConfigurationSettings } from "./machine-configuration-settings";
+import { ConfigurationBackupSettings } from "./configuration-backup-settings";
 import { OperatorCredentialSettings } from "./operator-credential-settings";
-import { ProjectConversationPanel } from "./project-conversation-panel";
 import type { PersonalWorkspaceCallbacks, WorkspaceGoal, WorkspaceGoalNotification } from "./personal-workspace-model";
 import type { WorkspaceTheme } from "./workspace-theme";
 
-type WorkspaceSettingsTab = "project" | "ownership" | "steward" | "provider" | "machine" | "capabilities" | "cadence" | "lark" | "appearance" | "language";
+type WorkspaceSettingsTab = "ownership" | "steward" | "provider" | "machine" | "capabilities" | "cadence" | "lark" | "appearance" | "language";
 
 type SettingsPage = Exclude<WorkspaceSettingsTab, "machine">;
 
 const tabIcons: Record<SettingsPage, typeof Settings2> = {
-  project: Bot,
   ownership: KeyRound,
   appearance: Palette,
   capabilities: ServerCog,
@@ -94,7 +93,6 @@ export function WorkspaceSettingsPage({
       label: t("settings.workspaceGroup"),
       tabs: [
         { key: "lark", label: "Lark" },
-        { key: "project", label: locale === "zh-CN" ? "项目对话" : "Project conversation" },
         { key: "appearance", label: t("settings.appearance") },
         { key: "language", label: t("settings.language") },
       ],
@@ -111,7 +109,6 @@ export function WorkspaceSettingsPage({
     },
   ];
   const headings: Record<SettingsPage, { title: string }> = {
-    project: {title: locale === "zh-CN" ? "项目对话" : "Project conversation"},
     ownership: {title: t("ownership.title")},
     appearance: {
       title: t("settings.appearance"),
@@ -214,7 +211,6 @@ export function WorkspaceSettingsPage({
         ) : null}
 
         {tab === "steward" ? <MachineConfigurationSettings onChanged={onChanged} section="steward" /> : null}
-        {tab === "project" ? <ProjectConversationPanel /> : null}
         {tab === "capabilities" && capabilityScope === "machine" ? <MachineConfigurationSettings onChanged={onChanged} section="other" /> : null}
         {tab === "capabilities" && capabilityScope === "goal" ? (
           <GoalCapabilitySettings
@@ -226,6 +222,7 @@ export function WorkspaceSettingsPage({
           />
         ) : null}
         {tab === "ownership" && selectedGoal ? <GoalOwnershipSettings key={selectedGoal.goalId} goalId={selectedGoal.goalId} onChanged={onChanged} /> : null}
+        {tab === "capabilities" && (capabilityScope === "machine" || capabilityGoalId) ? <ConfigurationBackupSettings key={`${capabilityScope}:${capabilityGoalId}`} goalId={capabilityScope === "goal" ? capabilityGoalId : null} /> : null}
         {tab === "cadence" && selectedGoal ? <AutomationCadenceSettings key={selectedGoal.goalId} goal={selectedGoal} /> : null}
 
         {tab === "appearance" ? (

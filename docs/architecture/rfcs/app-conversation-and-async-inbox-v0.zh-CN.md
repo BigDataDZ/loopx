@@ -12,8 +12,10 @@
 
 ## 普通工作区会话：有界实现检查点
 
-Core Chat 可以独立于 Goal 和管家打开普通工作区 Session。设置 → 项目对话
-选择宿主明确提供的工作区，按当前 grant 执行请求、恢复原生线程、新建或关闭当前会话。
+Core Chat 可以独立于 Goal 和管家 portfolio 打开普通工作区 Session。在 App 中，
+工作区是管家对话的一个范围：“范围”选择器列出宿主授权的工作区，选中后继续该
+工作区自己的 Session，输入框、历史、流式输出、停止和图片与其他对话共用同一路径。
+范围不会出现在管家总览或 Goal 列表中；切回管家范围即恢复管家 Session。
 共享 typed context owner 核验确切工作区引用和当前 grant；目录缺失、symlink
 重定向或 grant 变化时拒绝继续。不会合成 Goal、注入 portfolio，也不凭工作区
 grant 授权 peer delegation。
@@ -22,6 +24,10 @@ grant 授权 peer delegation。
 不增加 provider 自有 Session authority。Python 负责文件系统观测和既有 durable Chat
 store，TypeScript 负责上下文身份及范围。原生 Codex 恢复保留原 upstream thread
 和工作区；HTTP/协议 fixture 验证连续性与拒绝行为，不证明真实模型采用了上下文。
+
+App grant 仅面向本机 owner 的工作区读取。App 范围入口本身不证明 Lark 私聊
+admission、安装或手机旅程已通过，也不授权修改文件；grant 撤销后历史仍可读，
+新消息在宿主重新授权前被阻止。下方独立检查点说明 Lark 的源码实现资格。
 
 本机 owner 的只读工作区入口现已接入独立核验的 Lark App 私聊绑定。既有设置 →
 Lark 页面选择一个非默认 App、当前可用工作区和宿主 executor，读回监听状态、待回复
@@ -37,6 +43,11 @@ provider 读回确认回复；发生没有 receipt 的不确定写入时不盲�
 这些是合成 provider/协议验收；真实原生 Codex 另行验证独立线程与上下文隔离。
 真实 Lark 收发、安装候选、手机旅程、注册 Agent 选择、媒体/增量/权限回调，以及
 更广的长期协调仍未验收。这一普通项目绑定保持只读，新增管家入口见下一检查点。
+
+私聊配置复用设置 → Lark；App 范围仍是本机普通对话的唯一入口。未存储 App 身份
+的旧群聊 profile 保留原 profile-hash 监听锁键。没有私聊绑定时不增加鉴权；有绑定
+时，同一请求内的别名检查与连接共用一次已验证身份观测。飞书 HTTP 组合位于
+extension，typed binding owner 继续保持 provider-neutral。
 
 ![合成私聊工作区设置](../../assets/personal-workspace/private-project-conversations.png)
 ![窄屏私聊设置](../../assets/personal-workspace/private-project-conversations-narrow.png)
@@ -62,7 +73,12 @@ token 上限和不启用默认调度的事实。既有 canonical Chat action 创
 原生完成是宿主执行证据，不是 canonical Goal/Todo 验收。总上限包含历史用量与
 上下文，运行中的请求可能超过上限；没有默认 heartbeat。
 
-新委托扩展 portfolio 时，在原管家线程刷新有界证据和工具。App、本人、来源和
+新委托扩展 portfolio 时，在原管家线程刷新有界证据和工具。创建提交后，既有
+请求日志先保存确切资源回执，再尝试加入管家范围。加入或读回失败时，操作保持
+排队以供恢复。恢复重新核验原 binding 与 canonical 回执，采用同一批资源并
+返回结果，不再创建 Goal 或模型线程。范围加入仍待恢复时，通知回执不能结算
+该操作。故障旅程覆盖加入失败、加入后读回丢失、创建 owner 调用中断及 binding
+撤权；验证的是 provider/Core IO 恢复，不是完整宿主重启。App、本人、来源和
 工作区仍固定并重新核验。原生事件读取在没有输出时，也不能卡住停止所需的控制
 RPC 回执。Lark 专属设置 companion 归 extension；会话、请求、范围和创建语义
 仍由现有 typed owner 持有。
@@ -172,6 +188,20 @@ Goal/Todo、lease、quota、验收和 effect 各自保留原有权限归属。�
 
 体验围绕五个问题组织：请求还在吗；谁确实在工作；纠偏或停止生效了吗；
 核验过的结果在哪里；失败后如何回来且不重新启动工作？
+
+### 实时 Bot 入口与接收者职责
+
+原生 Bot 替换是这套对话生命周期的另一个入口，实时连接独立于 Goal 周期工作。
+入口与接收者职责分开：普通项目对话、与既有 Agent 直接交流、持久管家共享机制，
+但目标与授权不同。[管家运行契约](capable-manager-semantic-handoff-v0.zh-CN.md#10-运行契约)
+在 S5 下排列传输隔离、普通私聊/角色选择、进度/媒体/权限及安装态替换验收。
+
+普通项目对话需要共享 Core 会话上下文，明确授权工作区、executor 和受众，
+无需用户创建 Goal，也不自动赋予全局管家目标。这是尚待实现的入口要求，
+不是新增已发布 Session schema。Lark 不能通过创建隐藏 Goal、复制其它 host session
+或另建 executor 来实现。显式接收者选择使用权限范围内的稳定引用，标签不授予权限。
+切换接收者影响未来输入；已受理工作和回报保留原 Session、来源和受众。
+停止针对当前精确请求，不停止 Bot 后面的全部 Agent。
 
 ### Managed 与 attached 是不同的执行关系
 

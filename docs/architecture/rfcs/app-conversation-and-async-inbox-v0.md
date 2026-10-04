@@ -13,9 +13,12 @@
 ## Ordinary workspace conversations: bounded implementation checkpoint
 
 The Core Chat entry can now open an ordinary workspace Session independently
-of a Goal or steward. Settings → Project conversation selects an explicitly
-configured host workspace, sends a request under its observed grant, resumes its native thread,
-opens a new Session or closes the selected one. The shared typed context owner
+of a Goal or the steward's portfolio. In the App, a workspace is a scope of the
+steward conversation: its Scope picker lists the host's granted workspaces, and
+choosing one continues that workspace's own Session through the same composer,
+history, streaming, stop and image path as every other conversation. The scope
+never appears on the steward overview or the Goal list, and returning to the
+steward scope restores the steward Session. The shared typed context owner
 checks the exact workspace reference and current grant; missing roots, retargeted
 symlinks and changed grants fail closed. No Goal is synthesized, no portfolio
 context is injected, and the workspace grant cannot authorize peer delegation.
@@ -26,6 +29,12 @@ authority. Python owns filesystem observations and the existing durable Chat sto
 the TypeScript owner decides context identity and scope. Native Codex resume retains
 the original upstream thread and workspace. HTTP/protocol fixtures qualify that
 continuity and denial behavior; they do not establish real model adoption.
+
+The App grant is workspace reading for the local owner. The App scope alone does
+not qualify Lark private-message admission, installed or mobile journeys, or
+authorize edits. A revoked grant keeps the history readable and blocks new
+messages until the host grants it again. The independent Lark checkpoint below
+qualifies its source implementation separately.
 
 The source implementation also has an explicit owner-only Lark private-message
 binding. Settings → Lark selects an independently verified non-default App,
@@ -52,6 +61,13 @@ live Lark/model/mobile result. Installed service qualification, phone journeys,
 registered Agent selection, real incremental/media/permission interactions and
 broader long-running coordination remain open acceptance. Runtime and
 permission-boundary changes require maintainer review before promotion.
+
+The private setup UI composes within Settings → Lark; the App workspace scope
+remains the sole ordinary local conversation entry. Legacy group profiles without
+a stored App identity retain their original profile-hash consumer lease. Requests
+without private bindings do not add provider authentication; configured aliases
+reuse one request-scoped verified identity observation. Lark HTTP composition
+resides in the extension, while the typed binding owner remains provider-neutral.
 
 Synthetic product previews: [desktop](../../assets/personal-workspace/private-project-conversations.png),
 [narrow](../../assets/personal-workspace/private-project-conversations-narrow.png),
@@ -154,6 +170,14 @@ not canonical Goal/Todo acceptance. An allowance includes previous usage and
 context; an in-flight request can exceed it. No default heartbeat is enabled.
 
 Portfolio extension refreshes scoped evidence/tools in the same steward thread.
+After creation commits, the existing request journal saves its exact resource
+receipt before attempting portfolio adoption. An adoption or readback failure
+keeps that operation queued for recovery. Recovery rechecks the original
+binding and canonical receipt, adopts the same resources, and returns their
+result without creating another Goal or model thread. Notification cannot
+settle an operation whose adoption is pending. Fault journeys cover adoption
+failure, lost adoption readback, an interrupted creation-owner call and revoked
+binding; they qualify provider/Core IO recovery, not a full host restart.
 App, owner, source and workspace identity remain frozen and rechecked. A silent
 native event reader cannot block the control RPC receipt needed to pause work.
 The provider-specific setup companion belongs to the Lark extension; the
@@ -250,6 +274,26 @@ owners keep their authority. Conversation membership creates no permission.
 Five questions organize the experience: is my request still here; who is actually
 working; did my correction or stop take effect; where is the checked result; and
 how do I come back after failure without starting the work again?
+
+### Realtime Bot entry and recipient purpose
+
+A native Bot replacement is another entry to this conversation lifecycle. Its
+realtime connection is independent of periodic Goal work. Entry and recipient
+purpose are separate: ordinary project chat, direct conversation with an existing
+Agent, and the persistent steward share mechanics but have different objectives
+and grants. The [steward operational contract](capable-manager-semantic-handoff-v0.md#10-operational-contract)
+orders transport isolation, ordinary DM/role choice, progress/media/permissions
+and installed replacement qualification under S5.
+
+Ordinary project chat needs a shared Core conversation context whose workspace,
+executor and audience are explicitly authorized, without a user-created Goal or
+an automatic global-steward objective. This is a remaining entry requirement,
+not a new shipped Session schema. Lark must not implement it by creating hidden
+Goals, copying another host's sessions, or introducing an independent executor.
+Explicit recipient selection uses permitted stable references; labels do not
+confer grants. Switching the selected recipient affects future input, while
+accepted work and returns retain their original Session, source and audience.
+Stop targets the exact current request rather than every Agent behind a Bot.
 
 ### Managed and attached are different execution relationships
 
