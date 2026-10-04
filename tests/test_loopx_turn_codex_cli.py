@@ -549,6 +549,81 @@ def test_agent_resume_rejects_changed_profile_before_launch(tmp_path, monkeypatc
     assert len(log.read_text().splitlines()) == 1
 
 
+def _write_resume_registry(path, project, *, scopes, expired=False, active=True):
+    entry = {"write_scope": scopes, "source": "operator-test", "decision": "approve",
+             "status": "active", "recorded_at": "2025-01-01T00:00:00Z"}
+    if expired:
+        entry["expires_at"] = "2025-01-02T00:00:00Z"
+    path.write_text(json.dumps({"schema_version": "0.2", "projects": [], "goals": [{
+        "id": "fixture-goal", "status": "active" if active else "retired", "repo": str(project),
+        "coordination": {"registered_agents": ["codex-fixture"],
+                         "checkpointed_boundary_authority": [entry]},
+    }]}))
+
+
+def test_approved_agent_write_resume_preserves_native_session(tmp_path, monkeypatch):
+    executable, log = _fake_codex(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log))
+    project = tmp_path / "project"
+    project.mkdir()
+    registry = tmp_path / "registry.json"
+    _write_resume_registry(registry, project, scopes=["**"])
+    request = _request()
+    request["session"]["context_policy"] = {"mode": "resume", "binding_scope": "agent"}
+    options = dict(runtime_root=tmp_path / "runtime", project=project, codex_bin=str(executable),
+                   registry_path=registry)
+    run_codex_cli_host(request, sandbox="read-only", **options)
+    request["session"]["action"] = "resume"
+    run_codex_cli_host(request, sandbox="workspace-write", **options)
+    run_codex_cli_host(request, sandbox="workspace-write", **options)
+    calls = [json.loads(line) for line in log.read_text().splitlines()]
+    assert len(calls) == 3
+    assert all("resume" in call and "session-fixture-0001" in call for call in calls[1:])
+    assert all('sandbox_mode="workspace-write"' in call for call in calls[1:])
+    assert len(list((tmp_path / "runtime").glob("goals/*/turn-sessions/*.json"))) == 1
+
+
+@pytest.mark.parametrize("case", ["missing", "expired", "inactive", "file", "sibling", "parent",
+                                  "model", "home", "mcp", "unregistered", "projection"])
+def test_write_resume_rejects_unapproved_or_other_profile_changes(tmp_path, monkeypatch, case):
+    executable, log = _fake_codex(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log))
+    project = tmp_path / "project"
+    project.mkdir()
+    worker = project / "worker"
+    worker.mkdir()
+    registry = tmp_path / "registry.json"
+    scopes = {"file": ["worker/result.json"], "sibling": ["other/**"],
+              "parent": ["worker/../**"]}.get(case, ["worker/**"])
+    _write_resume_registry(registry, project, scopes=scopes, expired=case == "expired",
+                           active=case != "inactive")
+    if case in {"unregistered", "projection"}:
+        payload = json.loads(registry.read_text())
+        coordination = payload["goals"][0]["coordination"]
+        if case == "unregistered":
+            coordination["registered_agents"] = ["another-agent"]
+        else:
+            coordination["checkpointed_boundary_authority"] = {
+                "active_count": 1, "active_write_scope": ["worker/**"]}
+        registry.write_text(json.dumps(payload))
+    request = _request()
+    request["session"]["context_policy"] = {"mode": "resume", "binding_scope": "agent"}
+    options = dict(runtime_root=tmp_path / "runtime", project=worker, codex_bin=str(executable),
+                   registry_path=None if case == "missing" else registry, model="fixture-model")
+    run_codex_cli_host(request, sandbox="read-only", **options)
+    request["session"]["action"] = "resume"
+    if case == "model":
+        options["model"] = "another-model"
+    if case == "home":
+        monkeypatch.setenv("CODEX_HOME", str(tmp_path / "different-home"))
+    if case == "mcp":
+        options["mcp_server"] = {"schema_version": CODEX_STDIO_MCP_SERVER_SCHEMA_VERSION,
+                                  "name": "changed", "command": [sys.executable, "server.py"]}
+    with pytest.raises(ValueError, match="profile changed"):
+        run_codex_cli_host(request, sandbox="workspace-write", **options)
+    assert len(log.read_text().splitlines()) == 1
+
+
 def test_agent_binding_still_requires_exact_goal_lifetime(tmp_path, monkeypatch):
     executable, log = _fake_codex(tmp_path)
     monkeypatch.setenv("FAKE_CODEX_LOG", str(log))

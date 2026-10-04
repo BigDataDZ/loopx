@@ -817,7 +817,16 @@ The Codex exec binding includes the exact Goal lifetime where available and a
 profile digest for agent scope: workspace, Codex home/settings, executable,
 model, effort, sandbox and MCP configuration. A corrupt/incompatible binding,
 missing native history or unexpected resumed ID fails closed; it cannot silently
-fork. Explicit `fresh` is the recovery operation. Current Turn selection, task
+fork. A read-only agent-scoped exec session may resume with workspace-write
+when that is the only profile change and the current registry records an
+unexpired operator checkpoint approving the entire working directory. The
+Agent must remain registered in the active Goal; file-only, sibling, expired,
+or projection-only approval is insufficient. Other profile changes retain the
+explicit `fresh` gate. Configure the approval through `configure-goal
+--boundary-authority-scope DIRECTORY/** --boundary-authority-source SOURCE`
+and preview before `--execute`; it grants neither publication nor production
+actions. This transition preserves the native Session and updates its profile
+digest only after the same native ID is observed. Current Turn selection, task
 lease, validation and settlement remain Todo-bound. Session scope grants no
 additional tool or effect authority. Managed operation-equipped app-server
 sessions retain their existing Todo-bound approval/handoff contract; this CLI
