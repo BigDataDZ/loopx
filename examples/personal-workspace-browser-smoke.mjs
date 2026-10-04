@@ -38,6 +38,7 @@ import { blockedNoticeSettingsScenario } from "./personal-workspace-browser/bloc
 import { automationCadenceScenario } from "./personal-workspace-browser/automation-cadence.mjs";
 import { turnStepsScenario } from "./personal-workspace-browser/turn-steps.mjs";
 import { monitorReadbackScenario } from "./personal-workspace-browser/monitor-readback.mjs";
+import { blockedReasonReadbackScenario } from "./personal-workspace-browser/blocked-reason-readback.mjs";
 import { teamEvidenceScenario } from "./personal-workspace-browser/team-evidence.mjs";
 import { managedGoalResultsScenario } from "./personal-workspace-browser/managed-goal-results.mjs";
 import { loopxModeScenario } from "./personal-workspace-browser/loopx-mode.mjs";
@@ -71,6 +72,7 @@ scenarioCatalog.push(goalDeletionScenario);
 scenarioCatalog.push(conversationImageRequestScenario);
 scenarioCatalog.push(workspaceViewRecoveryScenario);
 scenarioCatalog.push(monitorReadbackScenario);
+scenarioCatalog.push(blockedReasonReadbackScenario);
 scenarioCatalog.push(turnStepsScenario);
 scenarioCatalog.push(goalWorkMapScenario);
 scenarioCatalog.push(performanceDiagnosisScenario);
