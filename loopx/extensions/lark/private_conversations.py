@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from ...capabilities.native_chat.external_conversations import ChatExternalConversations
-from ...chat_store import _atomic_write_json, _read_json
+from ...chat_store import TERMINAL_TURN_STATES, _atomic_write_json, _read_json
 from ...file_lock import exclusive_file_lock
 from .conversation_identity import identity_ref, lark_private_source
 from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
@@ -261,10 +261,11 @@ class LarkPrivateConversations:
                         # independent of terminal execution and reply delivery.
                         self._deliver(path, record, "admission", "已持久受理到原 Agent 会话；等待原宿主领取。/status 查看持久队列，/project 返回普通项目对话。实时停止暂不支持，请在原宿主处理。" if native.get("agent_target") else "已持久受理；若已有执行，本条会排队。可发送 /status、/stop 或 /new。")
                         turn = self.core.controller.store.load_turn(record["session_id"], record["turn_id"])
-                        if not turn or turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
+                        if not turn or turn["status"] not in TERMINAL_TURN_STATES:
                             continue
                         response = str((turn.get("response") or {}).get("message") or "") if turn["status"] == "completed" else (
                             "本次执行已停止。" if turn["status"] == "interrupted" else
+                            "本次执行超时，原会话已保留；请发送 /status 查看状态后再决定是否重试。" if turn["status"] == "timed_out" else
                             "本次执行失败或已过期，原会话已保留；请发送 /status 后再决定是否重试。")
                     else:
                         response = _command_text(str(record.get("response_code") or "")) or str(record.get("response") or "")
@@ -274,12 +275,14 @@ class LarkPrivateConversations:
                         resources = record.get("commission_resources") or {}
                         if resources.get("session_id") and resources.get("turn_id"):
                             first_turn = self.core.controller.store.load_turn(resources["session_id"], resources["turn_id"])
-                            if not first_turn or first_turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
+                            if not first_turn or first_turn["status"] not in TERMINAL_TURN_STATES:
                                 record["status"] = "commission_running"
                                 _atomic_write_json(path, record)
                                 continue
                             result_text = str((first_turn.get("response") or {}).get("message") or "")
-                            result_text = "委托执行结果：\n" + result_text if first_turn["status"] == "completed" else "委托首轮执行未完成；原 Goal 和回执已保留，请查看状态后决定恢复。"
+                            result_text = ("委托执行结果：\n" + result_text if first_turn["status"] == "completed" else
+                                "委托首轮执行超时；原 Goal 和回执已保留，请查看状态后决定恢复。" if first_turn["status"] == "timed_out" else
+                                "委托首轮执行未完成；原 Goal 和回执已保留，请查看状态后决定恢复。")
                             proposal_id = native.get("proposal_id")
                             if proposal_id:
                                 result_text += f"\n如需恢复暂停或额度受限的原执行：/resume-commission {proposal_id} --tokens N（N 为包含历史用量的总上限，须大于已用量；不会重开线程）。"
