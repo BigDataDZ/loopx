@@ -18,6 +18,10 @@ class Provider:
         self.calls = []
         self.writes = []
         self.verify_replies = True
+        self.reactions = {}
+        self.reaction_creates = []
+        self.fail_reaction_create = False
+        self.fail_reaction_delete = False
 
     def event(self, profile, name, text, kind="text"):
         event = {"schema_version": "lark_event_inbox_event_v0", "event_id": f"event_{name}",
@@ -51,6 +55,26 @@ class Provider:
                 self.writes.append((profile, text))
                 self.messages[ref] = {"message_id": ref, "body": {"content": content}}
                 data = {"ok": True, "data": {"message_id": ref}}
+        elif "reactions" in args:
+            ref = args[args.index("--message-id") + 1]
+            if "create" in args:
+                if self.fail_reaction_create:
+                    return {"returncode": 1, "stdout": '{"ok":false}'}
+                emoji = json.loads(args[args.index("--data") + 1])["reaction_type"]["emoji_type"]
+                reaction = f"reaction_{len(self.reaction_creates)}"
+                self.reaction_creates.append((profile, ref, emoji))
+                self.reactions[reaction] = (profile, ref, emoji)
+                data = {"ok": True, "data": {"reaction_id": reaction}}
+            elif "delete" in args:
+                if self.fail_reaction_delete:
+                    return {"returncode": 1, "stdout": '{"ok":false}'}
+                reaction = args[args.index("--reaction-id") + 1]
+                assert self.reactions[reaction][:2] == (profile, ref)
+                self.reactions.pop(reaction)
+                data = {"ok": True}
+            else:
+                data = {"ok": True, "data": {"items": [{"reaction_id": key} for key, row in self.reactions.items()
+                                                        if row[:2] == (profile, ref)], "has_more": False}}
         else:
             pytest.fail(f"unnecessary provider operation: {args[2:5]}")
         return {"returncode": 0, "stdout": json.dumps(data), "stderr": ""}
