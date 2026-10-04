@@ -3,7 +3,7 @@ import {connectPrivateConversation, disconnectPrivateConversation, fetchPrivateC
   fetchChatProjects, fetchChatCapabilities, fetchLarkApps, type PrivateConversation,
   type ChatProject, type LarkApp} from "../../data/chat";
 import {useWorkspaceI18n} from "./i18n";
-import "./project-conversation.css";
+import "./private-conversation.css";
 
 export function PrivateConversationPanel() {
   const {locale} = useWorkspaceI18n();
@@ -54,7 +54,7 @@ export function PrivateConversationPanel() {
     try {await operation(); await refresh();} catch (error) {setError(String(error));}
     finally {setBusy(false);}
   }
-  return <section className="personal-detail-card personal-project-conversation" aria-label={zh ? "本人飞书私聊" : "Owner private Chat"}>
+  return <section className="personal-detail-card personal-private-conversation" aria-label={zh ? "本人飞书私聊" : "Owner private Chat"}>
     <h3>{zh ? "本人私聊 · 项目助手与管家" : "Owner private Chat · Project assistant and steward"}</h3>
     <p>{zh ? "每个 App 单独核验本人。项目助手只读讨论工作区，不创建隐藏 Goal。管家从空 portfolio 开始，只管理在此入口明确确认的新委托。" : "Verify the owner independently for each App. Project Chat discusses the workspace without hidden Goals. A steward starts with an empty portfolio and manages only new commissions explicitly confirmed here."}</p>
     {rows.map(row => <article key={row.binding_id}>

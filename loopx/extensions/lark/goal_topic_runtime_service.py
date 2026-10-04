@@ -249,7 +249,9 @@ class LarkGoalTopicRuntimeService:
                     app_id = str(profile_config.get("bot_app_id") or "")
                     # Both paths lease the same App-scoped digest, so aliases
                     # or a second server cannot start another consumer.
-                    digest = hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:32] if app_id else str(profile_config.get("consumer_ref") or profile)
+                    digest = (hashlib.sha256(app_id.encode("utf-8")).hexdigest()[:32]
+                              if app_id else str(profile_config.get("consumer_ref")
+                              or hashlib.sha256(profile.encode("utf-8")).hexdigest()[:32]))
                     lease = Path.home() / ".loopx" / "lark-consumers" / digest
                     with try_exclusive_file_lock(
                         lease, operation="lark_event_consumer"

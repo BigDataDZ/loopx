@@ -166,6 +166,104 @@ def test_confirmed_commission_runs_native_goal_returns_result_and_extends_same_s
         restarted.close()
 
 
+@pytest.mark.parametrize("fault", ["adoption", "adoption_readback", "creation_owner_crash"])
+def test_applied_commission_recovers_after_io_owner_restart_without_recreation(steward, monkeypatch, fault):
+    from loopx.extensions.lark.private_conversations import LarkPrivateConversations
+
+    class InterruptedOwner(BaseException):
+        pass
+
+    store, runtime, provider, transport, binding, capture, _ = steward
+    transport.admit("steward-app", provider.event("steward-app", "delegate", "/delegate --tokens 12000 Inspect README"))
+    transport.reconcile()
+    preview = transport.core.actions.store.list()[0]
+    text = "/confirm " + preview["proposal_id"]
+    transport.admit("steward-app", provider.event("steward-app", "confirm", text))
+    request = next(r for r in transport.core.pending() if r["message"] == text)
+    original_adopt = transport.bindings.adopt_created_goal
+    original_apply = transport.core.actions.apply
+    failed = False
+
+    def adopt(**kwargs):
+        nonlocal failed
+        if failed:
+            return original_adopt(**kwargs)
+        failed = True
+        if fault == "adoption_readback":
+            original_adopt(**kwargs)
+        raise OSError("temporary adoption IO failure")
+
+    def apply(*args, **kwargs):
+        nonlocal failed
+        result = original_apply(*args, **kwargs)
+        if not failed:
+            failed = True
+            raise InterruptedOwner()
+        return result
+
+    if fault == "creation_owner_crash":
+        monkeypatch.setattr(transport.core.actions, "apply", apply)
+        with pytest.raises(InterruptedOwner):
+            transport.reconcile()
+    else:
+        monkeypatch.setattr(transport.bindings, "adopt_created_goal", adopt)
+        transport.reconcile()
+    applied = transport.core.actions.load(preview["proposal_id"])
+    resources = applied["receipt"]["resource_ids"]
+    assert applied["status"] == "applied"
+    assert finish(runtime, resources)["status"] == "completed"
+    pending = transport.core.read_request(request["request_ref"])
+    assert pending["status"] == "command_queued" and not pending.get("delivery_verified")
+    assert not any("管家操作未完成" in message for _, message in provider.writes)
+    if fault != "creation_owner_crash":
+        assert pending["commission_resources"] == resources and pending["commission_adoption_pending"]
+        with pytest.raises(ValueError, match="adoption is pending"):
+            transport.core.record_delivery(request["request_ref"], session_id=pending["session_id"], turn_id=pending["turn_id"])
+    monkeypatch.setattr(transport.core.actions, "apply", original_apply)
+    monkeypatch.setattr(transport.bindings, "adopt_created_goal", original_adopt)
+    threads_before = sum(json.loads(line).get("method") == "thread/start" for line in capture.read_text().splitlines())
+    recovered = LarkPrivateConversations(controller=runtime, runtime_root=transport.runtime_root,
+                                         runner=provider, cli_bin=transport.cli_bin)
+    recovered.core.actions = transport.core.actions
+    recovered.reconcile()
+    result = recovered.core.read_request(request["request_ref"])
+    assert result["commission_resources"] == resources and result["delivery_verified"]
+    assert not result.get("commission_adoption_pending")
+    assert transport.bindings.read()["bindings"][1]["goal_ids"] == [resources["goal_id"]]
+    assert len(json.loads(runtime.registry_path.read_text())["goals"]) == 1
+    assert recovered.core.actions.load(preview["proposal_id"])["receipt"]["resource_ids"] == resources
+    assert sum(profile == "steward-app" and "Verified synthetic result" in message for profile, message in provider.writes) == 1
+    writes = len(provider.writes)
+    recovered.reconcile()
+    assert len(provider.writes) == writes
+    assert sum(json.loads(line).get("method") == "thread/start" for line in capture.read_text().splitlines()) == threads_before
+
+
+def test_post_commit_adoption_cannot_outlive_original_private_authority(steward, monkeypatch):
+    _, runtime, provider, transport, binding, _, _ = steward
+    transport.admit("steward-app", provider.event("steward-app", "delegate", "/delegate --tokens 12000 Inspect README"))
+    transport.reconcile()
+    preview = transport.core.actions.store.list()[0]
+    text = "/confirm " + preview["proposal_id"]
+    transport.admit("steward-app", provider.event("steward-app", "confirm", text))
+    original = transport.bindings.adopt_created_goal
+    def unavailable(**kwargs):
+        raise OSError("temporary adoption IO failure")
+    monkeypatch.setattr(transport.bindings, "adopt_created_goal", unavailable)
+    transport.reconcile()
+    resources = transport.core.actions.load(preview["proposal_id"])["receipt"]["resource_ids"]
+    assert finish(runtime, resources)["status"] == "completed"
+    transport.bindings.disconnect(binding["binding_id"], expected_revision=transport.bindings.read()["revision"])
+    monkeypatch.setattr(transport.bindings, "adopt_created_goal", original)
+    writes = len(provider.writes)
+    transport.reconcile()
+    row = next(r for r in transport.core.pending() if r["message"] == text)
+    assert row["commission_adoption_pending"] and not row.get("delivery_verified")
+    assert row["commission_resources"] == resources
+    assert len(provider.writes) == writes
+    assert len(json.loads(runtime.registry_path.read_text())["goals"]) == 1
+
+
 def test_expired_preview_and_wrong_source_cannot_create_a_goal(steward):
     _, runtime, provider, transport, _, _, _ = steward
     transport.admit("steward-app", provider.event("steward-app", "delegate", "/delegate --tokens 1000 Read only"))
