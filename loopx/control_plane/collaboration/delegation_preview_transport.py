@@ -71,7 +71,12 @@ def _kill_bridge(process: subprocess.Popen) -> None:
         pass
 
 
-def _close_bridge(process: subprocess.Popen, *, force: bool = False) -> None:
+def _close_bridge(
+    process: subprocess.Popen,
+    *,
+    force: bool = False,
+    cleanup_confirmed: bool = False,
+) -> bool:
     # Parent EOF cancels the TS-owned group; give its cleanup fence time to run.
     if force:
         _terminate_bridge(process)
@@ -97,6 +102,10 @@ def _close_bridge(process: subprocess.Popen, *, force: bool = False) -> None:
     finally:
         if process.stdout is not None:
             process.stdout.close()
+    # SIGTERM can win before the bridge installs its handlers, before it can
+    # spawn a worker. Once initialized, normal exit follows Host group cleanup.
+    # A SIGKILLed supervisor provides neither guarantee.
+    return cleanup_confirmed or process.returncode in (0, -signal.SIGTERM)
 
 
 class DelegationPreviewTransport:
@@ -109,16 +118,21 @@ class DelegationPreviewTransport:
         self._finalizer: weakref.finalize | None = None
         self._sequence = 0
 
-    def _close(self, *, force: bool = False) -> None:
+    def _close(
+        self, *, force: bool = False, cleanup_confirmed: bool = False
+    ) -> bool:
         process, finalizer = self._process, self._finalizer
-        self._process = None
-        self._finalizer = None
-        self._partition = None
+        if process is not None and not _close_bridge(
+            process,
+            force=force,
+            cleanup_confirmed=cleanup_confirmed,
+        ):
+            return False
+        self._process = self._partition = self._finalizer = None
         self._sequence = 0
         if finalizer is not None:
             finalizer.detach()
-        if process is not None:
-            _close_bridge(process, force=force)
+        return True
 
     def close(self) -> None:
         with self._lock:
@@ -143,7 +157,10 @@ class DelegationPreviewTransport:
             for replacement in (False, True):
                 if (self._partition != partition or self._process is None
                         or self._process.poll() is not None or self._sequence >= 128):
-                    self._close()
+                    if not self._close():
+                        raise ValueError(
+                            "delegation preview cleanup remains unconfirmed"
+                        )
                     bridge = Path(__file__).with_name("delegation_preview_bridge.ts")
                     self._process = subprocess.Popen(
                         [_node_executable(), "--no-warnings", "--experimental-strip-types", str(bridge)],
@@ -179,7 +196,7 @@ class DelegationPreviewTransport:
                         and type(response["last_id"]) is int):
                     # The TS owner confirms this request was not accepted and
                     # its old group stopped. Reuse the original deadline/binding.
-                    self._close()
+                    self._close(cleanup_confirmed=True)
                     continue
                 if response.get("kind") == "failure" and response.get("outcome") == "timeout":
                     raise subprocess.TimeoutExpired(["delegation-preview"], timeout)
