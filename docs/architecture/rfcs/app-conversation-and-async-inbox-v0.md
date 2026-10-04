@@ -84,6 +84,29 @@ rules while preserving prior text and creating no Goal. It is a host/filesystem
 result, not live Lark write-workflow, material intake or release qualification.
 Maintainer review, installed/Lark journeys and broader IM interactions remain open.
 
+## Native private feedback: default and delivery lifecycle
+
+Native Lark private conversations enable received `Get` and processing `OnIt`
+feedback by default. `loopx chat --no-private-reactions` explicitly disables new
+feedback writes. Both Apps reuse the existing Inbox provider lifecycle: received
+feedback follows durable Core admission; processing requires an observed active
+Turn. Queued requests do not appear to be executing. Received feedback is retained
+after the result and conveys consumption, never acceptance of the work outcome.
+
+Intermediate replies and their read-only recovery defer reaction finalization.
+Only the final result cleans processing receipts; cleanup failure keeps the
+original verified reply recoverable without resending it. Received and processing
+creations share a durable prepared/created journal. A known id recovers its receipt;
+an uncertain write is not repeated. Incomplete paginated readback cannot establish
+that a failed deletion succeeded. Provider permission failure does not cancel
+already admitted work or silently escalate host policy.
+
+This is a bounded provider presentation refactor, not a new Session, queue,
+model runner or control-plane owner. Native state drives both direct conversations
+and explicit commissions. Synthetic queue/stop/replay/isolation regressions and
+real provider canaries are separate evidence; broader incremental cards, media
+and permission callbacks remain open acceptance.
+
 ## Bound steward private Chat: explicit new commissions
 
 Settings → Lark can now select a steward role independently of ordinary project

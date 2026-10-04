@@ -76,6 +76,21 @@ RPC 回执。Lark 专属设置 companion 归 extension；会话、请求、范�
 合成产品预览：[空管家与项目助手](../../assets/personal-workspace/private-steward-empty.png)、
 [窄视口](../../assets/personal-workspace/private-steward-empty-narrow.png)。
 
+## 原生私聊反馈：默认开启与投递生命周期
+
+Lark 原生私聊默认开启收到 `Get` 与处理中 `OnIt`；
+`loopx chat --no-private-reactions` 显式关闭新反馈写入。两个 App 复用现有 Inbox
+provider 生命周期：收到反馈在 Core 持久受理之后出现，处理中必须有原生 active
+Turn 观测。排队不显示为正在执行；收到表情保留到最终结果之后，表示消费而非
+工作验收。中间受理/进度回复及其只读恢复不清理表情；最终结果清理处理中回执。
+
+清理失败保留原回复的恢复路径，不重复发送已核验答案。收到与处理中共享
+prepared/created journal：已知 provider id 恢复回执，写入结果不确定时不盲重试；
+分页未读完不能证明删除成功。缺少表情权限不取消已受理工作，也不提高宿主策略。
+这是现有 provider 呈现边界的有界重构，不新增 Session、queue、model runner 或
+控制面 authority。合成回归与真实 provider canary 分别记录；增量卡片、媒体和
+权限回调仍需独立验收。
+
 ## 私聊状态与帮助：授权范围内的观测
 
 `/status` 与 `/help` 复用既有 typed bound-request owner，展示已授权角色、工作区、

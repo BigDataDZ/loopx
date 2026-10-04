@@ -252,6 +252,13 @@ messages; use `configured_chat_all` for complete collaboration threads:
 }
 ```
 
+Native owner-bound private Chat enables `Get`/`OnIt` by default and retains the
+received receipt. Use `loopx chat --no-private-reactions` to disable new private
+feedback writes. Native Core admission and active Turn observations drive these
+provider effects. Intermediate replies pass `finalize_reactions=False`; their
+verified delivery does not clean processing feedback. Final delivery, including
+recovery of a prior verified answer, still owns cleanup.
+
 For every reply-enabled Inbox, a missing `reply.received_reaction_emoji`
 defaults to `Get`. Set it explicitly to the empty string to disable this
 provider write. The reaction belongs to the same explicit sender boundary as
