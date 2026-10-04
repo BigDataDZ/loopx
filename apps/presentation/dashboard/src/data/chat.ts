@@ -19,6 +19,23 @@ const configuredChatOrigin = String(import.meta.env?.VITE_LOOPX_CHAT_ORIGIN ?? "
   .trim()
   .replace(/\/+$/, "");
 
+export type ConfigurationBackupResult = {
+  ok: boolean; status?: string; goal_count: number; machine_configuration_present: boolean;
+  sha256: string; checkpoint_ref?: string;
+};
+
+export function exportConfigurationBackup(goalIds?: string[]) {
+  return requestJson<ConfigurationBackupResult & {backup: Record<string, unknown>}>("/api/chat/configuration-backup/export", {
+    method: "POST", body: JSON.stringify(goalIds === undefined ? {} : {goal_ids: goalIds}),
+  });
+}
+
+export function restoreConfigurationCheckpoint(backup: Record<string, unknown>, execute: boolean) {
+  return requestJson<ConfigurationBackupResult>("/api/chat/configuration-backup/restore", {
+    method: "POST", body: JSON.stringify({backup, expected_sha256: backup.sha256, execute}),
+  });
+}
+
 function chatApiUrl(path: string) {
   if (!configuredChatOrigin || /^https?:\/\//.test(path)) {
     return path;
