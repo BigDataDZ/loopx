@@ -255,7 +255,10 @@ messages; use `configured_chat_all` for complete collaboration threads:
 Native owner-bound private Chat enables `Get`/`OnIt` by default and retains the
 received receipt. Use `loopx chat --no-private-reactions` to disable new private
 feedback writes. Native Core admission and active Turn observations drive these
-provider effects. Intermediate replies pass `finalize_reactions=False`; their
+provider effects. Successful received feedback avoids a duplicate admission
+message; an observed queued Turn still gets a concise waiting notice. Missing
+reaction permission or explicit opt-out retains a text receipt. Existing attempts
+recover their original text. Intermediate replies pass `finalize_reactions=False`; their
 verified delivery does not clean processing feedback. Final delivery, including
 recovery of a prior verified answer, still owns cleanup.
 
