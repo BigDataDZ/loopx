@@ -219,17 +219,23 @@ grant for linked Core details. The shipped managed-Goal context grant below is
 a bounded step; full planning/effect inheritance still needs its typed grant
 chain, installed receiver adoption and original-route acceptance.
 
-Use managed Goal scope for an authenticated owner's context-delegation grant:
-all current and future registered Agents within those Goals inherit it. Avoid
-requiring separate enrollment every time a worker joins. Retain exact-recipient
-grants for restricted sources, and explicit recipient revocations that override
-the Goal grant. New Goals, evidence-read scope and execution permissions are
-separate authority; registration or a quoted request cannot expand them.
-The shared `collaboration/source_grants.ts` owner resolves the same current
-policy for the catalog, direct handoff and peer forwarding. The existing local
-operator command can configure a Goal target by omitting `--agent-id`, with
-preview, locked apply and readback. This bounded configuration slice does not
-qualify settings-UI editing, native receiver adoption or the full M1–M3 journey.
+**Local context-delivery default.** An operator-configured source with a verified authorized
+sender defaults to all active registered recipients on its selected local registry,
+across Goals and later registrations. `local_delivery_scope=selected` deliberately
+retains an enrollment boundary; an old enrollment list alone no longer restricts
+the default. Explicit Agent and Goal exclusions survive broad restoration and
+apply at direct delivery, replay and each parent-forwarding hop. Missing or
+malformed source provenance cannot activate the default. Context delivery grants
+no evidence-read expansion, remote delivery, execution, claim/lease or protected
+operation. Shared TypeScript `collaboration/source_grants.ts` owns the decision;
+Python observes registration/provenance and persists operator changes. Qualify
+cross-Goal delivery, future registration, revoked replay and original-route return
+through the existing App/Lark conversation, without claiming worker adoption from
+catalog access. The existing local operator commands preview, apply and read back exceptions.
+Restoring a Goal retains its individually revoked Agents; selected scope can
+enroll a whole Goal by omitting `--agent-id`. Editing source policy in packaged
+settings remains an unqualified configuration journey. Native receiver adoption
+and full M1–M3 execution are separate acceptance gates.
 
 LoopX state mutations always use the existing typed command boundary, even if initiated through shell. The manager does not edit registry/authority files behind the control plane. Repository modifications use the project's normal worktree/review practice. Scoped merge/deploy authorization may be reused; unrelated payment or trading authority cannot be inferred from it.
 
@@ -751,6 +757,42 @@ Measure ingress acknowledgement latency, first substantive response, handoff ass
 Target an ingress receipt within two seconds on a healthy local service, independently of model latency; this is an initial SLO to measure, not a model-response promise. Long work announces an actionable delay rather than emitting periodic noise. Cap model concurrency and per-turn investigation cost through existing runtime/Goal configuration; the manager's budget must not consume all worker capacity. Busy workers retain accepted work; queuing and next wake are visible.
 
 Use existing service recovery and receipt pumps. No manager-specific business automation for each kind of request. Expose configuration and failures through the existing CLI, capability settings and manager conversation. Troubleshooting distinguishes model failure, tool/policy denial, state conflict, unreachable receiver and transport formatting/delivery failure.
+
+**Realtime IM entry (S1/S5/S10):** qualify long-connection reception, durable
+admission, host execution and visible return separately. While one answer is
+blocked, another request or correction must receive bounded, truthful admission
+feedback; Core queue/steering support alone does not qualify the Lark consumer.
+Retain persistent Sessions, provisional progress, exact permission decisions
+and explicit media availability through existing Chat/Turn/operation owners.
+No parallel bridge ledger or scheduler is required. The bundled provider's
+[readiness guide](../../../loopx/extensions/lark/docs/realtime-conversation-readiness.md)
+records bounded cross-conversation dispatch and remaining replacement qualification;
+private DM onboarding, ordinary non-Goal chat, streaming and media remain
+unqualified until the pinned installed journey passes.
+
+**Product boundary:** the Bot is a realtime conversation entry, not another
+steward. Ordinary project chat and direct conversation with a selected existing
+Agent must remain useful without team decomposition or a new Goal/Todo. The
+steward is an explicit recipient when the user needs persistent commitments,
+coordination and acceptance. Share authenticated ingress, Session/Turn,
+execution/progress/attachments, operation decisions and recovery; keep recipient
+purpose, audience, transcript and workspace grants distinct. A channel must not
+inherit the global steward objective or portfolio visibility just to obtain a
+working executor. Shared changes belong to the
+[conversation-entry RFC](app-conversation-and-async-inbox-v0.md), not a second Bot
+execution or approval authority. Replacing a tenant-controlled App on another
+machine requires a freshly authorized App; credentials, source transcripts and
+permission bindings do not travel as a workstation backup.
+
+Deliver these through M1/M3 and the existing S5 journey, without adding a parallel
+milestone or treating a periodic heartbeat as realtime transport:
+
+| Order | User-visible exit | Existing owner and qualification |
+| --- | --- | --- |
+| First | A slow role does not hold every other conversation on the same Bot; follow-ups remain ordered | Lark transport has bounded workers/buffering, fresh binding checks, reply/ACK readback and stop/drain evidence; Core retains Session admission and budgets |
+| Next | A first DM and explicit role choice continue the intended conversation; busy work promptly reports durable admission or rejection | Chat Session/Turn and typed ingress own continuity, audience and queue/steering; ordinary chat must not require users to manufacture a Goal Topic, and role names alone grant no authority |
+| Then | Progress, images/files and permission answers work for each advertised host | Existing event/attachment/operation owners; bounded provisional cards, explicit unsupported media, authenticated exact-operation callbacks and delivery-only recovery |
+| Switch gate | The installed provider/host journey survives reconnect, duplicates, cancellation and unavailable delivery | Pin versions and run the actual entry/readback; retire an old bridge only after qualification, with one consumer owner per App and no copied credentials or sessions |
 
 **Accepted queue preparation failures (S1/S10, A12/A22/A23):** an accepted
 request owns a terminal outcome even before an adapter starts. A missing runtime

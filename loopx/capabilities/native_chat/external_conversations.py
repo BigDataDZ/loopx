@@ -175,7 +175,15 @@ class ChatExternalConversations:
                 selected = self.bindings.resolve(binding_id=row["binding_id"], **row["source"])
                 context = selected["context"]
                 argument = row["command_argument"]["argument"]
-                if row["command"] == "commission":
+                if row.get("commission_adoption_pending"):
+                    applied = self.actions.load(row["proposal_id"])
+                    self.bindings._core("collaboration.steward.authorize_creation", {
+                        "context": context, "proposal": applied, "now": row["created_at"], "operation": "confirm"})
+                    if (applied.get("status") != "applied"
+                            or applied["receipt"]["resource_ids"] != row["commission_resources"]):
+                        raise ValueError("the applied commission receipt changed")
+                    self._adopt_commission(row, applied)
+                elif row["command"] == "commission":
                     key = f"steward-commission-{row['request_ref']}"
                     existing = next((p for p in self.actions.store.list() if p["idempotency_key"] == key), None)
                     workspace = context["workspace_path"]
@@ -229,24 +237,45 @@ class ChatExternalConversations:
                         if applied.get("status") != "applied":
                             raise ValueError("the creation preview became stale; prepare a new /delegate request")
                         resources = applied["receipt"]["resource_ids"]
-                        goal = self.actions._goal(resources["goal_id"])
-                        self.bindings.adopt_created_goal(binding_id=row["binding_id"], source=row["source"], proposal=applied, goal=goal)
-                        row.update(commission_resources=resources, response=f"原生委托已创建：{resources['goal_id']}。操作回执已读回；处理结果会回到此私聊。没有自动设置调度。\n停止此执行：/stop-commission {argument}")
-                        if result.get("gate"):
-                            row["response"] += "首轮执行有待处理 Gate；请在本机查看该 Goal 的操作回执。"
+                        # Canonical creation has committed. Retain its exact
+                        # receipt before fallible adoption or notification.
+                        row.update(commission_resources=resources, commission_adoption_pending=True,
+                                   commission_gate=bool(result.get("gate")))
+                        _atomic_write_json(path, row)
+                        self._adopt_commission(row, applied)
                 row["status"] = "command_completed"
             except (OSError, ValueError, KeyError, RuntimeError) as exc:
                 # No automatic wider permission, regenerated preview or new
                 # native thread is used to hide an unavailable operation.
-                row.update(status="command_completed", failure_kind=type(exc).__name__,
-                    response="管家操作未完成：原工作区、授权、预览有效期或原生执行入口没有通过核验。原操作已保留；请在本机核对回执后再决定是否重试。")
+                if row["command"] == "confirm_commission" and row.get("commission_resources"):
+                    row.update(status="command_queued", commission_adoption_pending=True,
+                               failure_kind=type(exc).__name__,
+                               response="已持久受理此管家操作；正在核验原生操作与回执。")
+                else:
+                    row.update(status="command_completed", failure_kind=type(exc).__name__,
+                        response="管家操作未完成：原工作区、授权、预览有效期或原生执行入口没有通过核验。原操作已保留；请在本机核对回执后再决定是否重试。")
             _atomic_write_json(path, row)
+
+    def _adopt_commission(self, row: dict[str, Any], applied: dict[str, Any]) -> None:
+        if self.actions is None:
+            raise ValueError("the native commission owner is unavailable")
+        resources = row["commission_resources"]
+        goal = self.actions._goal(resources["goal_id"])
+        self.bindings.adopt_created_goal(binding_id=row["binding_id"], source=row["source"], proposal=applied, goal=goal)
+        row.update(commission_adoption_pending=False, response=(
+            f"原生委托已创建：{resources['goal_id']}。操作回执已读回；处理结果会回到此私聊。没有自动设置调度。"
+            f"\n停止此执行：/stop-commission {row['proposal_id']}"))
+        row.pop("failure_kind", None)
+        if row.get("commission_gate"):
+            row["response"] += "首轮执行有待处理 Gate；请在本机查看该 Goal 的操作回执。"
 
     def record_delivery(self, request_ref: str, *, session_id: str | None, turn_id: str | None) -> None:
         # This transport receipt does not alter a canonical Turn or grant.
         path = self.root / f"{request_ref}.json"
         with exclusive_file_lock(path, operation="record_external_chat_delivery"):
             row = _read_json(path)
+            if row.get("commission_adoption_pending"):
+                raise ValueError("commission adoption is pending; notification cannot settle the effect")
             if (row.get("session_id"), row.get("turn_id")) != (session_id, turn_id):
                 raise ValueError("delivery correlation changed")
             row["delivery_verified"] = True
@@ -255,7 +284,7 @@ class ChatExternalConversations:
     def recover(self) -> None:
         for row in self.pending():
             try:
-                if row.get("delivery_verified"):
+                if row.get("delivery_verified") and not row.get("commission_adoption_pending"):
                     continue
                 self.bindings.resolve(binding_id=row["binding_id"], **row["source"])
                 if row["status"] == "prepared":
