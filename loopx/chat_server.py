@@ -91,6 +91,8 @@ from .release_manifest import release_runtime_identity
 from .registry import registry_goals, resolve_state_file
 from .state_projection import build_active_state_structured_projection
 from .status_server import (
+    DEFAULT_EXTENSION_PRESENTATION_SURFACES_PATH,
+    DEFAULT_EXTENSION_PROJECTION_PATH,
     cors_response_headers,
     is_loopback_host,
     is_loopback_origin,
@@ -1340,6 +1342,10 @@ class ChatRequestHandler(
 
     def do_GET(self) -> None:
         path = urlparse(self.path).path
+        if path == DEFAULT_EXTENSION_PRESENTATION_SURFACES_PATH:
+            return self._handle_extension_presentation_surfaces()
+        if path == DEFAULT_EXTENSION_PROJECTION_PATH:
+            return self._handle_extension_projection(parse_qs(urlparse(self.path).query))
         if path == "/healthz":
             self._send_json({"ok": True})
             return

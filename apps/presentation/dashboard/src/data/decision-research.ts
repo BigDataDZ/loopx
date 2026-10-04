@@ -426,6 +426,7 @@ export async function fetchPresentationProjection(
     || projection.payload_sha256 !== expectedIdentity.payload_sha256
     || projection.view_schema !== surface.view_schema
     || projection.surface_kind !== surface.surface_kind
+    || projection.goal_id !== surface.goal_id
   ) {
     throw new Error("projection response does not match the requested detail_ref");
   }

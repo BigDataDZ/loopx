@@ -431,7 +431,7 @@
     },
     {
       "site": "loopx/chat_server.py::<module>.ChatRequestHandler._goal_channel_extension_ready::codec_read:load_registry#1",
-      "line": 978,
+      "line": 980,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -439,7 +439,7 @@
     },
     {
       "site": "loopx/chat_server.py::<module>.ChatRequestHandler._registry_and_goal::codec_read:load_registry#1",
-      "line": 518,
+      "line": 520,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -447,7 +447,7 @@
     },
     {
       "site": "loopx/chat_server.py::<module>.serve_chat::codec_read:load_registry#1",
-      "line": 1525,
+      "line": 1531,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
@@ -455,7 +455,7 @@
     },
     {
       "site": "loopx/chat_server.py::<module>.serve_chat._wake_goal_context::codec_read:load_registry#1",
-      "line": 1613,
+      "line": 1619,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -463,7 +463,7 @@
     },
     {
       "site": "loopx/chat_status_api.py::<module>.ChatStatusRequestMixin._status::codec_read:load_registry#1",
-      "line": 147,
+      "line": 152,
       "column": 28,
       "kind": "codec_read",
       "api": "load_registry",
@@ -471,7 +471,7 @@
     },
     {
       "site": "loopx/chat_status_api.py::<module>.ChatStatusRequestMixin._status::codec_read:load_registry#2",
-      "line": 174,
+      "line": 179,
       "column": 21,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2134,16 +2134,16 @@
       "classification": "codec_api"
     },
     {
-      "site": "loopx/status_server.py::<module>.StatusRequestHandler._handle_extension_presentation_surfaces::codec_read:load_registry#1",
-      "line": 854,
+      "site": "loopx/status_server.py::<module>.ExtensionPresentationRequestMixin._handle_extension_presentation_surfaces::codec_read:load_registry#1",
+      "line": 337,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"
     },
     {
-      "site": "loopx/status_server.py::<module>.StatusRequestHandler._handle_extension_projection::codec_read:load_registry#1",
-      "line": 802,
+      "site": "loopx/status_server.py::<module>.ExtensionPresentationRequestMixin._handle_extension_projection::codec_read:load_registry#1",
+      "line": 285,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2151,7 +2151,7 @@
     },
     {
       "site": "loopx/status_server.py::<module>.StatusRequestHandler._handle_periodic_report_index::codec_read:load_registry#1",
-      "line": 884,
+      "line": 893,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2159,7 +2159,7 @@
     },
     {
       "site": "loopx/status_server.py::<module>.StatusRequestHandler._handle_periodic_report_projection::codec_read:load_registry#1",
-      "line": 948,
+      "line": 957,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2167,7 +2167,7 @@
     },
     {
       "site": "loopx/status_server.py::<module>.StatusRequestHandler._handle_review_material::codec_read:load_registry#1",
-      "line": 746,
+      "line": 863,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2175,7 +2175,7 @@
     },
     {
       "site": "loopx/status_server.py::<module>.StatusRequestHandler._status_readiness::codec_read:load_registry#1",
-      "line": 1016,
+      "line": 1025,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",

@@ -39,6 +39,7 @@ import { ChannelHeader } from "./channel-header";
 import { GoalLoopXMode } from "./goal-loopx-mode";
 import { GoalTeamResults } from "./goal-team-results";
 import { GoalManagedResults } from "./goal-managed-results";
+import { GoalResearchResults, type GoalResearchApi } from "./goal-research-results";
 import { sendLoopXMessage, type LoopXModeSnapshot } from "../../data/chat";
 import { MessageActivity } from "./message-activity";
 import { ChannelTimeline } from "./channel-timeline";
@@ -202,6 +203,7 @@ function GoalOutputsView({
   teamSessionId,
   goalId,
   localResults,
+  researchApi,
 }: {
   active: boolean;
   items: Array<Extract<WorkspaceTimelineItem, { kind: "output" }>>;
@@ -210,6 +212,7 @@ function GoalOutputsView({
   teamSessionId?: string;
   goalId: string;
   localResults: boolean;
+  researchApi?: GoalResearchApi;
 }) {
   const { locale, t } = useWorkspaceI18n();
   const [teamSnapshot, setTeamSnapshot] = useState<LoopXModeSnapshot | null>(null);
@@ -261,6 +264,7 @@ function GoalOutputsView({
         ))}
         {localResults ? <GoalManagedResults goalId={goalId} zh={locale === "zh-CN"} /> : null}
       </section>
+      {active && researchApi ? <GoalResearchResults key={`${goalId}:${researchApi.indexUrl}:${researchApi.detailUrl}`} goalId={goalId} api={researchApi} zh={locale === "zh-CN"} /> : null}
       {active && teamSessionId && !teamSnapshot && !teamError ? <p className="personal-object-list-state" role="status">{t("files.checkingTeam")}</p> : null}
       {active && teamSessionId && teamError ? <p className="personal-object-list-state is-error" role="alert">{t("files.teamLoadFailed")} <button type="button" onClick={() => setTeamRefresh(value => value + 1)}>{t("startup.retry")}</button></p> : null}
       {active && teamConfigured && teamSessionId ? <GoalTeamResults sessionId={teamSessionId} zh={locale === "zh-CN"} refreshKey={JSON.stringify(teamSnapshot?.deliveries ?? [])} /> : null}
@@ -787,6 +791,7 @@ export function PersonalWorkspacePage({
   managerChannelBinding,
   managerRuntime,
   model,
+  researchApi,
   readOnly = false,
   typedActionsRevision = 0,
   selectedAgentId: controlledAgentId,
@@ -807,6 +812,7 @@ export function PersonalWorkspacePage({
   managerChannelBinding?: ManagerChannelBinding | null;
   managerRuntime?: ManagerRuntimeSessionReadback | null;
   model: WorkspaceModel;
+  researchApi?: GoalResearchApi;
   ownerLabel?: string;
   readOnly?: boolean;
   // Bumped when typed previews were stored outside this page, so the page
@@ -1947,7 +1953,8 @@ export function PersonalWorkspacePage({
                     reportState={model.periodicReports}
                     teamSessionId={!readOnly && selectedAgentId === "codex" ? conversationSessionId : undefined}
                     goalId={selectedGoal.goalId}
-                    localResults={!readOnly && selectedGoalTab === "files"}
+            localResults={!readOnly && selectedGoalTab === "files"}
+            researchApi={researchApi}
                   />),
                   chat: (<>
                     {selectedGoal && activeSessionRun?.goalId === selectedGoal.goalId ? (
