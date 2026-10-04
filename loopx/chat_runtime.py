@@ -1259,6 +1259,7 @@ class ChatRuntimeController:
         session_id: str,
         client_turn_id: str,
         message: str,
+        attachments: list[AttachmentPayload] | None = None,
         work_dir: Path,
         objective: str,
         origin: str = "external",
@@ -1279,6 +1280,8 @@ class ChatRuntimeController:
             context = self.project_contexts.session_context(session)
             work_dir, objective = context["project"], context["objective"]
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
+            if attachments:
+                raise ValueError("attached host session queue does not yet accept attachments")
             turn, created = enqueue_attached_agent_turn(
                 store=self.store,
                 registry_path=self.registry_path,
@@ -1295,6 +1298,7 @@ class ChatRuntimeController:
                 session_id,
                 client_turn_id=client_turn_id,
                 message=message,
+                attachments=attachments,
                 origin=origin,
             )
             self.resume_session_queue(
@@ -1410,7 +1414,7 @@ class ChatRuntimeController:
                     session_id=session_id,
                     turn_id=turn_id,
                     message=str(turn.get("message") or ""),
-                    attachments=[],
+                    attachments=turn.get("attachments") or [],
                     adapter=adapter,
                     done_event=done_event,
                 )

@@ -123,7 +123,7 @@ executor endpoint、原生 Session/active Turn 与已持久排队数量。管家
 Core request 在 provider 投递前保存带时间的观测。重复事件保留原快照，不切换到
 较新的 Session；执行证据缺失和未知状态明确显示不可判定。这两个命令不会打开
 Session、调用模型或创建 Goal。`/help` 按角色列出命令、既有设置 → Lark 的工作区、
-执行器与解绑入口，以及目前仅支持文字的附件边界。
+执行器与解绑入口，以及图片支持和暂不可用的媒体/原宿主边界。
 
 回归使用生产原生文件 store、持久队列、bound request 与 provider 受理/投递路径，
 provider 和协议执行器为合成 fixture。它验证排队、停止、读回和重复投递，不证明
@@ -548,3 +548,17 @@ typed Core、HTTP 与原生宿主回归覆盖默认读写、明确只读、工�
 旧会话拒绝和原线程恢复。真实 Codex canary 按项目规则编辑并读回合成笔记，保留原文、
 不创建 Goal；这只是宿主/文件系统结果，不代表真实 Lark 写入、素材 intake 或发布完成。
 维护者 review、安装与 Lark 旅程、更多 IM 交互仍未关闭。
+
+
+### 飞书私聊默认复用原生 Turn 图片附件
+
+普通项目与管家私聊默认接收图片和图文消息。provider 在接收 App 下核验 canonical
+message，仅以该 App 身份下载属于这条消息的资源，再将 PNG/JPEG/GIF/WebP 交给
+既有 Core request 与持久 Session queue。沿用四张、单张 5 MiB、合计 12 MiB 上限。
+保留配文；资源 key 和私有图片字节不进入 typed routing 观测。重复事件复用原输入
+和 Turn；重启后仍由原 Turn、原 upstream thread 执行。下载后及回复前重新核验授权。
+
+下载失败、文件/音视频、携图控制命令或原宿主 Agent 图片请求均明确告知未提交执行，
+不会只执行混合消息的文字部分。原宿主媒体与文件交付仍待补齐。回归覆盖图片模型输入、
+原 Session、重复投递、持久重启与下载中撤权；真实 provider/model 验收另行记录。
+本增量不新增 Session authority、queue、worker 或默认关闭的功能开关。
