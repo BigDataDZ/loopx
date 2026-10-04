@@ -262,6 +262,11 @@ readback, and preparing a card is not sending or adopting a method.
 读取失败或停用时清除旧内容。通知卡保留研究结论、反证、未知、原始时点和下一步，
 没有期次指标也可显示；超过容量时拒绝裁切。卡片准备、外部送达和方法采用分别验收。
 
+Public synthetic examples: [desktop results](../../docs/assets/personal-workspace/research-results-desktop.png)
+and [mobile results](../../docs/assets/personal-workspace/research-results-mobile.png).
+The expired review warning is intentional; these screens do not represent a
+live financial account or an externally delivered notification.
+
 ## Worked Method: How PayPal Surfaced
 
 The historical PayPal exercise started with a fresh de-beta scout, not a
