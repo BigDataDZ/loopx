@@ -291,8 +291,20 @@ class LarkPrivateConversations:
                         self._feedback(path, record)
                         # Receipt follows persistent Core admission and is
                         # independent of terminal execution and reply delivery.
-                        self._deliver(path, record, "admission", "已持久受理到原 Agent 会话；等待原宿主领取。/status 查看持久队列，/project 返回普通项目对话。实时停止暂不支持，请在原宿主处理。" if native.get("agent_target") else "已持久受理；若已有执行，本条会排队。可发送 /status、/stop 或 /new。")
                         turn = self.core.controller.store.load_turn(record["session_id"], record["turn_id"])
+                        # Get already acknowledges admission. Reserve a text
+                        # notification for a real wait or unavailable feedback;
+                        # resume any old attempt with its original exact text.
+                        admission = (record["deliveries"].get("admission") or {}).get("text")
+                        if not admission:
+                            if native.get("agent_target"):
+                                admission = "已收到，等待原 Agent 宿主处理。/status 查看状态，/project 返回项目对话。"
+                            elif turn and turn["status"] == "queued":
+                                admission = "正在处理前一条，这条已排队。"
+                            elif (record.get("feedback", {}).get("received") or {}).get("ok") is not True:
+                                admission = "已收到，正在处理。"
+                        if admission:
+                            self._deliver(path, record, "admission", admission)
                         if turn and turn["status"] in {"starting", "running"}:
                             self._feedback(path, record, processing=True)
                         if not turn or turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
