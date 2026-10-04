@@ -243,6 +243,25 @@ a separate readiness rule. 中文：该命令只生成卡片、不发消息；�
 `loopx extension disable loopx-finance-value-discovery --execute`；若只回退
 期次指标，删除可选字段并重新发布旧 view 即可。
 
+The Goal's **Files & Outputs** tab loads the published research only when
+opened. Chat and `serve-status` expose the same extension index and exact
+revision/hash readback. Only a public-safe view belonging to that Goal is
+rendered; refresh clears previous content when the read fails or the extension
+is disabled. Research availability does not certify an economic conclusion.
+
+`render-lark-card` includes the canonical adjudication, original evidence
+clocks, exact metric strings, counterevidence, event review conditions and
+artifact references, even when no source-period metrics exist. It rejects a
+research card exceeding 18,000 UTF-8 bytes rather than silently cutting its
+review basis. The existing source-period-only Python renderer remains available.
+For an exact published receipt, render its Core-validated `view` with
+`build_decision_research_lark_card`; rebuilding an input is not publication
+readback, and preparing a card is not sending or adopting a method.
+
+中文：Goal 的“成果”页按需读取已发布的研究，绑定当前 Goal、扩展版本和内容摘要；
+读取失败或停用时清除旧内容。通知卡保留研究结论、反证、未知、原始时点和下一步，
+没有期次指标也可显示；超过容量时拒绝裁切。卡片准备、外部送达和方法采用分别验收。
+
 ## Worked Method: How PayPal Surfaced
 
 The historical PayPal exercise started with a fresh de-beta scout, not a
