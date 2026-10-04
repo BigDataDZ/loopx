@@ -3,7 +3,7 @@ import {connectPrivateConversation, disconnectPrivateConversation, fetchPrivateC
   changePrivateAgentTarget, fetchChatProjects, fetchChatCapabilities, fetchLarkApps, type PrivateConversation,
   type ChatProject, type LarkApp} from "../../data/chat";
 import {useWorkspaceI18n} from "./i18n";
-import "./project-conversation.css";
+import "./private-conversation.css";
 
 export function PrivateConversationPanel() {
   const {locale} = useWorkspaceI18n();
@@ -63,7 +63,7 @@ export function PrivateConversationPanel() {
       setProjectGrant(saved.grant === "workspace_write" ? "workspace_write" : "workspace_read");
     } else setProjectGrant("workspace_write");
   }
-  return <section className="personal-detail-card personal-project-conversation" aria-label={zh ? "本人飞书私聊" : "Owner private Chat"}>
+  return <section className="personal-detail-card personal-private-conversation" aria-label={zh ? "本人飞书私聊" : "Owner private Chat"}>
     <h3>{zh ? "本人私聊 · 项目助手与管家" : "Owner private Chat · Project assistant and steward"}</h3>
     <p>{zh ? "每个 App 单独核验本人。项目助手默认支持工作区读写，按项目规则与 skills 执行编辑；可选只读。普通聊天不创建隐藏 Goal。管家从空 portfolio 开始，只管理在此入口明确确认的新委托。" : "Verify the owner independently for each App. Project Chat defaults to workspace writes under project rules and skills; read-only remains available without hidden Goals. A steward starts with an empty portfolio and manages only new commissions explicitly confirmed here."}</p>
     {rows.map(row => <article key={row.binding_id}>
@@ -99,7 +99,7 @@ export function PrivateConversationPanel() {
     <div className="personal-detail-actions"><button disabled={busy || !app || !project || !executor || (role === "project" && executor === "codex" && projectGrant === "workspace_write" && projects.find(item => item.project_ref === project)?.grant === "workspace_read")} onClick={() => void act(() => connectPrivateConversation(app, project, executor, role, role === "project" && executor === "codex" ? projectGrant : "workspace_read"))} type="button">
       {busy ? (zh ? "正在核验" : "Verifying") : (zh ? "连接本人私聊" : "Connect owner private Chat")}</button>
       <button disabled={busy} onClick={() => void act(refresh)} type="button">{zh ? "刷新状态" : "Refresh status"}</button></div>
-    <p>{zh ? "从手机发送文字开始；后续消息进入原会话队列。/status 查看工作区、角色与持久排队状态，/help 查看用法与解绑入口，/stop 停止当前聊天执行，/new 开启新会话。图片、文件会明确提示暂不支持。" : "Send text from your phone to begin; follow-ups queue in the same Session. /status shows the workspace, role and durable queue, /help explains commands and where to unbind, /stop stops the current Chat Turn, /new starts a new conversation. Images and files receive an explicit unsupported response."}</p>
+    <p>{zh ? "发送文字、图片或图文消息开始；后续消息进入原会话队列。/status 查看工作区、角色与持久排队状态，/help 查看用法与解绑入口，/stop 停止当前聊天执行，/new 开启新会话。文件、音视频、附在控制命令或已选择 Agent 上的图片会明确提示暂不支持。" : "Send text, images or image/text posts to begin; follow-ups queue in the same Session. /status shows the workspace, role and durable queue, /help explains commands and where to unbind, /stop stops the current Chat Turn, /new starts a new conversation. Files, audio/video, and images sent with control commands or to a selected attached Agent receive an explicit unsupported response."}</p>
     <p>{zh ? "管家新委托：/delegate --tokens N 具体目标。先读预览，再用原私聊的完整 /confirm 命令确认；15 分钟过期。原生执行保持只读，总 token 上限可能被运行中的请求超过；没有默认定时调度。回执提供 /stop-commission 停止和 /resume-commission 恢复命令；恢复保留原线程及累计用量。" : "Steward commission: /delegate --tokens N objective. Read the preview, then use its full /confirm command in the original private Chat within 15 minutes. Native execution remains read-only; in-flight requests can exceed the total token allowance. No default schedule. Receipts provide /stop-commission and /resume-commission commands; recovery retains the original thread and cumulative usage."}</p>
     {error ? <p role="alert">{error}</p> : null}
   </section>;
