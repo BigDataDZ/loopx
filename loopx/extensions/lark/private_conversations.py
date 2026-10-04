@@ -192,6 +192,42 @@ class LarkPrivateConversations:
     def _reply_runner(self, args: list[str]) -> Any:
         return self.runner([self.cli_bin, *args[1:]], None, 30)
 
+    def return_inbox(self, *, route: dict[str, Any], session: dict[str, Any],
+                     turn: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+        """Resolve an original worker return through its admitted private source.
+
+        Core revalidates the saved steward context. The two correlation records
+        must still name the exact canonical Session/Turn; neither the current
+        conversation nor a worker-supplied destination can replace that source.
+        Manager-context retains ownership of the return attempt and recovery.
+        """
+        saved = session["steward_context"]
+        selected = self.bindings.session_context(saved)
+        message_id = route["source_id"].removeprefix("lark:")
+        request = identity_ref(selected["binding"]["provider_ref"], message_id)
+        record = _read_json(self.root / f"{request}.json")
+        native = self.core.read_request(request)
+        if (not route["source_id"].startswith("lark:")
+                or session.get("goal_id") != "loopx-manager"
+                or session.get("channel_id") != selected["channel_id"]
+                or route["goal_id"] not in selected["context"]["goal_ids"]
+                or route["session_id"] != session["session_id"]
+                or turn.get("session_id") != session["session_id"]
+                or turn.get("client_turn_id") != f"external-{request}"
+                or record.get("profile") != selected["binding"]["transport_ref"]
+                or record.get("request_ref") != request
+                or record.get("event", {}).get("message_id") != message_id
+                or record.get("source") != lark_private_source(
+                    provider_ref=selected["binding"]["provider_ref"], event=record["event"])
+                or record["source"]["source_ref"] != saved["source_ref"]
+                or any(row.get("binding_id") != saved["binding_id"]
+                       or row.get("source") != record["source"]
+                       or row.get("session_id") != session["session_id"]
+                       or row.get("turn_id") != turn["turn_id"]
+                       for row in (record, native))):
+            raise ValueError("original private return source changed")
+        return self._inbox(record), record
+
     def _deliver(self, path: Path, record: dict[str, Any], phase: str, text: str) -> bool:
         if not text:
             return False
