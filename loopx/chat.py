@@ -191,7 +191,8 @@ def redact_response_markdown(text: str, *, protected_paths: Iterable[Path | str]
                 image_start = start - 1 if start and line[start - 1] == "!" else start
                 edits.append((image_start, close, line[start + 1:end - 1]))
             cursor = close
-        cursor, chunks = 0, []
+        cursor = 0
+        chunks: list[str] = []
         for start, end, label in edits:
             chunks.extend((line[cursor:start], label))
             cursor = end
