@@ -11,6 +11,7 @@ from ...control_plane.collaboration.source_grant_observation import (
     POLICY_SCHEMA as POLICY_SCHEMA,
     registered_context_recipients,
     source_context_authority,
+    source_context_target_authority,
 )
 from ...control_plane.collaboration.goal_instance_scope import (
     collaboration_goal_scope,
@@ -86,6 +87,15 @@ def authority(
     grant = source_context_authority(runtime_root, registry_path, session, turn)
     return {**grant, "instruction": INSTRUCTION} if grant["mode"] == "context_only" else grant
 
+
+def target_authority(
+    runtime_root: Path, *, session: dict, turn: dict, target: dict
+) -> dict:
+    """Authorize one target already validated by an exact Goal scope."""
+    grant = source_context_target_authority(runtime_root, session, turn, target)
+    return {**grant, "instruction": INSTRUCTION} if grant["mode"] == "context_only" else grant
+
+
 def deliver(
     runtime_root: Path, registry_path: Path, *, session: dict, turn: dict, request: dict
 ) -> dict:
@@ -101,7 +111,16 @@ def deliver(
             goal_scope,
             operation="request_create",
         )
-        grant = authority(runtime_root, registry_path, session, turn)
+        grant = (
+            target_authority(
+                runtime_root,
+                session=session,
+                turn=turn,
+                target=target,
+            )
+            if goal_scope.exact
+            else authority(runtime_root, registry_path, session, turn)
+        )
         if target not in grant["targets"]:
             raise ValueError("context recipient is not authorized or registered")
         content = str(turn.get("message") or "")
@@ -305,11 +324,17 @@ def evidence_goal_scope(runtime_root: Path, channel: str) -> list[str] | None:
         return []
 
 
+def _require_external_channel(channel: str) -> None:
+    # Legacy manager connections and native App/source bindings both identify
+    # one exact audience. Never accept a prefix or a partially specified binding.
+    if not re.fullmatch(r"manager\.external\.(?:[a-f0-9]{24}|native\.[a-f0-9]{24}\.[a-f0-9]{24})", channel):
+        raise ValueError("an exact external manager channel is required")
+
+
 def configure_evidence_scope(runtime_root: Path, registry_path: Path, *, channel: str,
                              goal_ids: list[str], execute: bool = False) -> dict:
     """Local operator grants only selected Goal summaries to an exact audience."""
-    if not re.fullmatch(r"manager\.external\.[a-f0-9]{24}", channel):
-        raise ValueError("an exact external manager channel is required")
+    _require_external_channel(channel)
     registry = load_project_registry(registry_path)
     available = {g.get("id") for g in registry.get("goals", []) if isinstance(g, dict)}
     if any(g not in available for g in goal_ids):
@@ -342,8 +367,7 @@ def configure_delivery_target(
     execute: bool = False,
 ) -> dict:
     """Observe registry/policy and persist a typed sender-bound recipient change."""
-    if not re.fullmatch(r"manager\.external\.[a-f0-9]{24}", channel):
-        raise ValueError("an exact external manager channel is required")
+    _require_external_channel(channel)
     path = _root(runtime_root) / "policy.json"
 
     def update(*, apply: bool) -> dict:
