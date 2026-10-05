@@ -22,6 +22,7 @@ from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
 from .goal_channel_transport import APP_ID_PATTERN, call, json_payload, lark_args
 from .inbox_reply import _message, reply_lark_event_inbox, verify_lark_inbox_reply
 from .inbox_reactions import mark_lark_event_inbox_processing, mark_lark_event_inbox_received
+from .private_images import private_message_caption, private_message_images
 
 
 class LarkPrivateConversations:
@@ -159,6 +160,7 @@ class LarkPrivateConversations:
                 return {"status": "source_verification_failed"}
             message_type = str(event.get("message_type") or "")
             text = ""
+            attachments: list[dict[str, Any]] = []
             if message_type == "text":
                 # lark-cli renders event and mget content as plain text. Read
                 # the full canonical message; do not decode a rendered event.
@@ -180,25 +182,44 @@ class LarkPrivateConversations:
                         return {"status": "invalid_text"}
                 if not text.strip():
                     return {"status": "empty_text"}
-            command = {"/status": "status", "/help": "help", "/new": "new", "/stop": "stop"}.get(text.strip())
-            if text.strip() == "/agents":
+            elif message_type in {"image", "post"}:
+                if source_message.get("msg_type", source_message.get("message_type")) != message_type:
+                    return {"status": "source_conflict"}
+                content = source_message.get("content")
+                if not isinstance(content, str):
+                    return {"status": "source_verification_failed"}
+                if record.get("source_content", content) != content:
+                    return {"status": "source_conflict"}
+                record["source_content"] = content
+                if "attachments" not in record and not record.get("attachment_notice"):
+                    try:
+                        text, attachments = private_message_images(content=content, message_type=message_type,
+                            message_id=event["message_id"], profile=profile, cli_bin=self.cli_bin, runner=self.runner)
+                        record.update(message=text, attachments=attachments)
+                    except ValueError as exc:
+                        record["attachment_notice"] = str(exc)
+                    _atomic_write_json(path, record)
+                text, attachments = record.get("message", ""), record.get("attachments", [])
+            command_input = private_message_caption(record["source_content"]) if attachments else text.strip()
+            command = {"/status": "status", "/help": "help", "/new": "new", "/stop": "stop"}.get(command_input)
+            if command_input == "/agents":
                 command = "agents"
-            elif text.strip() == "/project":
+            elif command_input == "/project":
                 command = "select_project"
-            elif text.strip() == "/agent" or text.strip().startswith("/agent "):
+            elif command_input == "/agent" or command_input.startswith("/agent "):
                 command = "select_agent"
             if binding["context_kind"] == "steward":
                 for prefix, selected_command in [("/delegate", "commission"), ("/委托", "commission"),
                                                   ("/confirm", "confirm_commission"), ("/cancel", "cancel_commission"),
                                                   ("/stop-commission", "stop_commission"), ("/resume-commission", "resume_commission")]:
-                    if text.strip() == prefix or text.strip().startswith(prefix + " "):
+                    if command_input == prefix or command_input.startswith(prefix + " "):
                         command = selected_command
                         break
-            if message_type != "text":
+            if message_type not in {"text", "image", "post"} or record.get("attachment_notice"):
                 command = "unsupported"
             try:
                 admitted = self.core.admit(binding_id=binding["binding_id"], source=source,
-                    request_ref=request, message=text, command=command)
+                    request_ref=request, message=text, command=command, attachments=attachments)
             except ValueError:
                 record.update(status="rejected", response="操作或原授权不可用；Agent 请先用 /agents 查看确切命令，/project 返回项目对话。新委托请使用 /delegate --tokens N 具体目标，确认或取消请使用原预览中的完整命令。")
                 _atomic_write_json(path, record)
@@ -392,7 +413,8 @@ class LarkPrivateConversations:
                 else:
                     if record["status"] != "rejected":
                         self._feedback(path, record, inbox=inbox)
-                    response = _command_text(str(record.get("response_code") or "")) or str(record.get("response") or "")
+                    response = (str(record.get("attachment_notice") or "")
+                        or _command_text(str(record.get("response_code") or "")) or str(record.get("response") or ""))
                     if record.get("status_snapshot"):
                         response = _status_text(record["status_snapshot"], help_requested=native.get("command") == "help")
                 if self._deliver(path, record, "terminal", response, inbox=inbox):
@@ -428,7 +450,7 @@ class LarkPrivateConversations:
 
 
 def _command_text(code: str) -> str:
-    return {"unsupported_attachment": "此入口目前只支持文字；图片或文件没有交给模型。请发送文字描述。",
+    return {"unsupported_attachment": "这条消息未提交执行。普通项目或管家对话支持文字与图片；文件、音视频及所选 Agent 的原宿主暂不支持图片。请将文字与图片单独发送，或用 /project 返回项目对话。",
         "no_session": "尚无会话；发送文字即可开始。", "active_session": "正在执行；后续文字会进入同一会话队列。",
         "ready_session": "会话已就绪，可继续发送文字。", "new_session": "已关闭此前会话；下一条文字将开启新会话。",
         "attached_control_unavailable": "原 Agent 宿主尚不支持此处的实时停止或新建会话；原执行没有被停止或替换。请在原宿主处理，/project 返回普通项目对话。",
@@ -453,7 +475,7 @@ def _status_text(snapshot: dict[str, Any], *, help_requested: bool) -> str:
                  f"\n执行器：{markdown_scalar(snapshot['executor_endpoint_id'])}"
                  f"\n观察时间：{markdown_scalar(snapshot['observed_at'])}"
                  "\n工作区、执行器与解绑：本机 Chat → 设置 → Lark。变更或解绑会重新核验授权；已受理工作不会迁移到新会话。"
-                 "\n图片/文件目前未交给模型，请改用文字。")
+                 "\n可直接发送图片或图文消息（PNG/JPEG/GIF/WebP，最多 4 张，单张 5 MB、合计 12 MB）。文件与音视频暂不支持；选择原宿主 Agent 后仅支持文字。")
         if steward:
             text += "\n新委托：/delegate --tokens N 具体目标；读完预览后从原私聊发送完整 /confirm。/cancel 取消预览；/stop-commission 和 /resume-commission 使用原回执中的完整命令。"
     return text
