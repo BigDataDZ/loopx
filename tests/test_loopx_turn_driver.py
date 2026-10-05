@@ -1984,7 +1984,8 @@ def test_turn_run_once_cli_commits_distinct_host_guidance_without_task_step_edit
             ]
         )
     assert policy_code == 0, policy_output.getvalue()
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script = """
 import json
 import pathlib
@@ -2286,7 +2287,8 @@ def test_turn_run_once_cli_completes_selected_todo_after_validation(
     next_action: str,
 ) -> None:
     project, runtime, registry = _write_live_fixture(tmp_path)
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script = """
 import json
 import pathlib
@@ -2466,7 +2468,8 @@ def test_promoted_turn_completion_replays_after_commit_before_journal_crash(
 ) -> None:
     project, runtime, registry = _write_live_fixture(tmp_path)
     _promote_turn_fixture(project, runtime)
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script, validation_script = _completion_host_and_validation_scripts()
     argv = _turn_run_once_completion_argv(
         host_project,
@@ -2629,7 +2632,8 @@ def test_turn_run_once_cli_repairs_committed_quota_spend_after_receipt_crash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project, runtime, registry = _write_live_fixture(tmp_path)
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script, validation_script = _completion_host_and_validation_scripts()
     argv = _turn_run_once_completion_argv(
         host_project,
@@ -2735,7 +2739,8 @@ def test_turn_run_once_cli_projects_declared_successor_continuation(
             "task_class=advancement_task priority=P2 -->",
         ),
     )
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script, validation_script = _completion_host_and_validation_scripts()
     output = io.StringIO()
     with contextlib.redirect_stdout(output):
@@ -2766,7 +2771,8 @@ def test_turn_run_once_cli_projects_durable_no_followup_continuation(
         tmp_path,
         todo_metadata_extra="no_followup=true",
     )
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script, validation_script = _completion_host_and_validation_scripts()
     output = io.StringIO()
     with contextlib.redirect_stdout(output):
@@ -2802,7 +2808,8 @@ def test_turn_run_once_cli_terminal_recovery_rejects_unowned_completion(
         tmp_path,
         todo_metadata_extra="no_followup=true",
     )
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script, validation_script = _completion_host_and_validation_scripts()
     argv = _turn_run_once_completion_argv(
         host_project,
@@ -2924,7 +2931,7 @@ def test_turn_run_once_cli_fails_closed_on_dangling_declared_successor(
         tmp_path,
         todo_metadata_extra="successor_todo_ids=todo_missing999",
     )
-    host_project = tmp_path / "isolated-host-workspace"
+    host_project = project / "isolated-host-workspace"
     host_project.mkdir()
     host_script, validation_script = _completion_host_and_validation_scripts()
     output = io.StringIO()
@@ -2966,7 +2973,8 @@ def test_turn_run_once_cli_replays_declared_successor_after_interruption(
             "task_class=advancement_task priority=P2 -->",
         ),
     )
-    host_project = project
+    host_project = project / "isolated-host-workspace"
+    host_project.mkdir()
     host_script, validation_script = _completion_host_and_validation_scripts()
     argv = _turn_run_once_completion_argv(
         host_project,
@@ -3185,7 +3193,7 @@ def test_turn_run_once_cli_rejects_unproven_host_claim_before_writeback(
     tmp_path: Path,
 ) -> None:
     project, runtime, registry = _write_live_fixture(tmp_path)
-    host_project = tmp_path / "isolated-host-workspace"
+    host_project = project / "isolated-host-workspace"
     host_project.mkdir()
     host_script = """
 import json
