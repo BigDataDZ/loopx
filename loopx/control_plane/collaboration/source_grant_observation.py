@@ -4,7 +4,9 @@ from pathlib import Path
 
 from ...agent_registry import registered_agent_ids_for_goal
 from ..goals.activation import goal_is_stopped
+from ..goals.goal_ref_validation import exact_goal_ref
 from ..projects.registry_codec import (
+    SOURCE_SESSION_PROFILE_ID,
     load_project_registry,
     require_runtime_compatible_project_registry,
 )
@@ -33,27 +35,26 @@ def registered_context_recipients(registry: dict) -> dict:
     return {"active_goal_ids": active_goals, "available": available}
 
 
-def source_context_authority(
-    runtime_root: Path, registry_path: Path, session: dict, turn: dict
+def _source_context_grant(
+    runtime_root: Path,
+    session: dict,
+    turn: dict,
+    available_rows: list[dict],
 ) -> dict:
-    """Return only a write-only recipient catalog; no cross-audience Goal evidence."""
-    if registry_path is None:
-        return {"mode": "unavailable", "targets": []}
-    try:
-        registry = load_project_registry(registry_path)
-        if not isinstance(registry, dict):
-            raise ValueError("invalid registry")
-        require_runtime_compatible_project_registry(
-            registry, operation="context source recipient observation"
-        )
-    except (OSError, ValueError, TypeError):
-        return {"mode": "unavailable", "targets": []}
-    observed = registered_context_recipients(registry)
-    available = {(row["goal_id"], row["agent_id"]) for row in observed["available"]}
+    available = {
+        (row["goal_id"], row["agent_id"])
+        for row in available_rows
+        if isinstance(row, dict)
+        and isinstance(row.get("goal_id"), str)
+        and isinstance(row.get("agent_id"), str)
+    }
     scope = conversation_scope(session, origin=turn.get("origin", "unknown"))
     if scope["private_conversation"] and turn.get("origin") == "web":
-        allowed = {target for target in available
-                   if scope["goal_ids"] is None or target[0] in scope["goal_ids"]}
+        allowed = {
+            target
+            for target in available
+            if scope["goal_ids"] is None or target[0] in scope["goal_ids"]
+        }
         source_id = "web:" + _hash([session["session_id"], turn["client_turn_id"]])
     else:
         if scope["kind"] != "external_audience":
@@ -74,19 +75,92 @@ def source_context_authority(
             if policy.get("schema_version") != POLICY_SCHEMA:
                 raise ValueError("invalid policy")
             grants = policy.get("sources", {}).get(ingress["channel"], {})
-            selected = effect_runtime_result("collaboration.source.recipients", {
-                "source": grants, "sender_id": ingress["sender_id"],
-                "available": observed["available"],
-            })
-            allowed = {(v["goal_id"], v["agent_id"]) for v in selected["targets"]}
+            selected = effect_runtime_result(
+                "collaboration.source.recipients",
+                {
+                    "source": grants,
+                    "sender_id": ingress["sender_id"],
+                    "available": available_rows,
+                },
+            )
+            allowed = {
+                (value["goal_id"], value["agent_id"])
+                for value in selected["targets"]
+            }
             source_id = ingress["source_id"]
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, EffectRuntimeRejected):
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+            EffectRuntimeRejected,
+        ):
             return {"mode": "unavailable", "targets": []}
     targets = [
-        {"goal_id": g, "agent_id": a} for g, a in sorted(allowed & available)
+        {"goal_id": goal_id, "agent_id": agent_id}
+        for goal_id, agent_id in sorted(allowed & available)
     ]
     return {
         "mode": "context_only",
         "targets": targets,
         "source_id": source_id,
     }
+
+
+def source_context_target_authority(
+    runtime_root: Path,
+    session: dict,
+    turn: dict,
+    target: dict,
+) -> dict:
+    """Authorize one target whose exact Goal scope was already validated."""
+    return _source_context_grant(runtime_root, session, turn, [target])
+
+
+def source_context_authority(
+    runtime_root: Path, registry_path: Path, session: dict, turn: dict
+) -> dict:
+    """Return only a write-only recipient catalog; no cross-audience Goal evidence."""
+    if registry_path is None:
+        return {"mode": "unavailable", "targets": []}
+    try:
+        registry = load_project_registry(registry_path)
+        if not isinstance(registry, dict):
+            raise ValueError("invalid registry")
+        if registry.get("profile_id") == SOURCE_SESSION_PROFILE_ID:
+            goals = registry.get("goals")
+            if not isinstance(goals, list):
+                raise ValueError("source-session registry has no Goal list")
+            # This is observation for context handoff, not execution admission.
+            # Enumerate only instance-bound Goals; the handoff's own Goal scope
+            # still rechecks the selected exact GoalRef before it commits.
+            instantiated = []
+            for goal in goals:
+                if not isinstance(goal, dict):
+                    continue
+                goal_id = goal.get("id")
+                instance_id = goal.get("goal_instance_id")
+                if not isinstance(goal_id, str) or not isinstance(instance_id, str):
+                    continue
+                try:
+                    exact_goal_ref(goal_id, instance_id)
+                except ValueError:
+                    continue
+                instantiated.append(goal)
+            if not instantiated:
+                raise ValueError("source-session registry has no instantiated Goal")
+            registry = {**registry, "goals": instantiated}
+        else:
+            require_runtime_compatible_project_registry(
+                registry, operation="context source recipient observation"
+            )
+    except (OSError, ValueError, TypeError):
+        return {"mode": "unavailable", "targets": []}
+    observed = registered_context_recipients(registry)
+    return _source_context_grant(
+        runtime_root,
+        session,
+        turn,
+        observed["available"],
+    )
