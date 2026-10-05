@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -217,6 +218,44 @@ class LarkPrivateConversations:
 
     def _reply_runner(self, args: Sequence[str]) -> Any:
         return self.runner([self.cli_bin, *args[1:]], None, 30)
+
+    def return_inbox(self, *, route: dict[str, Any], session: dict[str, Any],
+                     turn: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+        """Resolve an original worker return through its admitted private source.
+
+        Core revalidates the saved steward context. The two correlation records
+        must still name the exact canonical Session/Turn; neither the current
+        conversation nor a worker-supplied destination can replace that source.
+        Manager-context retains ownership of the return attempt and recovery.
+        """
+        saved = session["steward_context"]
+        selected = self.bindings.session_context(saved)
+        client = str(turn.get("client_turn_id") or "")
+        request = client.removeprefix("external-")
+        if client != f"external-{request}" or not re.fullmatch(r"[a-f0-9]{24}", request):
+            raise ValueError("original private request unavailable")
+        record = _read_json(self.root / f"{request}.json")
+        native = self.core.read_request(request)
+        message_id = str(record.get("event", {}).get("message_id") or "")
+        if (route["source_id"] not in (request, f"lark:{message_id}")
+                or identity_ref(selected["binding"]["provider_ref"], message_id) != request
+                or session.get("goal_id") != "loopx-manager"
+                or session.get("channel_id") != selected["channel_id"]
+                or route["goal_id"] not in selected["context"]["goal_ids"]
+                or route["session_id"] != session["session_id"]
+                or turn.get("session_id") != session["session_id"]
+                or record.get("profile") != selected["binding"]["transport_ref"]
+                or record.get("request_ref") != request
+                or record.get("source") != lark_private_source(
+                    provider_ref=selected["binding"]["provider_ref"], event=record["event"])
+                or record["source"]["source_ref"] != saved["source_ref"]
+                or any(row.get("binding_id") != saved["binding_id"]
+                       or row.get("source") != record["source"]
+                       or row.get("session_id") != session["session_id"]
+                       or row.get("turn_id") != turn["turn_id"]
+                       for row in (record, native))):
+            raise ValueError("original private return source changed")
+        return self._inbox(record), record
 
     def _feedback(self, path: Path, record: dict[str, Any], *, inbox: Callable[[], Path], processing: bool = False) -> None:
         """Render observed Core admission/execution through the shared Inbox owner.
