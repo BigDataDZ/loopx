@@ -20,6 +20,25 @@ mutate todos, bypass gates, or own connector credentials.
 | Capability facades | `loopx/capabilities/*` | User-facing capability names and compatibility imports when a display sink is also a capability. |
 | Control plane | `loopx/control_plane/` and state APIs | Source of truth for goals, todos, gates, claims, quota, evidence, and replanning. |
 
+## Authored Conversation Answers
+
+Ordinary project Chat, the steward and the collaboration MCP return tool share
+adaptive answer guidance in `loopx/presentation/answer_instruction.py`. Useful
+answers and decisions lead; detail follows the user's task. Simple questions
+need no report template. Evidence records retain routine protocol bookkeeping,
+while failures, uncertainty and concrete recovery steps stay in the answer.
+This is authoring guidance, not a completion judge, summary service or authority
+grant. The manager answer-shape facade retains its existing schema and imports.
+
+Native Lark private conversations now use the existing Markdown `post` reply
+path by default, including admission and command responses. It preserves the
+full authored reply, descriptive links, lists, tables and code. Existing preview,
+audience checks and exact readback still own delivery. A previously attempted
+text reply is verified in its original format after upgrade; ambiguous writes
+are not resent. The existing provider-size fallback keeps the complete text.
+Chat continues to use its existing Markdown renderer. No new switch, renderer,
+conversation store or delegation bootstrap format is introduced.
+
 ## Relationship To Value Connectors
 
 Value connectors bring external signals into LoopX under a scoped plan and

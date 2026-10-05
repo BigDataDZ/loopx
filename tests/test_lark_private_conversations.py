@@ -42,14 +42,17 @@ class Provider:
                 message = {**message, "body": {"content": json.dumps({"text": "not yet visible"})}}
             data = {"ok": True, "data": {"items": [message]}}
         elif "+messages-send" in args:
-            text = args[args.index("--text") + 1]
-            content = json.dumps({"text": text})
+            markdown = "--msg-type" in args and args[args.index("--msg-type") + 1] == "post"
+            content = args[args.index("--content") + 1] if markdown else json.dumps({
+                "text": args[args.index("--text") + 1]})
+            text = json.loads(content)["zh_cn"]["content"][0][0]["text"] if markdown else json.loads(content)["text"]
+            kind = "post" if markdown else "text"
             if "--dry-run" in args:
-                data = {"ok": True, "api": [{"body": {"content": content}}]}
+                data = {"ok": True, "api": [{"body": {"msg_type": kind, "content": content}}]}
             else:
                 ref = f"om_out_{len(self.writes)}"
                 self.writes.append((profile, text))
-                self.messages[ref] = {"message_id": ref, "body": {"content": content}}
+                self.messages[ref] = {"message_id": ref, "msg_type": kind, "body": {"content": content}}
                 data = {"ok": True, "data": {"message_id": ref}}
         else:
             pytest.fail(f"unnecessary provider operation: {args[2:5]}")
@@ -126,6 +129,59 @@ def test_source_rejection_attachment_notice_and_ambiguous_reply_readback(ordinar
         assert runtime.store.list_sessions() == []
         with pytest.raises(ValueError, match="non-default"):
             observe_lark_conversation_identity(profile="default", runner=provider, cli_bin="lark-cli")
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize("original_format", ["markdown", "text"])
+def test_native_answer_keeps_full_markdown_and_recovers_without_resending(ordinary, monkeypatch, original_format):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    _, _, _, _, _, fake, _ = ordinary
+    answer = (
+        "已完成比较；建议先核对来源。\n\n"
+        "- [一手说明](https://example.org/reference)\n"
+        "- 仍缺可复现的性能结果，下一步运行相同输入的对照。\n\n"
+        "| 方案 | 取舍 |\n| --- | --- |\n| A | 简单 |\n| B | 可扩展 |\n\n"
+        "```python\nprint('keep  exact spacing')\n```\n\n"
+        + "完整细节必须保留，不能用摘要代替。\n" * 99
+        + "完整细节必须保留，不能用摘要代替。"
+    )
+    # Actual synthetic app-server output, through Core admission and delivery.
+    fake.write_text(fake.read_text().replace('"message": "Runtime response.",',
+                                            '"message": ' + repr(answer) + ','))
+    try:
+        transport.admit("notes-app", provider.event("notes-app", "rich", "Compare the alternatives"))
+        native = transport.core.pending()[0]
+        turn = runtime.wait_for_turn(session_id=native["session_id"], turn_id=native["turn_id"], timeout_sec=10)
+        assert turn["status"] == "completed"
+        assert turn["response"]["message"] == answer
+        provider.verify_replies = False
+        # A pre-upgrade text attempt must stay text on recovery, while new
+        # private replies use Markdown without an additional setting.
+        with monkeypatch.context() as legacy:
+            if original_format == "text":
+                import loopx.extensions.lark.private_conversations as module
+                send = module.reply_lark_event_inbox
+                legacy.setattr(module, "reply_lark_event_inbox", lambda **kwargs:
+                               send(**{**kwargs, "content_format": "text"}))
+            assert transport.reconcile() == 0
+        expected_delivery = answer if original_format == "markdown" else answer.replace(
+            "keep  exact spacing", "keep exact spacing")  # Original text normalizer's spacing.
+        assert provider.writes[-1] == ("notes-app", expected_delivery)
+        sent = len(provider.writes)
+        restarted = LarkPrivateConversations(controller=runtime, runtime_root=store.root.parent,
+                                             runner=provider, cli_bin="lark-cli")
+        assert restarted.reconcile() == 0 and len(provider.writes) == sent
+        provider.verify_replies = True
+        assert restarted.reconcile() == 1 and len(provider.writes) == sent
+        post_sends = [call for call in provider.calls if "+messages-send" in call and "--dry-run" not in call]
+        if original_format == "markdown":
+            assert all(call[call.index("--msg-type") + 1] == "post" for call in post_sends)
+            content = json.loads(post_sends[-1][post_sends[-1].index("--content") + 1])
+            assert content["zh_cn"]["content"] == [[{"tag": "md", "text": answer}]]
+        else:
+            assert all("--text" in call for call in post_sends)
+        assert len(store.list_sessions()) == 1 and store.list_sessions()[0]["goal_id"] is None
     finally:
         runtime.close()
 

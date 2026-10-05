@@ -222,7 +222,8 @@ class LarkPrivateConversations:
                 _atomic_write_json(path, record)
 
             result = reply_lark_event_inbox(**kwargs, execute=True, before_send=before_send,
-                                           delivery_attempt_recorder=attempt, short_message_limit=None)
+                                           delivery_attempt_recorder=attempt, short_message_limit=None,
+                                           content_format="markdown")
         phase_state["verified"] = result.get("reply_verified") is True
         phase_state["blocker"] = result.get("blocker")
         record["deliveries"][phase] = phase_state

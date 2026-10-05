@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ...control_plane.effect_runtime import EffectRuntimeRejected, effect_runtime_result
+from ...presentation.answer_instruction import conversation_answer_instruction
 
 
 PROJECT_CONVERSATION_OBJECTIVE = (
@@ -72,7 +73,7 @@ class ChatProjectContexts:
         if session.get("channel_id") != selected["channel_id"]:
             raise ValueError("project conversation channel mismatch")
         return {"project": Path(selected["context"]["workspace_path"]),
-                "objective": PROJECT_CONVERSATION_OBJECTIVE,
+                "objective": PROJECT_CONVERSATION_OBJECTIVE + " " + conversation_answer_instruction(),
                 "title": Path(selected["context"]["workspace_path"]).name}
 
     def open_bound(self, binding_id: str, source: dict[str, Any], *, executor: str, channel_id: str | None) -> dict[str, Any]:
