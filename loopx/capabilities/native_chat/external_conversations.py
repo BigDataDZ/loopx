@@ -212,7 +212,7 @@ class ChatExternalConversations:
         # policy still decides which registered recipient may receive context.
         # The independently verified App-scoped owner reference is deliberately
         # used instead of copying another profile's raw provider identity.
-        register_ingress(self.controller.store.root.parent,
+        register_ingress(getattr(self.controller, "coordination_runtime_root", self.controller.store.root.parent),
             session_id=session["session_id"], client_turn_id=client_turn_id,
             channel=selected["channel_id"], sender_id=selected["context"]["operator_ref"],
             message=row["message"], source_id=row["request_ref"])

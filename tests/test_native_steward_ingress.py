@@ -15,6 +15,64 @@ def ingress_path(store, row):
         _hash([row["session_id"], "external-" + row["request_ref"]]) + ".json")
 
 
+@pytest.mark.parametrize("separate_coordination_root", [False, True])
+def test_native_ingress_uses_coordination_owner_with_legacy_fallback(steward, monkeypatch, tmp_path, separate_coordination_root):  # noqa: F811
+    store, runtime, provider, transport, binding, _, workspace = steward
+    root = tmp_path / "coordination" if separate_coordination_root else store.root.parent
+    if separate_coordination_root:
+        runtime.coordination_runtime_root = root
+    target = {"goal_id": "registered-work", "agent_id": "worker"}
+    registry = json.loads(runtime.registry_path.read_text())
+    registry["runtime_root"] = str(root)
+    registry["goals"] = [{"id": target["goal_id"], "repo": str(workspace),
+                          "coordination": {"registered_agents": [target["agent_id"]]}}]
+    runtime.registry_path.write_text(json.dumps(registry))
+    # Observe provenance at the actual enqueue boundary, before model execution.
+    monkeypatch.setattr(runtime, "resume_session_queue", lambda **kwargs: None)
+    enqueue = runtime.enqueue_turn
+    saved = []
+
+    def observe(**kwargs):
+        path = _root(root) / "ingress" / (_hash([kwargs["session_id"], kwargs["client_turn_id"]]) + ".json")
+        saved.append(path.read_bytes())
+        return enqueue(**kwargs)
+
+    monkeypatch.setattr(runtime, "enqueue_turn", observe)
+    event = provider.event("steward-app", "canonical", "Original request for the registered worker")
+    assert transport.admit("steward-app", event)["status"] == "durably_accepted"
+    row = transport.core.pending()[0]
+    session = store.load_session(row["session_id"])
+    turn = store.load_turn(row["session_id"], row["turn_id"])
+    assert turn["status"] == "queued" and len(saved) == 1
+    if separate_coordination_root:
+        assert not ingress_path(store, row).exists()
+    policy_path = _root(root) / "policy.json"
+    _write(policy_path, {"schema_version": POLICY_SCHEMA, "sources": {session["channel_id"]: {
+        "sender_ids": [binding["operator_ref"]], "local_delivery_scope": "selected", "targets": [],
+    }}})
+    assert authority(root, runtime.registry_path, session, turn)["targets"] == []
+    configure_evidence_scope(root, runtime.registry_path, channel=session["channel_id"],
+                             goal_ids=[target["goal_id"]], execute=True)
+    configure_delivery_target(root, runtime.registry_path, channel=session["channel_id"],
+                              **target, grant=True, execute=True)
+    receipt = deliver(root, runtime.registry_path, session=session, turn=turn, request=target)
+    assert pending(root, **target)["items"][0]["message"] == event["content"]
+    assert deliver(root, runtime.registry_path, session=session, turn=turn,
+                   request=target) == {**receipt, "replayed": True}
+    assert transport.admit("steward-app", event)["status"] == "durably_accepted"
+    assert len(saved) == 1 and len(store.list_sessions()) == 1
+    # A sibling App's project source cannot acquire manager provenance or policy.
+    monkeypatch.setattr(runtime, "enqueue_turn", enqueue)
+    transport.admit("notes-app", provider.event("notes-app", "other", "Other audience"))
+    notes = next(item for item in transport.core.pending() if item["message"] == "Other audience")
+    assert not authority(root, runtime.registry_path, store.load_session(notes["session_id"]),
+                         store.load_turn(notes["session_id"], notes["turn_id"]))["targets"]
+    configure_delivery_target(root, runtime.registry_path, channel=session["channel_id"],
+                              **target, grant=False, execute=True)
+    with pytest.raises(ValueError, match="not authorized"):
+        deliver(root, runtime.registry_path, session=session, turn=turn, request=target)
+
+
 def test_verified_ingress_precedes_model_launch_and_survives_admission_replay(steward, monkeypatch):  # noqa: F811
     store, runtime, provider, transport, binding, _, _ = steward
     enqueue = runtime.enqueue_turn

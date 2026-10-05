@@ -61,6 +61,9 @@ delivery-target commands accept this exact channel alongside legacy channels;
 partial channels and wildcards are rejected. Native admission and crash replay
 retain the original Session, request and message. An App's portfolio read grant
 alone does not grant context delivery, and inbox delivery does not launch a worker.
+Provenance uses the controller's resolved coordination runtime root when present,
+so a separate Chat store cannot split it from the recipient policy and inbox.
+Controllers predating that root retain the existing Chat-parent layout.
 Messages outside the shared inbox's source-context bounds remain intact in
 ordinary Chat, but cannot be handed off as inline context; use a scoped artifact
 for larger material. Image content is not transferred by this text ingress record.

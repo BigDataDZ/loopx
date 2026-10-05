@@ -816,6 +816,9 @@ facts without treating a configuration change as retroactive execution.
 
 Native steward private admission now supplies the existing inbox's exact
 provider provenance before Turn launch, including prepared-request replay.
+It follows the resolved coordination owner when Chat storage is separate, with
+the retained layout for legacy controllers; source evidence does not fork into
+the private Chat store.
 Operator read/delivery configuration recognizes its full App/source channel;
 portfolio read alone still grants no delivery. Source/policy/replay fixtures
 qualify this entry prerequisite, not worker launch, adoption, automatic wake or
