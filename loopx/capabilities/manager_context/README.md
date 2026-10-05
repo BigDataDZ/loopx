@@ -60,6 +60,13 @@ addition to its peer result. Launch submission, receiver conclusion, canonical
 acceptance and provider delivery remain separate evidence. The existing return
 service replies to the original conversation; it does not start another model
 thread. Plain inbox delivery now says that execution has not started.
+The native postcondition entry retires only its exact operation-owned temporary
+host input before checking a clean delivery worktree; unrelated files and actual
+artifact changes still fail canonical validation. Validation recovery resumes the
+original Turn after its retained host result, without invoking the model again.
+An external conversation is not a native Goal wake owner. The typed wake owner
+settles that separate intent as `no_wake_owner`; the exact original inbox return
+still carries the receiver's conclusion, without a hidden Goal or retry loop.
 
 Remove that source's exact execution grant to prevent later launches/replays.
 Already launched work keeps its original lifecycle: inspect and stop its exact

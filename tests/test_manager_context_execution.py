@@ -21,7 +21,7 @@ from test_local_delegation import brief, wait, service as delegation_service  # 
 from test_independent_delegation_validation import independent_binding
 
 
-def source(root, registry, *, goal_id, agent_id, requester, binding):
+def source(root, registry, *, goal_id, agent_id, requester, binding, source_id="lark:exact-message"):
     store = ChatSessionStore(root)
     session = store.create_session(goal_id="loopx-manager", agent_id="codex",
                                    adapter_kind="codex_app_server", upstream_thread_id="original",
@@ -35,7 +35,7 @@ def source(root, registry, *, goal_id, agent_id, requester, binding):
     _write(_root(root) / "policy.json", policy)
     register_ingress(root, session_id=session["session_id"], client_turn_id=turn["client_turn_id"],
                      channel=session["channel_id"], sender_id="owner", message=turn["message"],
-                     source_id="lark:exact-message")
+                     source_id=source_id)
     request = {"goal_id": goal_id, "agent_id": agent_id, "execution_binding_id": binding, "brief": brief()}
     receipt = deliver(root, registry, session=session, turn=turn, request=request)
     return store, session, turn, request, receipt, policy
@@ -114,7 +114,7 @@ def test_model_receives_authorized_task_choices_after_manager_context_compaction
     assert "execution_binding_id" not in _turn_prompt(turn["message"], context_summary=json.dumps(disabled))
 
 
-@pytest.mark.parametrize("change", ["sender", "body", "channel", "revoke", "blocked", "requester", "stopped"])
+@pytest.mark.parametrize("change", ["sender", "body", "channel", "revoke", "blocked", "requester", "stopped", "binding"])
 def test_no_launch_after_source_or_registration_changes(flow, change):
     root, registry, (_, session, turn, _, _, policy), started = flow
     if change == "sender":
@@ -123,6 +123,10 @@ def test_no_launch_after_source_or_registration_changes(flow, change):
         turn["message"] = "Different input"
     elif change == "channel":
         session["channel_id"] = "manager.external.other-app"
+    elif change == "binding":
+        # A newly configured choice in the same Goal/Agent is not covered by
+        # the existing source's exact binding consent.
+        flow[2][3]["execution_binding_id"] = "new-task-choice"
     elif change == "revoke":
         policy["sources"][session["channel_id"]].pop("execution_bindings")
     elif change == "blocked":
@@ -208,4 +212,12 @@ def test_governed_worker_adopts_original_request_and_returns_without_another_mod
     drain(service.root, registry, store, transport)
     assert sends == [session["session_id"]]
     assert worker.read(launched["operation_id"])["status"] == "accepted"
+    assert (Path(worker.binding("analysis")["workspace"]) / "host-invocations").read_text() == "1"
+    # A new user request cannot reactivate the completed task merely because
+    # its source grant and registered Agent still exist.
+    _, new_session, new_turn, new_request, new_receipt, _ = source(service.root, registry,
+        goal_id=service.goal_id, agent_id="analyst", requester="lead", binding="analysis", source_id="lark:second-message")
+    refused = execution.dispatch(service.root, registry, session=new_session, turn=new_turn,
+        request=new_request, receipt=new_receipt, execution_allowed=lambda: True)
+    assert not refused["submitted"] and refused["reason"] == "execution_not_launchable", refused
     assert (Path(worker.binding("analysis")["workspace"]) / "host-invocations").read_text() == "1"

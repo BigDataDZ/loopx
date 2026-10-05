@@ -1935,7 +1935,14 @@ def main():
         service = Delegations(args.runtime_root, args.registry, args.goal_id,
                               args.agent_id, args.execution_config)
         if args.delegation_action == "validate":
-            service._validate(service._bound(_read(service.path(args.operation_id))))
+            row = _read(service.path(args.operation_id))
+            binding = service._bound(row)
+            # The native Turn invokes this after its Host returns, before the
+            # worker's outer finally. Retire only the exact operation-owned
+            # input before the canonical clean-worktree check; user files and
+            # actual delivery changes must still be rejected by that check.
+            service._clear_delegation_bootstrap(row, binding)
+            service._validate(binding)
         else:
             service._stop_signal = install_worker_stop_signal(
                 service._stop_path(service.path(args.operation_id)))
