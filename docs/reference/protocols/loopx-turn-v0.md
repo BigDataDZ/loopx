@@ -821,7 +821,13 @@ fork. A read-only agent-scoped exec session may resume with workspace-write
 when that is the only profile change and the current registry records an
 unexpired operator checkpoint approving the entire working directory. The
 Agent must remain registered in the active Goal; file-only, sibling, expired,
-or projection-only approval is insufficient. Other profile changes retain the
+malformed-expiry or projection-only approval is insufficient. Expiration is
+optional: omitted, null or blank `expires_at`/`fresh_until` retains no expiry.
+The first nonblank `expires_at`, or its `fresh_until` compatibility alias, must
+be an ISO timestamp string with a representable UTC instant. Invalid supplied
+expiration makes the checkpoint inactive in the shared normalization owner;
+it cannot authorize a write resume or add projected write scope. A valid
+`expires_at` takes precedence over the alias. Other profile changes retain the
 explicit `fresh` gate. Configure the approval through `configure-goal
 --boundary-authority-scope DIRECTORY/** --boundary-authority-source SOURCE`
 and preview before `--execute`; it grants neither publication nor production
