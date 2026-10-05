@@ -786,6 +786,13 @@ callback; neither may appear as work completed or a second user-visible reply.
 This uses the R3 collaboration owner and current managed Turn wake instead of
 a separate steward scheduler.
 
+Readable R2/R3 answers reuse shared adaptive authoring guidance across ordinary
+project Chat, steward context and the collaboration return tool. This narrows
+routine protocol noise without cutting substantive answers or judging
+acceptance; it does not close sustained worker, steering or original-route
+return qualification. Private Markdown delivery is already owned by the
+existing Lark transport and is unchanged here.
+
 For App continuity in GQ07–GQ09, qualify chosen Manager/Goal view restoration
 through reload and browser Back/Forward using the existing typed route and
 draft owner. Keep source/Goal identity and prove navigation causes no work

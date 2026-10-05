@@ -73,6 +73,7 @@ from .control_plane.collaboration.peers import (
     request,
     require_operation_id,
 )
+from .presentation.answer_instruction import conversation_answer_instruction
 
 
 _PINNED_MODULE_LAUNCHER = (
@@ -330,7 +331,12 @@ def register_collaboration_tools(server: FastMCP, root: Path, registry: Path, go
             caller_goal_ref=caller_goal_ref,
         )
 
-    @server.tool()
+    @server.tool(description=(
+        "Return a conclusion to the original requester. For a later changed fact, "
+        "append an update with a stable update_id; retry with the same id and text. "
+        "Neither a blocker nor a returned result certifies completion of the work. "
+        + conversation_answer_instruction()
+    ))
     def return_result(request_id: str, text: str, update_id: str | None = None) -> dict:
         """Return a conclusion to the original requester. For a later changed fact,
         append an update with a stable update_id; retry with the same id and text.
