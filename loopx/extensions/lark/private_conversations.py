@@ -22,6 +22,7 @@ from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
 from .goal_channel_transport import APP_ID_PATTERN, call, json_payload, lark_args
 from .inbox_reply import _message, reply_lark_event_inbox, verify_lark_inbox_reply
 from .inbox_reactions import mark_lark_event_inbox_processing, mark_lark_event_inbox_received
+from .outbound import LarkOutboundTextError, normalize_lark_outbound_text, safe_lark_plain_text_fallback
 from .private_images import private_message_caption, private_message_images
 
 
@@ -306,6 +307,14 @@ class LarkPrivateConversations:
         phase_state = record["deliveries"].get(phase, {})
         if phase_state.get("verified"):
             return True
+        # Repair presentation before recording the exact provider intent. Core's
+        # answer stays unchanged. An older frozen intent may contain raw CRLF;
+        # preserve it when it still matches Core, letting Inbox verify its wire.
+        if phase_state.get("text") != text:
+            try:
+                text = normalize_lark_outbound_text(text, limit=None, preserve_format=True)
+            except LarkOutboundTextError:
+                text = safe_lark_plain_text_fallback(text)
         if phase_state.get("text") not in (None, text):
             raise ValueError("delivery content changed after an attempt")
         config = inbox()

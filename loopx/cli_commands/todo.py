@@ -681,6 +681,7 @@ def handle_todo_command(
                 todo_id=args.todo_id,
                 role=args.role,
                 reason=args.reason,
+                successor_todo_ids=args.successor_todo_ids,
                 next_agent_todo=args.next_agent_todo,
                 next_user_todo=args.next_user_todo,
                 next_user_task_class=args.next_user_task_class,

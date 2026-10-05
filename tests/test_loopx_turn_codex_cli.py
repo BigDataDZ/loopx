@@ -583,6 +583,47 @@ def test_approved_agent_write_resume_preserves_native_session(tmp_path, monkeypa
     assert len(list((tmp_path / "runtime").glob("goals/*/turn-sessions/*.json"))) == 1
 
 
+def test_source_session_storage_observation_does_not_authorize_write_resume(tmp_path, monkeypatch):
+    from loopx.capabilities.native_chat.project_context import coordination_runtime_root
+
+    executable, log = _fake_codex(tmp_path)
+    monkeypatch.setenv("FAKE_CODEX_LOG", str(log))
+    project = tmp_path / "project"
+    project.mkdir()
+    admission = _source_admission(tmp_path)
+    with source_session_registry_transaction(
+        admission.registry_path, operation="fixture_lifecycle_workspace_approval"
+    ) as transaction:
+        payload = transaction.payload_copy()
+        goal = payload["goals"][0]
+        goal["repo"] = str(project)
+        goal["coordination"] = {
+            "registered_agents": ["codex-fixture"],
+            "checkpointed_boundary_authority": [{
+                "write_scope": ["**"], "source": "operator-test", "decision": "approve",
+                "status": "active", "recorded_at": "2025-01-01T00:00:00Z",
+            }],
+        }
+        transaction.commit(payload)
+    assert coordination_runtime_root(admission.registry_path, tmp_path / "chat") == tmp_path / "runtime"
+    request = _request()
+    request["goal_ref"] = SOURCE_GOAL_REF
+    request["session"]["context_policy"] = {"mode": "resume", "binding_scope": "agent"}
+    options = dict(runtime_root=tmp_path / "runtime", project=project,
+                   codex_bin=str(executable), registry_path=admission.registry_path,
+                   goal_admission=admission)
+    run_codex_cli_host(request, sandbox="read-only", **options)
+    binding = next((tmp_path / "runtime").glob("goals/*/turn-sessions/*.json"))
+    original_binding = binding.read_bytes()
+    original_registry = admission.registry_path.read_bytes()
+    request["session"]["action"] = "resume"
+    with pytest.raises(ValueError, match="profile changed"):
+        run_codex_cli_host(request, sandbox="workspace-write", **options)
+    assert len(log.read_text().splitlines()) == 1
+    assert binding.read_bytes() == original_binding
+    assert admission.registry_path.read_bytes() == original_registry
+
+
 @pytest.mark.parametrize("field", ["expires_at", "fresh_until"])
 @pytest.mark.parametrize("value", [
     "not-an-iso-timestamp", "2026-02-30T00:00:00Z", 0, 20990101, False, [], {},
