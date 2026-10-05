@@ -105,3 +105,21 @@ def test_real_worker_generated_guard_selection_reentry_and_settle_once(tmp_path,
         rc, settled = _run_cli(registry, runtime, *shlex.split(spend)[1:])
         assert rc == 0, settled
     assert _spend_run_count(runtime) == 1
+
+
+def test_native_worker_and_stable_bootstrap_cannot_use_capture(tmp_path):
+    project, runtime, registry = _write_fixture(tmp_path)
+    env = dict(os.environ, LOOPX_CLI='unused', LOOPX_REGISTRY=str(registry),
+               LOOPX_RUNTIME_ROOT=str(runtime), LOOPX_PROJECT=str(project),
+               LOOPX_GOAL_ID=GOAL_ID, LOOPX_AGENT_ID=AGENT_ID,
+               LOOPX_WAKE_LOG_DIR=str(tmp_path / 'absent'), LOOPX_TURN_ENVELOPE='1')
+    with pytest.raises(ValueError, match='host-owned'):
+        heartbeat_body(env, TURN_ID, native_goal=True)
+    assert not (tmp_path / 'absent').exists()
+    rc, rejected = _run_cli(
+        registry, runtime, 'heartbeat-prompt', '--bootstrap', '--thin',
+        '--runtime-profile', 'generic_cli', '--goal-id', GOAL_ID, '--agent-id', AGENT_ID,
+        '--turn-instance-id', TURN_ID, '--decision-output-root', str(tmp_path))
+    assert rc != 0 and rejected['ok'] is False
+    assert _heartbeat_receipt_count(runtime, TURN_ID) == 0
+    assert not list(tmp_path.glob('decision-*'))
