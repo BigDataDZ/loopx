@@ -108,6 +108,8 @@ These directly determine whether a long-running team is usable. A directory or R
 
 [Lark personal follow-through](../../product/use-cases/office-operations/personal-follow-through.md) applies the [manager RFC](capable-manager-semantic-handoff-v0.md) to S1/S5/S6/S8/S9. Common grants, continuation and return use manager acceptance; the profile retains source interpretation and evaluation. The independent proposal is consolidated; the installed private desktop journey remains unqualified and closes no existing gate.
 
+The bounded S6/S8 source-reading slice provides a [read-only MCP adapter for an existing Ego Page](../../integrations/ego-source-reader.md): rendered text, image indices and one indexed rendered image region within configured origins and an exact URL fence. It creates no Session, material authority or browser service. Native Bot single-image consumption has been observed; original-channel delivery needs independent qualification. One image proves neither all images, a complete article nor its referenced primary post. Source capture, verification walls, truncation, unloaded images and optional provider setup keep their separate acceptance boundaries; this slice does not close the materials journey.
+
 ## 3. Portfolio Milestones, Resource Ordering and Completion
 
 S streams describe ongoing ownership, G milestones qualify a product combination, and R cards specify the current core implementation slices. These are cross-references, not a runtime state machine. Progress is evidence-gated rather than date-promised. Changes in capacity or business priority update canonical Todos rather than assuming every stream starts simultaneously.
@@ -415,6 +417,14 @@ Chat, session, collaboration and presentation owners as R2/R3 integration work.
 Do not call a candidate catalog, spinner or queued inbox receipt a completed
 worker handoff. This checkpoint does not lower R1–R3 or G1 gates.
 
+The [ordinary workspace write checkpoint](app-conversation-and-async-inbox-v0.md#ordinary-workspace-writes-default-and-revocation-checkpoint)
+adds default project writes under the host grant, explicit read-only launch/App
+settings and actual Codex sandbox enforcement on start/resume. It reuses the typed
+conversation owner and has no hidden Goal or manager permissions. Synthetic
+Core/HTTP cases and a real host note-edit canary do not establish installed Lark
+workflow readiness or activate a project's Material Lifecycle adapter. R3/S5
+still require original-audience write/readback, revoke/recovery and IM qualification.
+
 ### Attention-cost acceptance: create, connect, collaborate, understand
 
 The [public-safe golden-query pack](../../product/use-cases/steward/golden-queries.md)
@@ -527,6 +537,10 @@ simultaneously select a candidate monitor. Owner binding and fresh completion
 validation remain required. This repairs R1/S2/S3 continuity, not R4's general
 intent-preserving amendment or provider promotion. Real File/SQLite CLI
 regressions cover recovery admission and continued refusal of unbound completion.
+Later vision gaps also rearm after an older
+patch ACK; its label cannot waive new evidence. When the new canonical successor
+removes that frontier duty before writeback, exact source reconstruction preserves
+the admitted Turn through refresh/spend without admitting successor execution.
 
 ### R2: Continuous Small-team Execution
 
@@ -709,6 +723,14 @@ Current status is design proposal; no G1 or default-screen promotion.
 
 ### R3: Semantic Requests and Automatic Return
 
+**Bound-conversation status presentation.** The shared display renderer leads
+with canonical execution/recovery state, project and queue/permission facts;
+the Lark adapter reserves full commands and diagnostics for help, retaining a
+compact snapshot timestamp for delayed/replayed replies. Unreadable
+observations and completed executions retain their uncertainty/acceptance
+boundary. This is a bounded status-view improvement, not qualification of
+result synthesis, receiver adoption or the full automatic-return journey.
+
 **S1/S5 attention checkpoint.** Local steward/Goal Turns now receive canonical
 blocker and concrete owner-request facts without a Lark connection. The shared
 TS read model coalesces one Todo's blocker/decision; common content adapters and
@@ -765,11 +787,11 @@ This uses the R3 collaboration owner and current managed Turn wake instead of
 a separate steward scheduler.
 
 Readable R2/R3 answers reuse shared adaptive authoring guidance across ordinary
-project Chat, steward context and the collaboration return tool. Native Lark
-private replies use the existing full Markdown transport with exact readback
-and old-format recovery. This narrows routine protocol noise without cutting
-substantive answers or judging acceptance; it does not close sustained worker,
-steering or original-route return qualification.
+project Chat, steward context and the collaboration return tool. This narrows
+routine protocol noise without cutting substantive answers or judging
+acceptance; it does not close sustained worker, steering or original-route
+return qualification. Private Markdown delivery is already owned by the
+existing Lark transport and is unchanged here.
 
 For App continuity in GQ07–GQ09, qualify chosen Manager/Goal view restoration
 through reload and browser Back/Forward using the existing typed route and
@@ -783,6 +805,16 @@ trigger semantics; Lark supplies provider identity and the existing inbox owns
 deduplication and return. App settings select and read back the trigger per
 connection. External host-tool permission and sender-bound delegation remain
 separate gaps; receiving a request does not establish execution authority.
+
+An external steward can now select an operator-granted existing task binding
+from its exact source catalog and submit the handoff through the same governed
+delegation/Turn owner. Durable context receipt, bounded launch, receiver
+adoption, task acceptance and original-audience return remain distinct. No
+identity, task, runtime policy or scheduler is provisioned by the handoff. Local
+file/SQLite fixtures qualify dispatch, independent acceptance and return;
+provider/model routing, new-task allocation, operator UI discovery and complete
+stop/result presentation remain separate R3 gates. See
+[bound inbox execution](../../../loopx/capabilities/manager_context/README.md#executing-already-bound-work).
 
 Resolve source context before routing: a short reply retains the exact
 same-conversation parent, with missing and truncated material explicit. TS owns the bounded context projection;
@@ -801,6 +833,16 @@ is general semantic triage, not a new steward-specific classifier or scheduler.
 Typed admission owns provider-independent trigger reasons; the App renders those
 facts without treating a configuration change as retroactive execution.
 
+Native steward private admission now supplies the existing inbox's exact
+provider provenance before Turn launch, including prepared-request replay.
+It follows the resolved coordination owner when Chat storage is separate, with
+the retained layout for legacy controllers; source evidence does not fork into
+the private Chat store.
+Operator read/delivery configuration recognizes its full App/source channel;
+portfolio read alone still grants no delivery. Source/policy/replay fixtures
+qualify this entry prerequisite, not worker launch, adoption, automatic wake or
+original-route completion. Those remain the same R3 acceptance gates above.
+
 ### R4: Shared Goal Alignment and Evolution
 
 - **Owner:** alignment RFC Stage 3–5 and TS Goal/work-graph owners.
@@ -816,7 +858,7 @@ TS validation and canonical receipt/display recovery. Real-provider mixed-graph
 counterexamples cover concurrent changes and lost responses. [Scope and remaining
 boundaries](../../reference/canonical-terminal-review.md); this does not settle R5 or D1–D3.
 
-L3 checkpoint: standalone acquisition/takeover, atomic claim admission and maintenance share typed lease facts/rules and provider opening. Exact acquisition retry verifies current execution proof; real CLI completion can recover missing Markdown display. Full-state scope conflicts, process interruption and File/SQLite/PostgreSQL read-only rehearsal are covered. [Remaining executor and integration boundaries](../../reference/canonical-lease-renew.md); R5, D2/D3 and default qualification remain open.
+L3 checkpoint: standalone acquisition/takeover, atomic claim admission and maintenance share typed lease facts/rules and provider opening. Exact acquisition retry verifies current execution proof; real CLI completion can recover missing Markdown display. Full-state scope conflicts, process interruption and File/SQLite/PostgreSQL read-only rehearsal are covered. Verified cooperative code-edit mode treats overlapping files as integration advisories, including unknown legacy workspace grants; known same-checkout collisions, Todo-instance ownership and ordinary exclusive acquisition retain their fences. This bounded coordination change does not qualify a real peer correction/adoption journey. [Remaining executor and integration boundaries](../../reference/canonical-lease-renew.md); R5, D2/D3 and default qualification remain open.
 
 - **Owner:** TS T0–T4 and shared-authority D1–D3; retain their numbering and gates.
 - **Selection:** prioritize an entire hot-path transaction or recovery lifecycle used by R1–R4. Record before/after callers, owners, crossings, actual deletions and performance. Stop adding per-field Python→TS RPCs; do not rebuild the merged Todo update.
