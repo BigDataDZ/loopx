@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
+from .quota_capture import capture_decision, prepare_decision_capture
 from ..usage_goal import observe_quota_result
 
 from ..capabilities.explore.composition_frontier import (
@@ -330,6 +331,10 @@ def _dispatch_quota_turn_start_hooks(
         )
         dispatch = extend_cadence_turn_start_dispatch(dispatch, registry_path=registry_path,
             runtime_root=root, goal_id=args.goal_id, agent_id=args.agent_id)
+    if args.agent_id:
+        from ..capabilities.explore.turn_context import extend_turn_start_dispatch as extend_explore
+        dispatch = extend_explore(dispatch, registry_path=registry_path, runtime_root=root,
+            goal_id=args.goal_id, agent_id=args.agent_id)
     local_private_state_mutated = any(
         isinstance(result, Mapping)
         and result.get("local_private_state_mutated") is True
@@ -381,6 +386,8 @@ def _project_quota_cli_payload(
     args: argparse.Namespace,
     detail_sections: frozenset[str],
     scheduler_context: object,
+    *,
+    captured_decision_path: str | None = None,
 ) -> dict[str, object]:
     """Project already-decided facts; preserve typed failures on envelope rejection.
 
@@ -409,6 +416,7 @@ def _project_quota_cli_payload(
         return build_turn_envelope(
             payload,
             scheduler_execution_context=scheduler_context,
+            captured_decision_path=captured_decision_path,
         )
     except EffectRuntimeRejected as envelope_error:
         degraded = dict(payload)
@@ -422,6 +430,7 @@ def handle_quota_command(
     runtime_root_arg: str | None,
     print_payload: PrintPayload,
     append_cli_rollout_event: RolloutEventAppender,
+    capture_directory: Path | None = None,
 ) -> int:
     usage_quota_started = time.time_ns() // 1_000_000
     heartbeat_turn_id: str | None = None
@@ -437,6 +446,9 @@ def handle_quota_command(
     context: QuotaCommandContext | None = None
     goal_ref: dict[str, str] | None = None
     try:
+        if capture_directory is None and getattr(args, "decision_output_dir", None) is not None:
+            validate_quota_command_context_request(args)
+            capture_directory = prepare_decision_capture(args)
         goal_ref, turn_start_hook_dispatch, context = (
             _prepare_quota_command_execution(
                 args,
@@ -543,6 +555,7 @@ def handle_quota_command(
                         runtime_root_arg=runtime_root_arg,
                         print_payload=print_payload,
                         append_cli_rollout_event=append_cli_rollout_event,
+                        capture_directory=capture_directory,
                     )
                 heartbeat_receipt_existing = action_selection_preflight.receipt
                 heartbeat_receipt_existing_status = (
@@ -887,9 +900,13 @@ def handle_quota_command(
             turn_id=_effective_spend_turn_instance_id(payload, heartbeat_turn_id=heartbeat_turn_id),
             started_at=usage_quota_started,
         )
+    capture_decision(capture_directory, payload)
     payload = _project_quota_cli_payload(
         payload, args, detail_sections,
         context.scheduler_context if context is not None else None,
+        captured_decision_path=(
+            str(capture_directory / "decision.json") if capture_directory is not None else None
+        ),
     )
     if args.quota_command == "should-run" and context is not None:
         attach_host_poll_receipt(

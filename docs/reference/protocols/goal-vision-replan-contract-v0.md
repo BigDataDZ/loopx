@@ -27,6 +27,37 @@ vision drift or missing closeout satisfy, block, or wake another role.
 `goal_frontier_projection`. It should not grow per-agent vision storage,
 budgeting, dreaming, or product-specific replan logic.
 
+## Replan ACK freshness
+
+An accepted ACK with a legal vision outcome covers gaps at or before its
+enclosing durable run's timestamp. A vision patch label cannot acknowledge a later gap. The atomic
+writeback's vision and ACK share that run timestamp, so reading the same run
+does not rearm planning. Completed-chain gaps use their canonical `completed_at`
+source instead. Missing or invalid source timestamps cannot establish coverage.
+Comparison preserves microseconds and validates calendar dates; equivalent
+timezone offsets denote the same instant, while timestamps without a timezone
+cannot establish coverage.
+Exact Goal Acceptance hold checkpoints retain their additional revision checks.
+
+This changes quota/status re-entry for later vision gaps, including lanes that
+otherwise wait on a future monitor. Replanning still requires an evidence-linked
+path or a concrete, scoped successor; it neither grants a lease nor proves Goal
+completion. If a successor makes the vision frontier runnable before refresh,
+the original Turn reconstructs the same source obligation and revalidates its
+exact canonical successor receipt. A wrong owner, deferred/closed successor or
+changed source cannot settle that Turn. Refresh/spend remain required and retain
+the original binding; the successor executes only under a later admission.
+
+Coverage-backed terminal outcomes remain legal under their existing evidence
+and lifecycle gates. A terminal frontier must still allow the original Turn's
+outstanding debit exactly once, then refuse new work. Replan settlement does not
+declare the Goal achieved, remove unfinished Todos or waive independent Goal
+Acceptance checks. Complete source evidence and explicit closure intent remain
+necessary for terminal convergence.
+
+Bootstrap heartbeat cadence supplies an initial interval. Current
+backoff may lengthen it above the configured minimum while retaining ACTIVE.
+
 ## Accepted successor recommendations
 
 After a replan records an accepted `new_runnable_successor`, fresh quota planning
@@ -467,6 +498,15 @@ advancement frontier, that gap can trigger `autonomous_replan_required`.
 For the same `agent_id`, a newer satisfied checkpoint with `patched` or
 `unchanged_with_reason` supersedes older
 `missing_required` checkpoints; `not_required` does not.
+
+The ordinary CLI settlement plan now puts a compact material-closeout reminder
+in its existing writeback step, before the first write. The shared authoring
+example includes the acceptance claim, continuation path and evidence reference;
+replace its illustrative claims and reference with observed facts. Explicit
+`in_flight_continuation` plans retain their existing short writeback precondition.
+This changes guidance in CLI/TurnEnvelope and the shared MCP/replan authoring
+projection, not validation, admission or receipt authority. It does not establish
+lower model token cost or eliminate all replanning; those require live measurement.
 
 A satisfied checkpoint is protocol-complete, but a material closeout also has
 to qualify its relationship to the final outcome. A patched checkpoint must

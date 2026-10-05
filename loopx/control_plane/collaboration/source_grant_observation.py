@@ -30,10 +30,10 @@ def external_source_policy(runtime_root: Path, session: dict[str, Any], turn: di
     return ingress, policy.get("sources", {}).get(ingress["channel"], {})
 
 
-def registered_context_recipients(registry: dict[str, Any]) -> dict[str, Any]:
+def registered_context_recipients(registry: dict) -> dict:
     """Observe active Goal membership, ignoring unreadable activation rows."""
     active_goals = []
-    available: list[dict[str, str]] = []
+    available = []
     for goal in registry.get("goals", []):
         if not isinstance(goal, dict) or not goal.get("id"):
             continue
@@ -48,9 +48,78 @@ def registered_context_recipients(registry: dict[str, Any]) -> dict[str, Any]:
     return {"active_goal_ids": active_goals, "available": available}
 
 
+def _source_context_grant(
+    runtime_root: Path,
+    session: dict,
+    turn: dict,
+    available_rows: list[dict],
+) -> dict:
+    available = {
+        (row["goal_id"], row["agent_id"])
+        for row in available_rows
+        if isinstance(row, dict)
+        and isinstance(row.get("goal_id"), str)
+        and isinstance(row.get("agent_id"), str)
+    }
+    scope = conversation_scope(session, origin=turn.get("origin", "unknown"))
+    if scope["private_conversation"] and turn.get("origin") == "web":
+        allowed = {
+            target
+            for target in available
+            if scope["goal_ids"] is None or target[0] in scope["goal_ids"]
+        }
+        source_id = "web:" + _hash([session["session_id"], turn["client_turn_id"]])
+    else:
+        if scope["kind"] != "external_audience":
+            return {"mode": "unavailable", "targets": []}
+        try:
+            ingress, grants = external_source_policy(runtime_root, session, turn)
+            selected = effect_runtime_result(
+                "collaboration.source.recipients",
+                {
+                    "source": grants,
+                    "sender_id": ingress["sender_id"],
+                    "available": available_rows,
+                },
+            )
+            allowed = {
+                (value["goal_id"], value["agent_id"])
+                for value in selected["targets"]
+            }
+            source_id = ingress["source_id"]
+        except (
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            AttributeError,
+            EffectRuntimeRejected,
+        ):
+            return {"mode": "unavailable", "targets": []}
+    targets = [
+        {"goal_id": goal_id, "agent_id": agent_id}
+        for goal_id, agent_id in sorted(allowed & available)
+    ]
+    return {
+        "mode": "context_only",
+        "targets": targets,
+        "source_id": source_id,
+    }
+
+
+def source_context_target_authority(
+    runtime_root: Path,
+    session: dict,
+    turn: dict,
+    target: dict,
+) -> dict:
+    """Authorize one target whose exact Goal scope was already validated."""
+    return _source_context_grant(runtime_root, session, turn, [target])
+
+
 def source_context_authority(
-    runtime_root: Path, registry_path: Path, session: dict[str, Any], turn: dict[str, Any]
-) -> dict[str, Any]:
+    runtime_root: Path, registry_path: Path, session: dict, turn: dict
+) -> dict:
     """Return only a write-only recipient catalog; no cross-audience Goal evidence."""
     if registry_path is None:
         return {"mode": "unavailable", "targets": []}
@@ -64,30 +133,9 @@ def source_context_authority(
     except (OSError, ValueError, TypeError):
         return {"mode": "unavailable", "targets": []}
     observed = registered_context_recipients(registry)
-    available = {(row["goal_id"], row["agent_id"]) for row in observed["available"]}
-    scope = conversation_scope(session, origin=turn.get("origin", "unknown"))
-    if scope["private_conversation"] and turn.get("origin") == "web":
-        allowed = {target for target in available
-                   if scope["goal_ids"] is None or target[0] in scope["goal_ids"]}
-        source_id = "web:" + _hash([session["session_id"], turn["client_turn_id"]])
-    else:
-        if scope["kind"] != "external_audience":
-            return {"mode": "unavailable", "targets": []}
-        try:
-            ingress, grants = external_source_policy(runtime_root, session, turn)
-            selected = effect_runtime_result("collaboration.source.recipients", {
-                "source": grants, "sender_id": ingress["sender_id"],
-                "available": observed["available"],
-            })
-            allowed = {(v["goal_id"], v["agent_id"]) for v in selected["targets"]}
-            source_id = ingress["source_id"]
-        except (OSError, ValueError, KeyError, TypeError, AttributeError, EffectRuntimeRejected):
-            return {"mode": "unavailable", "targets": []}
-    targets = [
-        {"goal_id": g, "agent_id": a} for g, a in sorted(allowed & available)
-    ]
-    return {
-        "mode": "context_only",
-        "targets": targets,
-        "source_id": source_id,
-    }
+    return _source_context_grant(
+        runtime_root,
+        session,
+        turn,
+        observed["available"],
+    )

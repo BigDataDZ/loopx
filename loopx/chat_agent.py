@@ -325,6 +325,7 @@ def _turn_prompt(
     context_summary: str = "",
     execution_mode: bool = False,
     runtime_profile: str = "restricted",
+    project_work: bool = False,
 ) -> str:
     try:
         supplied = json.loads(context_summary)
@@ -351,6 +352,8 @@ def _turn_prompt(
         "Use the existing branch and worktree. Commit or push only when the operator task explicitly requests it. "
         "Keep changes bounded to the confirmed Task and stop at any permission, identity, or destructive-operation gate. "
         if execution_mode
+        else "You are the project assistant inside LoopX Chat. Execute the owner's explicit workspace requests using the project's AGENTS.md and applicable skills. "
+        if project_work
         else "You are the planning agent inside LoopX Chat. Work only from the project root. "
     )
     trusted_manager_limits = (
@@ -363,9 +366,17 @@ def _turn_prompt(
         "Use read-only repository commands only when the operator explicitly asks for repository facts or when evidence is required to answer accurately. "
         "Do not use tools for ordinary conversation, exact-wording requests, or status questions that can be answered from the supplied LoopX context. "
         "Do not edit files, mutate LoopX state, create commits, send messages, or request elevated access. "
-        if not execution_mode and runtime_profile != "trusted_owner"
+        if not execution_mode and runtime_profile != "trusted_owner" and not project_work
         else ""
     )
+    if project_work:
+        planning_limits = (
+            "The owner explicitly authorized workspace writes for this App. Perform bounded reversible edits and validation required by the current request. "
+            "This is ordinary project work without a Goal: do not create a hidden Goal, schedule work, discover a portfolio, or assume manager authority. "
+            "Use existing typed owners for durable state and obey project material lifecycle and public/private rules. "
+            "Read skill instructions before using them; a missing authority or source is a concrete gap, never permission to invent a store or import history. "
+            "Commit, publish or send external messages only when the owner explicitly requests them. "
+        )
     protected_action_contract = (
         "For a protected operation (merge, release, deploy, delete, or payment), interpret the operator's semantic intent. "
         "Set protected_action only when the dominant request is to perform exactly one operation now and the operator supplied a concrete target. "
@@ -440,6 +451,7 @@ class CodexChatAgentSession:
     process_tree_owned: bool = False
     runtime_profile: str = "restricted"
     sandbox: str = "read-only"
+    project_context: dict[str, str] | None = None
     model: str | None = None
     reasoning_effort: str | None = None
     response_timeout_sec: float = 30.0
@@ -486,6 +498,7 @@ class CodexChatAgentSession:
         isolate_process_tree: bool = False,
         runtime_profile: str = "restricted",
         sandbox: str | None = None,
+        project_context: dict[str, str] | None = None,
         codex_home: Path | None = None,
         model: str | None = None,
         reasoning_effort: str | None = None,
@@ -505,7 +518,18 @@ class CodexChatAgentSession:
         root = work_dir.resolve()
         if runtime_profile not in {"restricted", "trusted_owner"}:
             raise ValueError("unsupported Codex Chat runtime profile")
-        if execution_mode:
+        if project_context is not None:
+            from .control_plane.effect_runtime import effect_runtime_result
+
+            if execution_mode or goal_id is not None or runtime_profile != "restricted":
+                raise ValueError("ordinary project runtime cannot borrow Goal or manager authority")
+            policy = effect_runtime_result("collaboration.project.session_identity", {"context": project_context})
+            if Path(policy["context"]["workspace_path"]).resolve() != root:
+                raise ValueError("project runtime workspace does not match its context")
+            selected_sandbox = policy["sandbox"]
+            if sandbox is not None and sandbox != selected_sandbox:
+                raise ValueError("project sandbox does not match its workspace grant")
+        elif execution_mode:
             if runtime_profile != "restricted":
                 raise ValueError(
                     "trusted_owner is only valid for the non-execution manager runtime"
@@ -585,6 +609,7 @@ class CodexChatAgentSession:
             process_tree_owned=isolate_process_tree,
             runtime_profile=runtime_profile,
             sandbox=selected_sandbox,
+            project_context=policy["context"] if project_context is not None else None,
             model=model,
             reasoning_effort=reasoning_effort,
             model_catalog_compatibility_applied=_compatibility_catalog_path is not None,
@@ -683,6 +708,7 @@ class CodexChatAgentSession:
                     isolate_process_tree=isolate_process_tree,
                     runtime_profile=runtime_profile,
                     sandbox=selected_sandbox,
+                    project_context=project_context,
                     codex_home=runtime_home,
                     model=model,
                     reasoning_effort=reasoning_effort,
@@ -821,7 +847,7 @@ class CodexChatAgentSession:
             raise CodexChatAgentError(
                 "Codex app-server requested host approval",
                 gate=_approval_gate(
-                    "Codex requested host approval during a read-only chat turn."
+                    "Codex requested host approval beyond this Chat session's configured grant."
                 ),
             )
         return False
@@ -971,6 +997,7 @@ class CodexChatAgentSession:
                     context_summary=self.context_summary,
                     execution_mode=self.execution_mode,
                     runtime_profile=self.runtime_profile,
+                    project_work=self.project_context is not None and self.sandbox == "workspace-write",
                 ),
             }
         ]
