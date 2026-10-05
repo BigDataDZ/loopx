@@ -113,9 +113,28 @@ journeys and broader IM interactions remain open.
 
 Settings → Lark can now select a steward role independently of ordinary project
 Chat. The existing typed conversation binding owns its App, verified owner,
-source, workspace and bounded portfolio. A verified empty scope is distinct from
-an unavailable authorization; it contains no inherited Goals and does not certify
-global inventory coverage. Ordinary Chat still has no Goal or manager identity.
+source and workspace. New verified owner stewards default to `all_registered`:
+the current configured registry supplies every registered Goal and Agent, including
+future registrations. Stopped work remains inspectable through explicit history,
+but cannot receive new work. A verified empty registry is distinct from unavailable
+authorization; no historical registry or identity is imported. Ordinary Chat still
+has no Goal or manager identity.
+
+Older bindings retain their selected scope. Settings → Lark → **Authorize all
+registered work** upgrades the existing binding and its known sender-bound delivery
+policies without replacing its Session or audience. Individual recipient revocations
+remain effective; discovery does not prove execution readiness or grant protected
+operations. Trusted-local `manager-inbox configure-delivery-scope` uses the same
+source-policy owner, and a verified new private source initializes that policy once.
+An explicitly narrowed existing source policy is not widened by ordinary admission.
+
+When the configured registry declares `common_runtime_root`, coordination context,
+inboxes and return processing use that declared root even if Chat has a separate
+storage override. App bindings, conversations and provider credentials stay in
+their existing private storage. Without a declared common root, existing local
+Chat behavior is retained. This scope/path slice does not complete worker activation,
+receiver adoption or original-route return; native private ingress remains a separate
+integration boundary from the existing group ingress.
 
 Only an explicit `/delegate --tokens N objective` prepares a `goal.create`
 preview. Confirmation must arrive from that exact owner/App/source within fifteen
