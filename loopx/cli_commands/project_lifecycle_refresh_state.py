@@ -132,7 +132,9 @@ def register_refresh_state_command(
         "--next-action",
         help=(
             "Record a next step bound to this agent's selected advancement Todo in "
-            "the existing recommendation receipt. Does not overwrite Markdown "
+            "the existing recommendation receipt; at most 1200 characters after "
+            "trimming. Keep detailed evidence in artifacts and summarize the next step. "
+            "Does not overwrite Markdown "
             "Next Action, select another task, or grant execution authority."
         ),
     )
@@ -164,7 +166,10 @@ def register_refresh_state_command(
         help=(
             "Typed semantic boundary for vision checkpointing. Defaults to "
             "semantic_closeout; in_flight_continuation is valid only for an "
-            "open agent-bound Todo reporting outcome_progress."
+            "open agent-bound Todo reporting outcome_progress. A within-Todo "
+            "--next-action is allowed; Todo completion, durable shared Next Action "
+            "updates and --autonomous-replan-recorded require semantic_closeout "
+            "with its vision checkpoint. Choose the boundary from the actual work."
         ),
     )
     refresh_state_parser.add_argument(
@@ -205,7 +210,9 @@ def register_refresh_state_command(
         action="store_true",
         help=(
             "Mark this refresh as the explicit autonomous replan ACK. "
-            "Use only after the agent has performed and written back the bounded replan slice."
+            "Use only after the agent has performed and written back the bounded replan slice. "
+            "Requires --delivery-boundary semantic_closeout (the default); do not "
+            "add this ACK to an ordinary in_flight_continuation."
         ),
     )
     refresh_state_parser.add_argument(

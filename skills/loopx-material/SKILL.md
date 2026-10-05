@@ -152,9 +152,18 @@ urgency, reader action, or evidence maturity differs.
 
 Rerank from revision-bound Decision Context evidence.
 
-- Protect pinned entries and the project's declared stable prefix.
+- Protect explicitly pinned entries and the project's declared stable prefix;
+  a visible Top-N alone does not declare either protection.
 - Limit moved entries and rank displacement unless the owner explicitly
   approves a structural rebuild.
+- For one ranked material's evidence-backed move, use
+  `plan_material_single_move` with the complete ranked set, including backlog.
+  Preserve all other relative order and use its exact interval bounds in the
+  existing proposal. Recompute that preview before apply; do not relax the
+  constraints of a historical proposal.
+- Use `material_rerank_receipt_chunks` when a transition affects more than 100
+  refs. Build all existing receipts before CAS and persist all after readback;
+  verify complete coverage under the same proposal, revisions and owner gate.
 - Distinguish a rank move from lifecycle change and from new candidate intake.
 - Emit a no-change proposal when evidence does not justify movement.
 - Keep proposal and apply receipt separate.

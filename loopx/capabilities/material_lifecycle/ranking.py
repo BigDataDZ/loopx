@@ -19,6 +19,7 @@ from ._validation import (
 
 MATERIAL_RERANK_PROPOSAL_SCHEMA_VERSION = "material_rerank_proposal_v0"
 MATERIAL_RERANK_APPLY_RECEIPT_SCHEMA_VERSION = "material_rerank_apply_receipt_v0"
+MATERIAL_RERANK_RECEIPT_MAX_REFS = 100
 
 _MOVE_FIELDS = {
     "evidence_refs",
@@ -34,6 +35,83 @@ _REQUIRED_MOVE_FIELDS = {
     "to_rank",
 }
 _APPLY_STATUSES = {"applied", "no_change", "rejected", "rolled_back"}
+
+
+def _ordered_material_refs(values: Sequence[str], *, field: str) -> list[str]:
+    if isinstance(values, (str, bytes)) or not isinstance(values, Sequence):
+        raise TypeError(f"{field} must be a sequence of compact tokens")
+    refs = [compact_token(value, field=f"{field}[]") for value in values]
+    if len(set(refs)) != len(refs):
+        raise ValueError(f"{field} values must be unique")
+    return refs
+
+
+def plan_material_single_move(
+    ordered_material_refs: Sequence[str],
+    material_ref: str,
+    to_rank: int,
+    *,
+    protected_material_refs: Sequence[str] | None = None,
+) -> tuple[list[str], dict[str, Any]]:
+    """Preview one ranked material move, preserving all other relative order.
+
+    The complete ranked set includes the backlog; a visible Top-N does not
+    implicitly pin its entries. Explicit anchors retain their exact rank,
+    including when the selected material would displace them. These bounds
+    describe the affected interval, not permission to apply it. The caller
+    still supplies verified inventory/Decision Context to the proposal builder
+    and checks the exact preview, owner gate, revision and rollback on apply.
+    """
+    refs = _ordered_material_refs(ordered_material_refs, field="ordered_material_refs")
+    if not refs:
+        raise ValueError("ordered_material_refs must contain at least one item")
+    selected = compact_token(material_ref, field="material_ref")
+    if selected not in refs:
+        raise ValueError(
+            "ranked material identity required; use intake settlement for new entries"
+        )
+    if type(to_rank) is not int or not 1 <= to_rank <= len(refs):
+        raise ValueError("target rank must be an integer within the ranked queue")
+    protected = token_list(protected_material_refs, field="protected_material_refs")
+    if not set(protected).issubset(refs):
+        raise ValueError("protected_material_refs must belong to the ranked queue")
+    start = refs.index(selected)
+    target = to_rank - 1
+    reordered = refs.copy()
+    reordered.pop(start)
+    reordered.insert(target, selected)
+    affected = (
+        set(refs[min(start, target) : max(start, target) + 1])
+        if start != target
+        else set()
+    )
+    if affected.intersection(protected):
+        raise ValueError("single material move would change a protected rank")
+    displacement = abs(start - target)
+    return reordered, {
+        "target_window_size": len(refs),
+        "max_moved_items": displacement + 1 if displacement else 1,
+        "max_rank_displacement": max(1, displacement),
+        "protected_material_refs": protected,
+    }
+
+
+def material_rerank_receipt_chunks(
+    applied_material_refs: Sequence[str],
+) -> list[list[str]]:
+    """Cover one transition without truncating its affected material refs.
+
+    Each chunk fits the existing v0 receipt. Validate the complete input before
+    returning any chunks; duplicates are errors, not silently deduplicated.
+    Build all receipts before CAS, keep their proposal/revisions/gate identical,
+    then persist all of them after readback. This function performs no apply.
+    Empty input produces one empty chunk for no-change/rejection/rollback.
+    """
+    refs = _ordered_material_refs(applied_material_refs, field="applied_material_refs")
+    return [
+        refs[index : index + MATERIAL_RERANK_RECEIPT_MAX_REFS]
+        for index in range(0, len(refs), MATERIAL_RERANK_RECEIPT_MAX_REFS)
+    ] or [[]]
 
 
 def _normalize_moves(
@@ -208,6 +286,7 @@ def build_material_rerank_apply_receipt(
     applied_refs = token_list(
         applied_material_refs,
         field="applied_material_refs",
+        max_items=MATERIAL_RERANK_RECEIPT_MAX_REFS,
     )
 
     if normalized_status == "applied":

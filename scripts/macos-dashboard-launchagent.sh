@@ -47,6 +47,7 @@ Environment overrides:
   LOOPX_DASHBOARD_HOST
   LOOPX_LAUNCH_LABEL_PREFIX
   LOOPX_LOG_MAX_BYTES    Rotate an agent log once it exceeds this size (default 10 MiB)
+  CODEX_HOME            Explicit service execution home, independent of the Chat override
   LOOPX_CHAT_CODEX_HOME  Explicit managed Codex home (upgrades preserve the existing binding)
   LOOPX_CHAT_SCAN_PATHS_JSON  JSON array of absolute workspace directories (preserved on upgrade)
 EOF
@@ -275,8 +276,8 @@ raise SystemExit(1)
 PY
 }
 
-resolve_chat_codex_home() {
-  "$1" - "$chat_plist" <<'PY'
+resolve_codex_home() {
+  "$1" - "$chat_plist" "$2" "${3:-}" <<'PY'
 import os
 from pathlib import Path
 import plistlib
@@ -284,14 +285,15 @@ import shlex
 import sys
 
 target = Path(sys.argv[1])
-selected = os.environ.get("LOOPX_CHAT_CODEX_HOME")
+variable, fallback = sys.argv[2:4]
+selected = os.environ.get(variable)
 if not selected and target.exists():
     # Decode, never execute, an old generated shell command. A malformed plist
     # must fail closed rather than silently adopt the upgrader's account home.
     with target.open("rb") as stream:
         plist = plistlib.load(stream)
     env = plist.get("EnvironmentVariables", {})
-    selected = env.get("LOOPX_CHAT_CODEX_HOME") or env.get("CODEX_HOME")
+    selected = env.get(variable) or env.get("CODEX_HOME")
     if not selected:
         args = plist.get("ProgramArguments", [])
         if len(args) == 3 and args[1] == "-c":
@@ -303,17 +305,17 @@ if not selected and target.exists():
                     selected = words[index + 1].split("=", 1)[1]
                     break
     selected = selected or str(Path.home() / ".codex")
-selected = selected or os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
+selected = selected or fallback or os.environ.get("CODEX_HOME") or str(Path.home() / ".codex")
 path = Path(selected).expanduser()
 if not path.is_absolute():
-    raise SystemExit("LoopX Chat Codex home must be absolute")
+    raise SystemExit(f"{variable} must be absolute")
 print(path.resolve())
 PY
 }
 
 write_plists() {
   local status_command python_command codex_command claude_command lark_cli_command registry
-  local path_prefix command_path command_dir status_shell chat_shell control_plane_write_arg lark_cli_arg codex_home_export chat_codex_home chat_scan_paths chat_scan_args
+  local path_prefix command_path command_dir status_shell chat_shell control_plane_write_arg lark_cli_arg codex_home_export chat_codex_home execution_codex_home chat_scan_paths chat_scan_args
   status_command="$(resolve_status_command)"
   python_command="$(resolve_loopx_python "$status_command")"
   registry="$(resolve_global_registry "$python_command")"
@@ -340,14 +342,15 @@ write_plists() {
   if [[ -n "$lark_cli_command" ]]; then
     lark_cli_arg=" --lark-cli-bin $(shell_quote "$lark_cli_command")"
   fi
-  chat_codex_home="$(resolve_chat_codex_home "$python_command")"
+  chat_codex_home="$(resolve_codex_home "$python_command" LOOPX_CHAT_CODEX_HOME)"
+  execution_codex_home="$(resolve_codex_home "$python_command" CODEX_HOME "$chat_codex_home")"
   chat_scan_paths="$(resolve_chat_scan_paths "$python_command")"
   chat_scan_args="$("$python_command" -c 'import json,shlex,sys; print("".join(" --scan-path " + shlex.quote(path) for path in json.load(sys.stdin)))' <<<"$chat_scan_paths")"
   expected_chat_runtime_identity >/dev/null || {
     echo "Could not resolve the installed LoopX runtime identity; existing plists were kept." >&2
     return 1
   }
-  codex_home_export=" export CODEX_HOME=$(shell_quote "$chat_codex_home"); export LOOPX_CHAT_CODEX_HOME=$(shell_quote "$chat_codex_home");"
+  codex_home_export=" export CODEX_HOME=$(shell_quote "$execution_codex_home"); export LOOPX_CHAT_CODEX_HOME=$(shell_quote "$chat_codex_home");"
   # Registry has already been resolved explicitly. --global-registry would
   # replace it with <common_runtime_root>/registry.json and lose custom routes.
   status_shell="$(log_rotation_prelude status) export LOOPX_PYTHON=$(shell_quote "$python_command"); export PATH=$(shell_quote "$path_prefix"):\$PATH; exec $(shell_quote "$status_command") --registry $(shell_quote "$registry") serve-status --host $(shell_quote "$host") --port $(shell_quote "$status_port") --limit $(shell_quote "$status_limit")$chat_scan_args$control_plane_write_arg"
@@ -393,6 +396,8 @@ EOF
   <string>$chat_label</string>
   <key>EnvironmentVariables</key>
   <dict>
+    <key>CODEX_HOME</key>
+    <string>$(xml_escape "$execution_codex_home")</string>
     <key>LOOPX_CHAT_CODEX_HOME</key>
     <string>$(xml_escape "$chat_codex_home")</string>
     <key>LOOPX_GLOBAL_REGISTRY</key>
