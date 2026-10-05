@@ -375,8 +375,9 @@ class ChatExternalConversations:
             row["delivery_verified"] = True
             _atomic_write_json(path, row)
 
-    def recover(self) -> None:
-        for row in self.pending():
+    def recover(self, *, request_ref: str | None = None) -> None:
+        rows = self.pending() if request_ref is None else [self.read_request(request_ref)]
+        for row in rows:
             try:
                 if row.get("delivery_verified") and not row.get("commission_adoption_pending"):
                     continue
