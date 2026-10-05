@@ -578,6 +578,12 @@ empty results; missing/stale display and provider failure never authorize a
 Markdown fallback. The guard does not append a second Markdown candidate list.
 Historical receipt-bound recovery remains separate from new work admission.
 
+Hosts supplying their own `--turn-instance-id` use this same selection contract,
+including `generic_cli`, `outer_controller`, and native CLI profiles. An explicit
+`--todo-id` is qualified before receipt binding; it must not leave the response
+asking for the selection it just accepted. This does not enable `--begin-turn`
+for those hosts or change legacy calls without a Turn identity.
+
 A single-candidate response
 keeps the direct execution path and does not add an extra selection round trip.
 
@@ -1466,7 +1472,7 @@ Post-turn accounting protocol:
   and omitted from persisted history. Do not point this option at the canonical
   checkout for peer work.
 - delivery attribution is not synonymous with Git. A registered non-Git
-  project records a path-free `local_goal`
+  project or a canonical local Git checkout with no `origin` records a path-free `local_goal`
   workspace identity (`loopx:<goal-id>`) when refresh runs inside that
   registered project root. This lets validated non-repository work settle
   without inventing a repository, including peer research and material work.
@@ -1474,7 +1480,9 @@ Post-turn accounting protocol:
   delivery is not `same_agent_non_delivery`. A Git peer delivery still requires
   an `independent_git_worktree`. An explicit Git task repository or an explicit
   owner isolation requirement rejects a local Goal receipt. An outside-root
-  workspace cannot produce that local receipt.
+  workspace cannot produce that local receipt. For originless Git, the checkout
+  root must equal the registered project root; nested repositories, linked
+  worktrees, invalid/empty origins and failed Git config reads cannot fall back.
 - `todo complete --evidence <pointer>` can record a validated local artifact.
   `--result-file` additionally requires approved Goal acceptance criteria bound
   to that Todo. A standalone Todo validator does not establish Goal acceptance;
