@@ -444,7 +444,7 @@ def test_machine_catalog_discovers_goal_features_without_granting_machine_writes
     assert [
         field["key"]
         for field in machine["pull_request_review"]["configuration_editor"]["fields"]
-    ] == ["wait_for_ci", "review_order"]
+    ] == ["wait_for_ci", "owner_logins", "review_order"]
     assert "multi_subagent" in machine
     for capability_id, item in machine.items():
         assert "current" not in item

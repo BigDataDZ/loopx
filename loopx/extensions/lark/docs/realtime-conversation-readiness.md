@@ -90,6 +90,15 @@ Markdown parser or a change to Session, grants or result authority. Live
 rendering still needs the actual provider journey; formatter tests alone do
 not qualify it.
 
+Private DM result reconciliation uses the existing Chat store's terminal-state
+owner, including `timed_out`, for ordinary replies and commission results.
+Timeouts return an explicit failure and the original conversation's recovery
+controls. Provider readback still gates delivery: restarting the transport or
+redelivering the source reconciles the saved attempt without another send or
+model execution. Synthetic host/provider checks cover idle/hard DM timeouts
+and an injected commission timeout; a live-provider recovery drill remains
+part of the switch gate below.
+
 ## Qualification before switching
 
 The acceptance owner is the steward RFC's

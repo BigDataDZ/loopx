@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
-from . import chat_configuration_api as config_api
+from .presentation import configuration_api as config_api
 from .attached_session_api import AttachedSessionRequestMixin
 from .chat import (
     TodoReviewPreviewConflict,
@@ -91,6 +91,7 @@ from .extensions.runtime import (
 )
 from .history import load_registry
 from .chat_completed_todos import CompletedTodoPages, CompletedTodoRequestMixin
+from .chat_todo_detail import TodoDetailRequestMixin
 from .kiro_cli_goal_mode import KIRO_CLI_BIN
 from .paths import resolve_runtime_root
 from .release_manifest import release_runtime_identity
@@ -449,6 +450,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
 class ChatRequestHandler(
     PrivateConversationRequestMixin,
     CompletedTodoRequestMixin,
+    TodoDetailRequestMixin,
     AttachedSessionRequestMixin,
     SshSourceRequestMixin,
     GoalSubagentConfigurationRequestMixin,
@@ -1421,6 +1423,7 @@ class ChatRequestHandler(
                 }
             )
         get_dispatch = {
+            "/api/chat/todo/detail": self._todo_detail,
             "/api/chat/completed-todos": self._completed_todos,
             "/api/chat/goal-results": self._goal_results,
             CHAT_SESSIONS_PATH: self._list_sessions,
@@ -1557,6 +1560,7 @@ def serve_chat(
     verbose: bool = False,
     enable_goal_subagent_configuration: bool = False,
     project_workspace_grant: str = "workspace_write",
+    private_reactions: bool = True,
 ) -> None:
     if not is_loopback_host(host):
         raise ValueError("loopx chat requires a loopback --host such as 127.0.0.1")
@@ -1630,7 +1634,8 @@ def serve_chat(
         observe=lambda profile: observe_lark_conversation_identity(profile=profile, runner=server.lark_runner,
             cli_bin=server.lark_cli_resolution.command or "lark-cli"))
     private_transport = LarkPrivateConversations(controller=server.runtime_controller, runtime_root=runtime_root,
-        runner=server.lark_runner, cli_bin=server.lark_cli_resolution.command or "lark-cli")
+        runner=server.lark_runner, cli_bin=server.lark_cli_resolution.command or "lark-cli",
+        reaction_feedback=private_reactions)
 
     server.lark_private_conversations = private_transport
 
@@ -1670,7 +1675,7 @@ def serve_chat(
     )
     server.lark_goal_topic_runtime.start()
     from .extensions.lark.manager_returns import start_return_service
-    server.manager_return_service = start_return_service(server, runtime_root)
+    server.manager_return_service = start_return_service(server, server.runtime_controller.coordination_runtime_root)
     from .chat_loopx_mode import DelegationWakeService
 
     def _wake_goal_context(session):
