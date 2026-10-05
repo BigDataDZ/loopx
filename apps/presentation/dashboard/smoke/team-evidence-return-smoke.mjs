@@ -34,6 +34,12 @@ try {
   const evidence = dialog.getByRole("region", {name: "执行证据"});
   const original = () => evidence.getByLabel("证据内容: report.json");
   await original().waitFor();
+  // Rechecking the same version must preserve the reader's exact comparison.
+  await evidence.getByRole("button", {name: /^修订依据/}).click();
+  await evidence.getByLabel("对照产物", {exact: false}).selectOption({label: "report.md"});
+  await evidence.getByRole("button", {name: "查看原文差异", exact: true}).click();
+  const selectedOutput = () => evidence.getByLabel("本次产物: report.md", {exact: true});
+  await selectedOutput().waitFor();
   // Older readbacks remain readable without invented provenance.
   await evidence.getByText("本次验收依据", {exact: true}).click();
   await evidence.getByText("此运行时未提供验收依据标识。", {exact: true}).waitFor();
@@ -41,6 +47,10 @@ try {
   const verificationGap = evidence.getByText("当前读回未提供独立验收者与指定版本回执。", {exact: true});
   await verificationGap.waitFor({timeout: 3000});
   await evidence.getByText("后续结果 · 当前验收与采用记录有效", {exact: false}).waitFor();
+  await selectedOutput().waitFor({timeout: 3000});
+  assert.equal(await evidence.getByLabel("对照产物", {exact: false}).inputValue(), "1");
+  assert.equal(await evidence.getByRole("button", {name: /^修订依据/}).getAttribute("aria-pressed"), "true");
+  assert.equal(await selectedOutput().evaluate(el => el.tagName), "PRE", "Same-version checks preserve the reading mode");
   await mkdir(outputDir, {recursive: true});
   await verificationGap.scrollIntoViewIfNeeded();
   await page.screenshot({path: resolve(outputDir, "team-verifier-gap-desktop.png"), animations: "disabled"});
@@ -58,6 +68,7 @@ try {
   await evidence.getByRole("button", {name: "核验关联执行", exact: true}).click();
   const adoptionGap = evidence.getByText("采用证据无法核验", {exact: false});
   await adoptionGap.waitFor({timeout: 3000});
+  await selectedOutput().waitFor({timeout: 3000});
   await evidence.getByText("版本与采用关系详情", {exact: true}).click();
   assert.equal(await evidence.getByText("已记录采用 · 后续结果验收有效", {exact: true}).count(), 0,
     "The details must reflect the same failed consumer observation as the correction path");
