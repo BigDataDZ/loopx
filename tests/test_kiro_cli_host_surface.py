@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import os
 import re
-import shutil
 from pathlib import Path
 
 import pytest
@@ -94,10 +93,8 @@ def test_agent_onboarding_setup_command_installs_the_kiro_cli_surface(
     monkeypatch.delenv("LOOPX_SKILLS_DIR", raising=False)
     outside = tmp_path / "outside"
     outside.mkdir()
-    node = shutil.which("node")
-    assert node is not None, "The real CLI onboarding probe requires Node.js"
     env = {
-        "PATH": os.pathsep.join((str(Path(node).parent), "/usr/bin", "/bin")),
+        "PATH": "/usr/bin:/bin",
         "HOME": str(tmp_path / "home"),
     }
     if "PYTHONPATH" in os.environ:  # keep hermetic when run from a worktree
