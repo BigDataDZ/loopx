@@ -22,8 +22,8 @@ impl ServiceEndpoints {
         }
         // Keep both reservations until their distinct ports have been chosen.
         // The CLI owns binding; an intervening listener fails closed at start.
-        let status = TcpListener::bind(("127.0.0.1", 0))?;
-        let chat = TcpListener::bind(("127.0.0.1", 0))?;
+        let status = reserve_private_endpoint()?;
+        let chat = reserve_private_endpoint()?;
         Ok(Self {
             status: status.local_addr()?.port(),
             chat: chat.local_addr()?.port(),
@@ -42,6 +42,20 @@ impl ServiceEndpoints {
     pub fn workspace_origin(self) -> String {
         format!("http://127.0.0.1:{}/chat/", self.chat)
     }
+}
+
+fn reserve_private_endpoint() -> std::io::Result<TcpListener> {
+    // A host may customize its ephemeral range to include the CLI ports.
+    for _ in 0..8 {
+        let listener = TcpListener::bind(("127.0.0.1", 0))?;
+        if ![8766, 8767].contains(&listener.local_addr()?.port()) {
+            return Ok(listener);
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AddrInUse,
+        "could not reserve a private LoopX endpoint outside the CLI ports",
+    ))
 }
 
 #[cfg(test)]
