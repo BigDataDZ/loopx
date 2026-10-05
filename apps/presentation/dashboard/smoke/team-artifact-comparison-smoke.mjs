@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {comparisonSource, changedRange, preferredComparisonIndex} from "../node_modules/.cache/team-comparison/features/personal-workspace/team-artifact-comparison.js";
+import {comparisonSource, changedRange, preferredComparisonIndex} from "../src/features/personal-workspace/team-artifact-comparison.ts";
 
 const link = {operation_id: "original", ref: "report.txt", sha256: "a".repeat(64),
   input_ref: "input.txt", relation: "revises", state: "current"};
