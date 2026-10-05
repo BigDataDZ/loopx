@@ -545,7 +545,8 @@ def _serving_token(path: Path) -> tuple[bool, str | None]:
     """Report whether a runtime is still publishing itself at ``path``.
 
     The managed runtime removes its info file as part of its shutdown
-    handshake, so the file is the authoritative stop signal. The pid is not:
+    handshake. Its mutation lock must also retire before namespace cleanup.
+    A readable replacement token proves this runtime no longer serves. The pid is not:
     an exited runtime whose parent has not reaped it still answers a liveness
     probe, which would otherwise report a completed restart as pending.
     """
@@ -607,9 +608,20 @@ def restart_effect_runtime(*, timeout: float = 5.0) -> dict[str, Any]:
     stopped = False
     while time.monotonic() < deadline:
         published, published_token = _serving_token(info_path)
-        if not published or published_token != serving_token:
+        if published and published_token is not None and published_token != serving_token:
             stopped = True
             break
+        if not published:
+            # Locator retirement still holds its mutation lock and may create a
+            # release claim. Only lock absence makes namespace cleanup safe.
+            try:
+                info_path.with_name(info_path.name + ".ts-effect.lock").stat()
+            except FileNotFoundError:
+                stopped = True
+                break
+            except OSError:
+                # Unreadable lock state cannot prove that retirement finished.
+                pass
         if not _pid_is_alive(pid):
             stopped = True
             break
