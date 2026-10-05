@@ -54,7 +54,7 @@ def handle_configuration_backup(args, *, registry_path, print_payload, output_fo
                         os.link(staging, path)
                     finally:
                         staging.unlink(missing_ok=True)
-                if json.loads(path.read_text()) != backup:
+                if json.loads(path.read_text(encoding="utf-8")) != backup:
                     raise RuntimeError("configuration backup export readback mismatch")
                 payload.update(status="exported", written=True)
         else:
