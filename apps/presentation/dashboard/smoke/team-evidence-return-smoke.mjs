@@ -58,6 +58,9 @@ try {
   await evidence.getByRole("button", {name: "核验关联执行", exact: true}).click();
   const adoptionGap = evidence.getByText("采用证据无法核验", {exact: false});
   await adoptionGap.waitFor({timeout: 3000});
+  await evidence.getByText("版本与采用关系详情", {exact: true}).click();
+  assert.equal(await evidence.getByText("已记录采用 · 后续结果验收有效", {exact: true}).count(), 0,
+    "The details must reflect the same failed consumer observation as the correction path");
   await verificationGap.waitFor();
   assert.equal(await evidence.getByRole("button", {name: "阅读原始产物", exact: true}).count(), 1);
   assert.equal(await evidence.getByRole("button", {name: "阅读回应与证据", exact: true}).count(), 1);
@@ -74,6 +77,7 @@ try {
   await evidence.getByRole("button", {name: "核验关联执行", exact: true}).click();
   await adoptionGap.waitFor({timeout: 3000});
   assert.equal(await evidence.getByRole("button", {name: "阅读后续结果", exact: true}).count(), 0);
+  assert.equal(await evidence.getByText("已记录采用 · 后续结果验收有效", {exact: true}).count(), 0);
   await evidence.getByRole("button", {name: "重新读取证据", exact: true}).click();
   await original().waitFor();
   await evidence.getByRole("button", {name: "核验关联执行", exact: true}).click();
@@ -81,6 +85,8 @@ try {
   mode.fixtureAdoptionState = "current";
   await evidence.getByRole("button", {name: "核验关联执行", exact: true}).click();
   await evidence.getByRole("button", {name: "阅读后续结果", exact: true}).waitFor();
+  await evidence.getByText("版本与采用关系详情", {exact: true}).click();
+  await evidence.getByText("已记录采用 · 后续结果验收有效", {exact: true}).waitFor();
   const unavailableCore = route => route.request().postDataJSON()?.operation === "read"
     && route.request().postDataJSON()?.operation_id === "review-objection"
     ? route.fulfill({status: 409, json: {error: "review version revoked"}}) : route.fallback();
@@ -89,7 +95,11 @@ try {
   await evidence.getByRole("alert").filter({hasText: "关联执行或版本已变化"}).waitFor();
   assert.equal(await verificationGap.count(), 0, "A lost core revision still clears the trace");
   assert.equal(await evidence.getByRole("button", {name: "阅读原始产物", exact: true}).count(), 0);
+  assert.equal(await original().count(), 0, "Core loss clears the surrounding report, not only its trace");
+  assert.equal(await evidence.getByText("本次验收依据", {exact: true}).count(), 0);
   await page.unroute("**/api/chat/sessions/*/loopx", unavailableCore);
+  await evidence.getByRole("button", {name: "重新读取证据", exact: true}).click();
+  await original().waitFor();
   await evidence.getByRole("button", {name: "核验关联执行", exact: true}).click();
   await evidence.getByRole("button", {name: "阅读回应与证据", exact: true}).click();
   await evidence.getByLabel("证据内容: objection.json").waitFor();
