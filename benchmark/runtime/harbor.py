@@ -57,6 +57,7 @@ class BenchmarkCodex(CodexOffline):
         replan_after_todos=3,
         task_entry="seeded-todo",
         planning_timeout_sec=300,
+        turn_envelope=False,
         **kwargs,
     ):
         if isinstance(validation_command, str):
@@ -68,6 +69,7 @@ class BenchmarkCodex(CodexOffline):
             float(scheduler_timeout_sec) - 160 if turn_timeout_sec is None else float(turn_timeout_sec),
             validation_command if validation_command is not None else (),
             task_entry,
+            turn_envelope,
         )
         self.planning_timeout = float(planning_timeout_sec)
         if not 0 < self.planning_timeout < float("inf"):
@@ -227,6 +229,7 @@ class BenchmarkCodex(CodexOffline):
             "execution_mode": self.execution.mode,
             "iteration_context": self.execution.context,
             "task_entry": self.execution.task_entry,
+            "turn_envelope": self.execution.turn_envelope,
             "home_scope": "trial",
             "login_shell_node_path": _BASH_ENV,
             "scheduler_terminal_packet_compatibility": True,
@@ -455,6 +458,7 @@ class BenchmarkCodex(CodexOffline):
                 "LOOPX_SHARED_SKILLS": _SHARED_SKILLS,
                 "LOOPX_EXECUTION_MODE": self.execution.mode,
                 "LOOPX_TASK_ENTRY": self.execution.task_entry,
+                "LOOPX_TURN_ENVELOPE": "1" if self.execution.turn_envelope else "0",
                 "LOOPX_ITERATION_CONTEXT": self.execution.context,
                 "LOOPX_CODEX_SANDBOX": self.execution.sandbox,
                 "LOOPX_VALIDATION_COMMAND_JSON": json.dumps(
@@ -562,6 +566,7 @@ class BenchmarkCodex(CodexOffline):
             "execution_mode": self.execution.mode,
             "iteration_context": self.execution.context,
             "task_entry": self.execution.task_entry,
+            "turn_envelope": self.execution.turn_envelope,
             "home_scope": "trial",
             "replan_after_completed_todos": self.replan_after_todos,
             "benchmark_phase": self._phase_number,
