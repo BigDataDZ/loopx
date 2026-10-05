@@ -91,3 +91,12 @@ def test_authoring_help_matches_existing_validator_boundaries() -> None:
     recovery_help = " ".join(subparsers.choices["checkpoint-context"].format_help().split())
     assert "requires the original committed refresh-state writeback" in recovery_help
     assert "For the first writeback" in recovery_help
+
+    assert "at most 1200 characters after trimming" in actions["next_action"].help
+    boundary_help = actions["delivery_boundary"].help
+    assert "within-Todo --next-action is allowed" in boundary_help
+    assert "--autonomous-replan-recorded require semantic_closeout" in boundary_help
+    assert "vision checkpoint" in boundary_help
+    assert "do not add this ACK to an ordinary in_flight_continuation" in actions[
+        "autonomous_replan_recorded"
+    ].help

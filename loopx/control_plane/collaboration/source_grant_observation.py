@@ -5,7 +5,9 @@ from typing import Any
 
 from ...agent_registry import registered_agent_ids_for_goal
 from ..goals.activation import goal_is_stopped
+from ..goals.goal_ref_validation import exact_goal_ref
 from ..projects.registry_codec import (
+    SOURCE_SESSION_PROFILE_ID,
     load_project_registry,
     require_runtime_compatible_project_registry,
 )
@@ -117,15 +119,39 @@ def source_context_target_authority(
     return _source_context_grant(runtime_root, session, turn, [target])
 
 
-def _source_registry_recipients(registry_path: Path | None) -> dict:
+def _source_registry_recipients(registry_path: Path | None, *, context_only: bool = False) -> dict:
     if registry_path is None:
         raise ValueError("context source registry unavailable")
     registry = load_project_registry(registry_path)
     if not isinstance(registry, dict):
         raise ValueError("invalid registry")
-    require_runtime_compatible_project_registry(
-        registry, operation="context source recipient observation"
-    )
+    if context_only and registry.get("profile_id") == SOURCE_SESSION_PROFILE_ID:
+        goals = registry.get("goals")
+        if not isinstance(goals, list):
+            raise ValueError("source-session registry has no Goal list")
+        # This is observation for context handoff, not execution admission.
+        # Enumerate only instance-bound Goals; the handoff's own Goal scope
+        # still rechecks the selected exact GoalRef before it commits.
+        instantiated = []
+        for goal in goals:
+            if not isinstance(goal, dict):
+                continue
+            goal_id = goal.get("id")
+            instance_id = goal.get("goal_instance_id")
+            if not isinstance(goal_id, str) or not isinstance(instance_id, str):
+                continue
+            try:
+                exact_goal_ref(goal_id, instance_id)
+            except ValueError:
+                continue
+            instantiated.append(goal)
+        if not instantiated:
+            raise ValueError("source-session registry has no instantiated Goal")
+        registry = {**registry, "goals": instantiated}
+    else:
+        require_runtime_compatible_project_registry(
+            registry, operation="context source recipient observation"
+        )
     return registered_context_recipients(registry)
 
 
@@ -149,7 +175,8 @@ def source_context_authority(
     if registry_path is None:
         return {"mode": "unavailable", "targets": []}
     try:
-        observed = _source_registry_recipients(registry_path)
+        observed = _source_registry_recipients(registry_path, context_only=True)
+
     except (OSError, ValueError, TypeError):
         return {"mode": "unavailable", "targets": []}
     return _source_context_grant(
