@@ -422,6 +422,13 @@ def test_seeded_followup_uses_real_todo_delta_without_reviving_terminal_work(
         await agent._seed_phase(None, cwd=planning_env["LOOPX_PROJECT"])
         listed = await cli(None, ["todo", "list", "--goal-id", "planning-goal", "--role", "agent"])
         todos = {t["todo_id"]: t for t in listed["todos"]}
+        # Check the persisted caller contract, not only a rendered prompt. A
+        # phase update must retain cohesive continuation and task validation.
+        current_text = todos[agent._seeded_todo_id]["text"]
+        assert "Continue cohesive work within this Todo" in current_text
+        assert "distinct outcomes or actual handoffs" in current_text
+        assert "Preserve task-defined validation and stop gates" in current_text
+        assert "create bounded successor Todos for remaining work" not in current_text
         if status in {"open", "blocked"}:
             assert agent._seeded_todo_id == original and len(todos) == 1
             assert todos[original]["status"] == status
