@@ -41,6 +41,23 @@ the CLI reports that boundary rather than claiming rollback. An empty capture
 directory is not a usable decision. Omit the option to disable capture; remove
 unneeded local captures through ordinary file management.
 
+When both capture and `--turn-envelope` are requested, `detail_ref.full_decision`
+points to the saved file using a quoted POSIX `cat --` command. A file-capable host
+can read `detail_ref.captured_decision.path` directly instead. The typed projector
+includes the expected Goal/Agent/Turn and a reference to the existing canonical
+source-decision hash (a hash of the JSON value, not the formatted file bytes).
+Verify those against the read observation, including `ok`; the link itself does
+not verify file integrity or make saved admission current. Missing, malformed,
+or mismatched files require recovery, never automatic guard replay. Consumers already referring to `full_decision`, such as compacted capability
+context and peer diagnostics, now read this same observation. Scheduler-specific
+legacy detail requests are unchanged. Replan obligations and fresh selection/lease/quota checks retain their existing owners.
+Without capture, the historical full-decision route and all default outputs are
+unchanged. This opt-in detail link does not change action-signature coverage.
+
+中文：同时开启短包和完整 decision 保存时，详情入口读取本次保存的文件，不再
+为补读上下文重跑 guard。读取前核对身份和源哈希；旧观察不提供新的执行权限。
+文件损坏或丢失不能自动重跑，选 Todo、lease 变化等仍需按原契约重新准入。
+
 This is a CLI transport primitive under the existing quota/context owner, not a
 new capability or Python decision rule. It does not automatically switch workers
 to compact packets, select replan history, or qualify model efficiency. The
@@ -98,6 +115,21 @@ and do not acquire one from a historical heartbeat receipt. Stored v0–v4 signa
 are not rewritten. The v5 migration is an explicit semantic review signal and
 has **no additional size allowance**; overflow still requires the existing budget
 analysis. Default full quota output and settlement rules are unchanged.
+
+Newly generated turn-scoped settlement commands include global `--format json`
+before the subcommand. This changes the generated command output default for App
+heartbeat, generic CLI, and visible Goal lanes, in both full decisions and
+TurnEnvelope. It also applies to `settlement_owed.command` after writeback.
+Execute the returned command after filling its declared placeholders; do not
+append `--format json` after `quota spend-slot`, where it is not a subcommand
+option. Inspect both the exit code and JSON `ok`. Direct CLI invocations retain
+their existing output defaults; stored commands and receipts are not rewritten.
+This is command rendering over the existing settlement owner: validation,
+identity, step conditions, authority and one-spend semantics are unchanged.
+
+中文：新生成的结算命令自带位置正确的全局 JSON 参数，完整包、短包及写回后的
+补结算命令保持一致。填充占位项后直接执行，检查退出码和 JSON `ok`；不再需要
+手工在子命令后追加格式参数。直接 CLI 的默认格式、历史回执与结算权限均不变。
 
 The shared CLI plan also explains delivery classification before writeback.
 Validated evidence that excludes a route and informs the next decision can be
