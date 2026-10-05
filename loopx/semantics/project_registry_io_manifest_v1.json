@@ -303,7 +303,7 @@
     },
     {
       "site": "loopx/capabilities/native_chat/project_context.py::<module>.coordination_runtime_root::codec_read:load_project_registry#1",
-      "line": 127,
+      "line": 129,
       "column": 16,
       "kind": "codec_read",
       "api": "load_project_registry",
@@ -975,7 +975,7 @@
     },
     {
       "site": "loopx/cli_commands/todo.py::<module>.handle_todo_command::codec_read:load_registry#6",
-      "line": 737,
+      "line": 738,
       "column": 13,
       "kind": "codec_read",
       "api": "load_registry",
@@ -983,7 +983,7 @@
     },
     {
       "site": "loopx/cli_commands/todo.py::<module>.handle_todo_command::codec_read:load_registry#7",
-      "line": 782,
+      "line": 783,
       "column": 38,
       "kind": "codec_read",
       "api": "load_registry",
