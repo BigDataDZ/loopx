@@ -1054,8 +1054,10 @@ pass the shared conformance suite.
 Packaged native windows use their own loopback status/Chat endpoints and own
 only the children they start. A ready service with the same source revision is
 not proof of the same registry or App ownership. Window navigation and native
-maintenance permissions must follow that exact Chat origin. CLI services and
-Vite development retain their existing shared ports; packaged App startup no
+maintenance permissions must follow that exact Chat origin. A runtime repair
+keeps the same window endpoints and starts both replacement children from the
+one qualified selection; it must not rediscover the global CLI independently.
+CLI services and Vite development retain their existing shared ports; packaged App startup no
 longer borrows or restarts those services or their LaunchAgents.
 
 Qualify a packaged window while independent shared services are running: both
