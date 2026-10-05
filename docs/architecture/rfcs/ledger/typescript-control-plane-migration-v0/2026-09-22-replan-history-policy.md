@@ -98,6 +98,13 @@ latest-Turn inference still sees the complete owner-scoped history. Controlled
 1,000-Turn warm samples decreased from 177–195 ms to 13–19 ms. These local samples
 are not a fleet p95 or evidence of solver improvement.
 
+Harbor and SForge now transport the explicit Turn option through the existing
+Goal CLI and verify its persisted unit/value before execution. A single adapter
+mapping supplies configuration and receipts; Python introduces no counting owner.
+An isolated real CLI bootstrap, override and rollback passed; focused adapter
+checks cover legacy defaults, unsupported profiles and wrong-unit readback.
+
 This remains a proposed runtime change, not experiment adoption. Runtime merge,
-provider integration and matched outcome qualification remain separate; active
-workloads keep their frozen cadence.
+full provider-installed execution and matched outcome qualification remain
+separate; active workloads keep their frozen cadence. SForge planned task entry
+is a separate remaining adapter journey.
