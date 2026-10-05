@@ -304,6 +304,8 @@ class ChatRuntimeController:
     ) -> None:
         self.store = store
         self.registry_path = registry_path
+        from .capabilities.native_chat.project_context import coordination_runtime_root
+        self.coordination_runtime_root = coordination_runtime_root(registry_path, store.root.parent)
         self.manager_scope_resolver = manager_scope_resolver
         self.project_contexts = project_contexts or ChatProjectContexts([])
         self.codex_bin = codex_bin
@@ -444,7 +446,9 @@ class ChatRuntimeController:
                 else None
             )
             if manager_profile is not None:
-                objective = manager_agent_objective(str(manager_profile["runtime_profile"]))
+                objective = manager_agent_objective(
+                    str(manager_profile["runtime_profile"])
+                )
             model_config = (
                 executor_model or manager_model_config(
                     endpoint=agent_id,
@@ -645,6 +649,10 @@ class ChatRuntimeController:
                     agent_id=agent_id,
                     channel_id=selected_channel,
                 )
+                # Reuse only the same typed project identity. A changed host grant
+                # starts a new Session while the old context and history remain intact.
+                if latest is not None and project_context is not None and latest.get("project_context") != project_context:
+                    latest = None
                 if latest is not None and latest.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
                     return latest, True
             if capability is None:
@@ -680,7 +688,7 @@ class ChatRuntimeController:
                 project_context=project_context,
                 steward_context=steward_context,
             )
-            persisted = self.project_contexts.initialize_bound_scope(self.store, persisted)
+            persisted = self.project_contexts.initialize_bound_scope(self.store, persisted, runtime_root=self.coordination_runtime_root)
             if is_manager_channel(selected_channel):
                 assert manager_runtime is not None
                 persisted = self.store.update_session(
@@ -1641,25 +1649,15 @@ class ChatRuntimeController:
                 event_buffer.close()
                 return
             if response.get("context_handoff") is not None:
-                from .capabilities.manager_context import deliver
+                from .capabilities.manager_context.execution import handoff_response
                 if scope["kind"] == "unavailable":
                     raise ValueError("context handoff requires a scoped conversation")
-                try:
-                    if scope["kind"] == "external_audience" and (
-                        self.manager_scope_resolver is None or not self.manager_scope_resolver(session)
-                    ):
-                        raise ValueError("manager connection authority is no longer available")
-                    receipt = deliver(self.store.root.parent, self.registry_path,
-                                      session=session, turn=self.store.load_turn(session_id, turn_id) or {},
-                                      request=response["context_handoff"])
-                    response = {**response, "proposals": [], "gate": None,
-                                "context_handoff_receipt": receipt,
-                                "message": ("已将交办说明和原消息交给 " if response["context_handoff"].get("brief") else "已将原消息交给 ") + receipt["agent_id"] +
-                                "。材料已进入收件箱，后续处理结论会自动回到这里。"
-                                "（委托 " + receipt["request_id"][:8] + "）"}
-                except (OSError, ValueError):
-                    response = {**response, "proposals": [], "gate": None,
-                                "message": "材料尚未转交：目标绑定、来源授权或持久收件回读未通过。需要修复交接链路；没有改动任务或优先级。"}
+                response = handoff_response(
+                    self.coordination_runtime_root, self.registry_path, session=session,
+                    turn=self.store.load_turn(session_id, turn_id) or {}, response=response,
+                    source_authorized=lambda: scope["kind"] != "external_audience" or bool(
+                        self.manager_scope_resolver and self.manager_scope_resolver(session)),
+                    execution_allowed=lambda: not execution_ended())
             response = offer_team_plan_confirmation(
                 store=self.store,
                 session=session,

@@ -30,9 +30,9 @@ the TypeScript owner decides context identity and scope. Native Codex resume ret
 the original upstream thread and workspace. HTTP/protocol fixtures qualify that
 continuity and denial behavior; they do not establish real model adoption.
 
-The App grant is workspace reading for the local owner. The App scope alone does
-not qualify Lark private-message admission, installed or mobile journeys, or
-authorize edits. A revoked grant keeps the history readable and blocks new
+The local App grant covers the selected owner workspace under its current host
+permissions. Scope selection alone does not qualify Lark private-message
+admission, installed or mobile journeys. A revoked grant keeps history readable and blocks new
 messages until the host grants it again. The independent Lark checkpoint below
 qualifies its source implementation separately.
 
@@ -51,7 +51,7 @@ shared request owner, and a replay retains the original Session/Turn target.
 A lost admission correlation cannot move a request to a newer Session. Admission
 feedback and final delivery use separate durable provider intents; an ambiguous
 write is read back without blind resend. Unsupported media receives an explicit
-notice. The workspace grant grants neither Goal, portfolio nor peer execution authority.
+notice. The workspace grant conveys no Goal, portfolio or peer execution authority.
 
 The packaged settings journey, source revocation/recovery, duplicate events,
 native queue/stop and two-App isolation have synthetic-provider regression and
@@ -91,66 +91,55 @@ The readback, `/status` and `/help` show the effective grant. Selecting an exist
 App restores its persisted setting. Changing a binding's grant requires a new
 identity and Session, invalidates the old Session for new work, and requires new
 Agent target grants; it cannot silently elevate an attached host or another App.
-Host grant removal or downgrade is rechecked before admission and resume.
+Host grant removal or downgrade is rechecked before admission and resume. Ordinary
+local Scope reuses only the same typed project context; a host grant change opens
+a new Session while retaining old history and rejecting new work on the old
+Session.
 
 Typed Core/HTTP/native-host regressions qualify default writes, explicit read-only,
 workspace identity, independent App grants, old-Session rejection and exact-thread
-resume. A real Codex canary edited and read back a synthetic note under project
-rules while preserving prior text and creating no Goal. It is a host/filesystem
-result, not live Lark write-workflow, material intake or release qualification.
-Maintainer review, installed/Lark journeys and broader IM interactions remain open.
-
-## Native private feedback: default and delivery lifecycle
-
-Native Lark private conversations enable received `Get` and processing `OnIt`
-feedback by default. `loopx chat --no-private-reactions` explicitly disables new
-feedback writes. Both Apps reuse the existing Inbox provider lifecycle: received
-feedback follows durable Core admission; processing requires an observed active
-Turn. Queued requests do not appear to be executing. Received feedback is retained
-after the result and conveys consumption, never acceptance of the work outcome.
-
-Intermediate replies and their read-only recovery defer reaction finalization.
-Only the final result cleans processing receipts; cleanup failure keeps the
-original verified reply recoverable without resending it. Received and processing
-creations share a durable prepared/created journal. A known id recovers its receipt;
-an uncertain write is not repeated. Incomplete paginated readback cannot establish
-that a failed deletion succeeded. Provider permission failure does not cancel
-already admitted work or silently escalate host policy.
-
-Private delivery reconciles at most four persisted requests concurrently, with
-no executor backlog. A blocked reply readback does not hold an independent queue
-notice or control response; per-request locks and journals retain no-resend
-recovery. Core recovers each exact request under the existing Session fence.
-Provider verification cost and saturated-worker latency remain separate from
-model concurrency and are not certified by a synthetic blocked-readback test.
-Admission reuses its initial App observation for source reading, then rechecks
-authority inside the Core source fence before creating work. Each locked delivery
-reuses its Inbox configuration; provider writes still verify current identity,
-grants and the exact original message. No observation is cached across requests.
-
-Listener discovery reads the CLI's local profile inventory once per snapshot,
-compares the current App with its Core binding, and derives the existing
-machine/App lease from that App. Network authorization failures are not durable
-disconnects. An unreadable inventory preserves a running stream; an explicit
-binding removal, missing profile or replacement App stops its old route. This
-does not authorize a message: admission and outbound delivery still freshly
-verify the App, owner, source and grants. Actual stream fault/recovery and
-disconnect regressions qualify this boundary; sustained live availability and
-timely end-to-end feedback remain separate acceptance.
-
-This is a bounded provider presentation refactor, not a new Session, queue,
-model runner or control-plane owner. Native state drives both direct conversations
-and explicit commissions. Synthetic queue/stop/replay/isolation regressions and
-real provider canaries are separate evidence; broader incremental cards, media
-and permission callbacks remain open acceptance.
+resume. Earlier source evidence records a Codex canary editing and reading back a
+synthetic note while preserving prior text and creating no Goal. This historical
+host/filesystem evidence is separate from current synthetic-protocol regression
+checks and does not qualify live Lark, material intake or a release.
+Committed same-claim replay is separate from new admission: after a lost response
+and target revocation, the original host can recover its committed receipt; new
+claims and external result publication remain denied. Current validation uses real
+Core HTTP, file storage and the claim broker with synthetic Codex/provider
+transport; it does not rerun a live-model edit or phone journey. Installed/Lark
+journeys and broader IM interactions remain open.
 
 ## Bound steward private Chat: explicit new commissions
 
 Settings → Lark can now select a steward role independently of ordinary project
 Chat. The existing typed conversation binding owns its App, verified owner,
-source, workspace and bounded portfolio. A verified empty scope is distinct from
-an unavailable authorization; it contains no inherited Goals and does not certify
-global inventory coverage. Ordinary Chat still has no Goal or manager identity.
+source and workspace. New verified owner stewards default to `all_registered`:
+the current configured registry supplies every registered Goal and Agent, including
+future registrations. Stopped work remains inspectable through explicit history,
+but cannot receive new work. A verified empty registry is distinct from unavailable
+authorization; no historical registry or identity is imported. Ordinary Chat still
+has no Goal or manager identity.
+
+Older bindings retain their selected scope. Settings → Lark → **Authorize all
+registered work** upgrades the existing binding and its known sender-bound delivery
+policies without replacing its Session or audience. Individual recipient revocations
+remain effective; discovery does not prove execution readiness or grant protected
+operations. Trusted-local `manager-inbox configure-delivery-scope` uses the same
+source-policy owner, and a verified new private source initializes that policy once.
+An explicitly narrowed existing source policy is not widened by ordinary admission.
+An upgrade verifies every known delivery policy before publishing the broader
+binding. If an I/O write fails, the UI retains the old binding scope and offers
+an explicit retry. Earlier source-policy writes authorized by that upgrade may
+remain applied; retry converges them without resetting recipient revocations.
+This ordering does not claim an atomic transaction across separate files.
+
+When the configured registry declares `common_runtime_root`, coordination context,
+inboxes and return processing use that declared root even if Chat has a separate
+storage override. App bindings, conversations and provider credentials stay in
+their existing private storage. Without a declared common root, existing local
+Chat behavior is retained. This scope/path slice does not complete worker activation,
+receiver adoption or original-route return; native private ingress remains a separate
+integration boundary from the existing group ingress.
 
 Only an explicit `/delegate --tokens N objective` prepares a `goal.create`
 preview. Confirmation must arrive from that exact owner/App/source within fifteen
@@ -205,6 +194,9 @@ native execution ending is not Goal acceptance or proof of result delivery.
 
 The Core request persists a timestamped observation before provider delivery.
 Duplicate events retain that snapshot instead of switching to a newer Session.
+A selected Agent target keeps its exact bound Session: observation reads that
+Session even when it is failed or closed, and never falls back to a newer
+conversation.
 Missing execution evidence and unknown states stay explicitly unavailable.
 These commands open no Session, invoke no model and create no Goal. `/help`
 shows role-specific commands and the existing Settings → Lark entry for workspace,
@@ -311,16 +303,6 @@ second unsynchronized source of work truth. App closure stops observation, not
 execution. Stopping a conversation does not silently stop delegated work.
 
 ## Product expression: what to borrow and what remains unproven
-
-Native private replies now share Markdown post presentation for lists, quotations,
-public links and code. Final response redaction preserves local inline-link labels
-without publishing fake destinations; it is not local artifact delivery. Existing
-plain-text attempts recover their original verified format without another send.
-Ordinary project Codex adapters resolve current host project model/effort defaults
-on start and exact resume; an explicit executor choice takes precedence. An idle
-service restart reattaches the adapter after configuration edits, preserving its
-Session/thread and grants. Media, incremental presentation and permission journeys
-retain their separate acceptance gaps.
 
 The [Lorca release post](https://x.com/localhost_4173/status/2103454978220470708)
 was inspected on 2026-09-25. It contains a **static screenshot**, not a verified

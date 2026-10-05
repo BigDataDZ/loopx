@@ -108,6 +108,50 @@ def test_project_grants_cannot_be_forged_widened_or_reused_after_revocation(ordi
         store.create_session(goal_id=None, agent_id="codex", adapter_kind="codex_app_server", upstream_thread_id="forged")
 
 
+@pytest.mark.parametrize("messages", [
+    ("Read the linked source and collect it using the project skill.", "Keep the previous source and correct its summary."),
+    ("Organize this document in the existing notes.", "Preserve the original text and verify your edits."),
+])
+def test_writable_project_turns_use_project_skills_without_manager_work_selection(ordinary, messages):
+    from loopx.chat_agent import CHAT_REVIEW_CLOSE_TAG, CHAT_REVIEW_OPEN_TAG
+
+    store, runtime, contexts, request, capture, _, workspace = ordinary
+    contexts.workspace_grant = "workspace_write"
+    ref = contexts.available()[0]["project_ref"]
+    status, opened = request("/api/chat/sessions", {"context_kind": "project", "project_ref": ref})
+    assert status == 201
+    sid = opened["session_id"]
+    for index, message in enumerate(messages):
+        status, accepted = request(f"/api/chat/sessions/{sid}/turns", {"message": message, "client_turn_id": f"project-{index}"})
+        assert status == 202, accepted
+        assert runtime.wait_for_turn(session_id=sid, turn_id=accepted["turn_id"], timeout_sec=10)["status"] == "completed"
+    requests = [json.loads(line) for line in capture.read_text().splitlines()]
+    starts = [row for row in requests if row.get("method") == "thread/start"]
+    turns = [row for row in requests if row.get("method") == "turn/start"]
+    assert len(starts) == 1 and starts[0]["params"]["sandbox"] == "workspace-write"
+    assert len(turns) == 2 and len({row["params"]["threadId"] for row in turns}) == 1
+    for turn, message in zip(turns, messages):
+        prompt = turn["params"]["input"][0]["text"]
+        assert "project's AGENTS.md and applicable skills" in prompt
+        assert "Use applicable skills and permitted tools" in prompt
+        assert "existing typed owners" in prompt and "public/private rules" in prompt
+        assert "do not create a hidden Goal" in prompt
+        assert "supplied Goal directory" not in prompt
+        assert "Before preparing a new Goal" not in prompt
+        assert "context_delegation catalog" not in prompt
+        assert "A protected_action is only an untrusted proposal" in prompt
+        assert prompt.endswith(f"Operator user message:\n{message}")
+        envelope = json.loads(prompt.split(CHAT_REVIEW_OPEN_TAG, 1)[1].split(CHAT_REVIEW_CLOSE_TAG, 1)[0])
+        assert envelope["schema_version"] == "loopx_chat_agent_response_v0"
+        assert envelope["proposals"] == []
+        assert all(envelope[field] is None for field in ("protected_action", "goal_draft", "context_handoff", "gate"))
+    session = store.load_session(sid)
+    assert session["goal_id"] is None and session.get("manager_runtime") is None
+    assert session["project_context"]["grant"] == "workspace_write"
+    assert len(store.list_sessions()) == 1
+    assert not (workspace / "ACTIVE_GOAL_STATE.md").exists()
+
+
 def test_retargeted_symlink_does_not_rebind_a_project_grant(tmp_path):
     first, second = tmp_path / "first", tmp_path / "private"
     first.mkdir()
@@ -152,33 +196,36 @@ def test_default_project_host_grant_is_write_and_read_only_launch_is_enforced(or
     runtime.close()
 
 
-def test_project_codex_defaults_apply_on_exact_resume_without_replacing_context(ordinary):
-    store, runtime, contexts, request, capture, fake, workspace = ordinary
-    settings = workspace / "host-model-fixture.json"
-    settings.write_text(json.dumps({"model": "gpt-6.1-sol", "model_reasoning_effort": "medium"}))
-    fake.write_text(fake.read_text().replace(
-        '    elif method in {"thread/start", "thread/resume"}:',
-        f'    elif method == "config/read":\n        result = {{"config": json.load(open({str(settings)!r}))}}\n'
-        '    elif method in {"thread/start", "thread/resume"}:'))
+def test_local_scope_opens_new_session_after_host_grant_changes(ordinary):
+    store, runtime, contexts, request, capture, _, _ = ordinary
     ref = contexts.available()[0]["project_ref"]
-    session, resumed = runtime.open_session(goal_id=None, agent_id="codex", work_dir=workspace,
-        objective="ordinary conversation", project_ref=ref, mode="resume_latest")
-    assert not resumed
-    original = runtime.adapters[session["session_id"]].session
-    assert (original.model, original.reasoning_effort) == ("gpt-6.1-sol", "medium")
-    settings.write_text(json.dumps({"model": "gpt-6.1-sol", "model_reasoning_effort": "high"}))
-    runtime.adapters.pop(session["session_id"]).close_session()
-    restored, resumed = runtime.open_session(goal_id=None, agent_id="codex", work_dir=workspace,
-        objective="ordinary conversation", project_ref=ref, mode="resume_latest")
-    assert resumed and restored["session_id"] == session["session_id"]
-    assert restored["upstream_thread_id"] == session["upstream_thread_id"]
-    adapter = runtime.adapters[session["session_id"]].session
-    assert (adapter.model, adapter.reasoning_effort) == ("gpt-6.1-sol", "high")
-    requests = [json.loads(line) for line in capture.read_text().splitlines()]
-    resume = next(row for row in requests if row["method"] == "thread/resume")
-    assert resume["params"]["model"] == "gpt-6.1-sol"
-    assert resume["params"]["config"]["model_reasoning_effort"] == "high"
-    assert resume["params"]["threadId"] == session["upstream_thread_id"]
-    assert resume["params"]["sandbox"] == "read-only" and resume["params"]["approvalPolicy"] == "never"
-    assert all(row["goal_id"] is None for row in store.list_sessions())
-    runtime.close()
+    body = {"context_kind": "project", "project_ref": ref}
+    status, original = request("/api/chat/sessions", body)
+    assert status == 201
+    sessions = [original["session_id"]]
+    try:
+        for grant, sandbox in [("workspace_write", "workspace-write"), ("workspace_read", "read-only")]:
+            contexts.workspace_grant = grant
+            status, opened = request("/api/chat/sessions", body)
+            assert status == 201, opened
+            sid = opened["session_id"]
+            assert sid not in sessions and opened["goal_id"] is None
+            assert runtime.adapters[sid].session.sandbox == sandbox
+            assert store.load_session(sessions[-1])["project_context"]["grant"] != grant
+            status, denied = request(f"/api/chat/sessions/{sessions[-1]}/turns",
+                {"message": "old permission", "client_turn_id": "stale-grant"})
+            assert status == 400 and "grant changed" in denied["error"]
+            assert store.turn_for_client(sessions[-1], "stale-grant") is None
+            assert request("/api/chat/sessions", body)[1]["session_id"] == sid
+            status, accepted = request(f"/api/chat/sessions/{sid}/turns",
+                {"message": "Continue under current permission", "client_turn_id": f"current-{grant}"})
+            assert status == 202, accepted
+            assert runtime.wait_for_turn(session_id=sid, turn_id=accepted["turn_id"], timeout_sec=10)["status"] == "completed"
+            sessions.append(sid)
+        requests = [json.loads(line) for line in capture.read_text().splitlines()]
+        assert len([row for row in requests if row.get("method") == "thread/start"]) == 3
+        assert not any(row.get("method") == "thread/resume" for row in requests)
+        assert len(store.list_sessions()) == 3
+        assert store.messages(sessions[1]) and store.messages(sessions[2])
+    finally:
+        runtime.close()
