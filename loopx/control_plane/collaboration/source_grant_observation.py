@@ -117,6 +117,29 @@ def source_context_target_authority(
     return _source_context_grant(runtime_root, session, turn, [target])
 
 
+def _source_registry_recipients(registry_path: Path) -> dict:
+    registry = load_project_registry(registry_path)
+    if not isinstance(registry, dict):
+        raise ValueError("invalid registry")
+    require_runtime_compatible_project_registry(
+        registry, operation="context source recipient observation"
+    )
+    return registered_context_recipients(registry)
+
+
+def source_execution_bindings(
+    runtime_root: Path, registry_path: Path, session: dict, turn: dict
+) -> dict:
+    """Observe one compatible registry; TS owns sender and exact binding grants."""
+    if conversation_scope(session, origin=turn.get("origin", "unknown"))["kind"] != "external_audience":
+        return {"bindings": []}
+    observed = _source_registry_recipients(registry_path)
+    ingress, source = external_source_policy(runtime_root, session, turn)
+    return effect_runtime_result("collaboration.source.execution_bindings", {
+        "source": source, "sender_id": ingress["sender_id"], "available": observed["available"],
+    })
+
+
 def source_context_authority(
     runtime_root: Path, registry_path: Path, session: dict, turn: dict
 ) -> dict:
@@ -124,15 +147,9 @@ def source_context_authority(
     if registry_path is None:
         return {"mode": "unavailable", "targets": []}
     try:
-        registry = load_project_registry(registry_path)
-        if not isinstance(registry, dict):
-            raise ValueError("invalid registry")
-        require_runtime_compatible_project_registry(
-            registry, operation="context source recipient observation"
-        )
+        observed = _source_registry_recipients(registry_path)
     except (OSError, ValueError, TypeError):
         return {"mode": "unavailable", "targets": []}
-    observed = registered_context_recipients(registry)
     return _source_context_grant(
         runtime_root,
         session,

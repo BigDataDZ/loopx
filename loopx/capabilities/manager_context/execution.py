@@ -12,27 +12,16 @@ from ...agent_registry import load_goal_from_registry
 from ...collaboration_mcp import Delegations
 from ...control_plane.collaboration import conversation_scope
 from ...control_plane.collaboration.source_grant_observation import (
-    external_source_policy,
-    registered_context_recipients,
-    source_context_authority,
+    source_execution_bindings,
 )
-from ...control_plane.effect_runtime import EffectRuntimeRejected, effect_runtime_result
-from ...control_plane.projects.registry_codec import load_project_registry
+from ...control_plane.effect_runtime import EffectRuntimeRejected
 from ...orchestration import compact_orchestration_policy, normalize_subagent_execution_config
 
 
 def _grants(root: Path, registry: Path, session: dict[str, Any], turn: dict[str, Any]) -> list[dict[str, Any]]:
     if conversation_scope(session, origin=turn.get("origin", "unknown"))["kind"] != "external_audience":
         return []
-    # Also reject runtime-incompatible registries through the existing owner.
-    authority = source_context_authority(root, registry, session, turn)
-    if authority["mode"] != "context_only":
-        raise ValueError("current source authorization unavailable")
-    ingress, source = external_source_policy(root, session, turn)
-    observed = registered_context_recipients(load_project_registry(registry))
-    result = effect_runtime_result("collaboration.source.execution_bindings", {
-        "source": source, "sender_id": ingress["sender_id"], "available": observed["available"],
-    })
+    result = source_execution_bindings(root, registry, session, turn)
     return list(result["bindings"])
 
 

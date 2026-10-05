@@ -140,6 +140,17 @@ def test_handoff_scope_revocation_stops_before_inbox_delivery(flow, monkeypatch)
     assert "context_handoff_receipt" not in response and not started
 
 
+def test_lifecycle_only_registry_cannot_authorize_host_execution(flow):
+    from loopx.control_plane.projects.registry_codec import SOURCE_SESSION_PROFILE_ID
+    root, registry, (_, session, turn, _, _, _), started = flow
+    data = json.loads(registry.read_text())
+    data["profile_id"] = SOURCE_SESSION_PROFILE_ID
+    registry.write_text(json.dumps(data))
+    assert execution.catalog(root, registry, session, turn)["available"] is False
+    assert dispatch(flow)["submitted"] is False
+    assert not started
+
+
 @pytest.mark.parametrize("change", ["sender", "body", "channel", "revoke", "blocked", "requester", "stopped", "binding"])
 def test_no_launch_after_source_or_registration_changes(flow, change):
     root, registry, (_, session, turn, _, _, policy), started = flow
