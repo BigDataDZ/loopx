@@ -429,6 +429,13 @@ cached detail delivery, normal/replan context selection and measured model
 behavior remain unqualified. The 8 KiB target and delivery growth checks stay
 unchanged. See [TurnEnvelope](../../reference/protocols/turn-envelope-v0.md).
 
+The shared settlement command renderer now includes global JSON output before
+all generated step subcommands, including writeback recovery. This removes
+caller-side flag insertion for App heartbeat, external CLI and visible Goal
+lanes; real CLI tests cover full/envelope parity, rejection before writeback and
+one debit across replay. It is a transport correction, not closure of R5 model
+context-efficiency acceptance or a change to the typed settlement rules.
+
 The existing R5 CLI captures full decisions before projection, with a private directory per invocation and readback that does not rerun admission. Default-off heartbeat renderer/shared-worker adoption now covers explicit host-owned Turns: selection retains the capture route, and real CLI tests exercise reentry and exactly-once settlement. Python adapts filesystem/command transport over the TypeScript decision owner. Native Goal begin-Turn, installed App/Lark/UI adoption, model token/IO cost and decision quality remain unqualified; existing trials are not changed. See the [TurnEnvelope capture contract](../../reference/protocols/turn-envelope-v0.md).
 
 ### What Is Missing
