@@ -107,6 +107,11 @@ def prepare_turn_context(controller, adapter, session, turn_id, event_sink, *, s
         controller.store.root.parent, controller.registry_path, session,
         controller.store.load_turn(session_id, turn_id) or {},
     )
+    from .capabilities.manager_context.execution import catalog
+    context["context_execution"] = catalog(
+        controller.store.root.parent, controller.registry_path, session,
+        controller.store.load_turn(session_id, turn_id) or {},
+    )
     if isinstance(adapter, CodexAppServerAdapter):
         from .capabilities.manager_context.inspection import ManagerInspection, manager_index
         from .chat_manager_context import manager_authorization_scope_id

@@ -1,6 +1,7 @@
 """Provider/store observation for the typed context-recipient policy owner."""
 
 from pathlib import Path
+from typing import Any
 
 from ...agent_registry import registered_agent_ids_for_goal
 from ..goals.activation import goal_is_stopped
@@ -15,10 +16,24 @@ from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
 POLICY_SCHEMA = "loopx_manager_context_policy_v1"
 
 
-def registered_context_recipients(registry: dict) -> dict:
+def external_source_policy(runtime_root: Path, session: dict[str, Any], turn: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """One provider provenance check for context and explicit execution grants."""
+    ingress = _read(_root(runtime_root) / "ingress" /
+                    (_hash([session["session_id"], turn["client_turn_id"]]) + ".json"))
+    if (ingress["channel"] != session.get("channel_id")
+            or ingress["message_digest"] != _hash(turn.get("message"))
+            or turn.get("origin") != "lark"):
+        raise ValueError("source mismatch")
+    policy = _read(_root(runtime_root) / "policy.json")
+    if policy.get("schema_version") != POLICY_SCHEMA:
+        raise ValueError("invalid policy")
+    return ingress, policy.get("sources", {}).get(ingress["channel"], {})
+
+
+def registered_context_recipients(registry: dict[str, Any]) -> dict[str, Any]:
     """Observe active Goal membership, ignoring unreadable activation rows."""
     active_goals = []
-    available = []
+    available: list[dict[str, str]] = []
     for goal in registry.get("goals", []):
         if not isinstance(goal, dict) or not goal.get("id"):
             continue
@@ -34,8 +49,8 @@ def registered_context_recipients(registry: dict) -> dict:
 
 
 def source_context_authority(
-    runtime_root: Path, registry_path: Path, session: dict, turn: dict
-) -> dict:
+    runtime_root: Path, registry_path: Path, session: dict[str, Any], turn: dict[str, Any]
+) -> dict[str, Any]:
     """Return only a write-only recipient catalog; no cross-audience Goal evidence."""
     if registry_path is None:
         return {"mode": "unavailable", "targets": []}
@@ -59,21 +74,7 @@ def source_context_authority(
         if scope["kind"] != "external_audience":
             return {"mode": "unavailable", "targets": []}
         try:
-            ingress = _read(
-                _root(runtime_root)
-                / "ingress"
-                / (_hash([session["session_id"], turn["client_turn_id"]]) + ".json")
-            )
-            if (
-                ingress["channel"] != session.get("channel_id")
-                or ingress["message_digest"] != _hash(turn.get("message"))
-                or turn.get("origin") != "lark"
-            ):
-                raise ValueError("source mismatch")
-            policy = _read(_root(runtime_root) / "policy.json")
-            if policy.get("schema_version") != POLICY_SCHEMA:
-                raise ValueError("invalid policy")
-            grants = policy.get("sources", {}).get(ingress["channel"], {})
+            ingress, grants = external_source_policy(runtime_root, session, turn)
             selected = effect_runtime_result("collaboration.source.recipients", {
                 "source": grants, "sender_id": ingress["sender_id"],
                 "available": observed["available"],

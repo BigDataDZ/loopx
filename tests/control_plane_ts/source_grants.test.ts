@@ -1,12 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { configureSourceRecipient, resolveSourceRecipients } from "../../loopx/control_plane/collaboration/source_grants.ts";
+import { configureSourceRecipient, resolveSourceRecipients, sourceExecutionBindings } from "../../loopx/control_plane/collaboration/source_grants.ts";
 
 const worker = { goal_id: "research", agent_id: "worker" };
 const peer = { goal_id: "research", agent_id: "peer" };
 const other = { goal_id: "other", agent_id: "worker" };
 const available = [worker, peer, other];
 const source = { local_delivery_scope: "selected", sender_ids: ["owner"], targets: [{ goal_id: "research" }] };
+
+test("execution needs an independent exact grant, current sender and both registered identities", () => {
+  const binding = {...worker, binding_id: "review", requester_agent_id: "peer"};
+  const params = {source, sender_id: "owner", available};
+  assert.deepEqual(sourceExecutionBindings(params), {bindings: []});
+  const granted = {...source, execution_bindings: [binding]};
+  assert.deepEqual(sourceExecutionBindings({...params, source: granted}), {bindings: [binding]});
+  assert.deepEqual(sourceExecutionBindings({...params, source: granted, available: [worker]}), {bindings: []});
+  assert.deepEqual(sourceExecutionBindings({...params, source: {...granted, blocked_targets: [worker]}}), {bindings: []});
+  assert.throws(() => sourceExecutionBindings({...params, source: granted, sender_id: "other"}));
+  for (const bad of [null, {}, [binding, binding], [{...binding, requester_agent_id: "worker"}],
+    [{...binding, workspace: "/injected"}], [{...binding, binding_id: "../escape"}]]) {
+    assert.throws(() => sourceExecutionBindings({...params, source: {...source, execution_bindings: bad}}));
+  }
+});
 
 test("a selected managed Goal includes current and future registered Agents, never another Goal", () => {
   assert.deepEqual(resolveSourceRecipients({ sender_id: "owner", source, available: [worker, other] }), { targets: [worker] });

@@ -1646,11 +1646,15 @@ class ChatRuntimeController:
                     receipt = deliver(self.store.root.parent, self.registry_path,
                                       session=session, turn=self.store.load_turn(session_id, turn_id) or {},
                                       request=response["context_handoff"])
+                    from .capabilities.manager_context.execution import dispatch, handoff_message
+                    execution = dispatch(self.store.root.parent, self.registry_path,
+                                         session=session, turn=self.store.load_turn(session_id, turn_id) or {},
+                                         request=response["context_handoff"], receipt=receipt,
+                                         execution_allowed=lambda: not execution_ended())
                     response = {**response, "proposals": [], "gate": None,
                                 "context_handoff_receipt": receipt,
-                                "message": ("已将交办说明和原消息交给 " if response["context_handoff"].get("brief") else "已将原消息交给 ") + receipt["agent_id"] +
-                                "。材料已进入收件箱，后续处理结论会自动回到这里。"
-                                "（委托 " + receipt["request_id"][:8] + "）"}
+                                "context_execution": execution,
+                                "message": handoff_message(receipt, execution)}
                 except (OSError, ValueError):
                     response = {**response, "proposals": [], "gate": None,
                                 "message": "材料尚未转交：目标绑定、来源授权或持久收件回读未通过。需要修复交接链路；没有改动任务或优先级。"}
