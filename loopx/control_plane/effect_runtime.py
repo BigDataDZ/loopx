@@ -545,7 +545,8 @@ def _serving_token(path: Path) -> tuple[bool, str | None]:
     """Report whether a runtime is still publishing itself at ``path``.
 
     The managed runtime removes its info file as part of its shutdown
-    handshake. Its mutation lock must also retire before namespace cleanup.
+    handshake. Its mutation lock and cleanup files must also retire before
+    namespace cleanup.
     A readable replacement token proves this runtime no longer serves. The pid is not:
     an exited runtime whose parent has not reaped it still answers a liveness
     probe, which would otherwise report a completed restart as pending.
@@ -560,9 +561,26 @@ def _serving_token(path: Path) -> tuple[bool, str | None]:
         # until the deadline instead of claiming a restart that did not happen.
         return True, None
     if not isinstance(payload, dict):
-        return False, None
+        return True, None
     token = payload.get("token")
     return True, token if isinstance(token, str) else None
+
+
+def _locator_retirement_pending(info_path: Path) -> bool:
+    """Observe the existing TS lock namespace, including its cleanup files."""
+    lock_name = info_path.name + ".ts-effect.lock"
+    try:
+        return any(
+            path.name == lock_name
+            or path.name.startswith(lock_name + ".claim.")
+            or path.name.startswith(lock_name + ".released.")
+            for path in info_path.parent.iterdir()
+        )
+    except FileNotFoundError:
+        return False
+    except OSError:
+        # An unreadable directory cannot prove that retirement finished.
+        return True
 
 
 def restart_effect_runtime(*, timeout: float = 5.0) -> dict[str, Any]:
@@ -611,17 +629,9 @@ def restart_effect_runtime(*, timeout: float = 5.0) -> dict[str, Any]:
         if published and published_token is not None and published_token != serving_token:
             stopped = True
             break
-        if not published:
-            # Locator retirement still holds its mutation lock and may create a
-            # release claim. Only lock absence makes namespace cleanup safe.
-            try:
-                info_path.with_name(info_path.name + ".ts-effect.lock").stat()
-            except FileNotFoundError:
-                stopped = True
-                break
-            except OSError:
-                # Unreadable lock state cannot prove that retirement finished.
-                pass
+        if not published and not _locator_retirement_pending(info_path):
+            stopped = True
+            break
         if not _pid_is_alive(pid):
             stopped = True
             break
