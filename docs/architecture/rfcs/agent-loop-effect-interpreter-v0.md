@@ -429,7 +429,7 @@ cached detail delivery, normal/replan context selection and measured model
 behavior remain unqualified. The 8 KiB target and delivery growth checks stay
 unchanged. See [TurnEnvelope](../../reference/protocols/turn-envelope-v0.md).
 
-The existing R5 CLI now supports opt-in capture of the full decided payload before display projection (`quota should-run --decision-output-dir`, with an explicit Turn id). Each invocation uses a new private directory; reading the observation does not rerun the guard, and required selection/lease revalidation remains fresh. This is transport-only Python filesystem adaptation over the shared decision and TypeScript envelope owners. It closes tool-truncation recovery for an explicit caller, not worker adoption, automatic normal/replan context selection, or model-efficiency acceptance. See the [TurnEnvelope capture contract](../../reference/protocols/turn-envelope-v0.md).
+The existing R5 CLI captures full decisions before projection, with a private directory per invocation and readback that does not rerun admission. Default-off heartbeat renderer/shared-worker adoption now covers explicit host-owned Turns: selection retains the capture route, and real CLI tests exercise reentry and exactly-once settlement. Python adapts filesystem/command transport over the TypeScript decision owner. Native Goal begin-Turn, installed App/Lark/UI adoption, model token/IO cost and decision quality remain unqualified; existing trials are not changed. See the [TurnEnvelope capture contract](../../reference/protocols/turn-envelope-v0.md).
 
 ### What Is Missing
 

@@ -289,6 +289,7 @@ def build_heartbeat_prompt(
     turn_granularity: str | None = None,
     turn_instance_id: str | None = None,
     reward_memory_enabled: bool = True,
+    decision_output_root: str | Path | None = None,
 ) -> dict[str, Any]:
     if not (full or compact or brief or thin):
         thin = True
@@ -346,6 +347,12 @@ def build_heartbeat_prompt(
         runtime_profile=runtime_profile,
         scheduler_execution_context=scheduler_execution_context,
     )
+    if decision_output_root is not None:
+        if not thin or full or compact or brief or native_goal_host or not normalized_turn_instance_id:
+            raise ValueError("--decision-output-root requires thin mode and an explicit host-owned Turn ID")
+        decision_output_root = Path(decision_output_root).expanduser().absolute()
+        if decision_output_root.is_symlink() or not decision_output_root.is_dir():
+            raise ValueError("--decision-output-root must be an existing directory, not a symlink")
     explicit_agent_scopes = normalize_agent_scopes(agent_scopes)
     if explicit_agent_scopes:
         normalized_agent_scopes = explicit_agent_scopes
@@ -431,6 +438,13 @@ def build_heartbeat_prompt(
         capability_args=capability_args,
         turn_identity_arg=turn_identity_arg,
     )
+    if decision_output_root is not None:
+        transport_args = " --turn-envelope --decision-output-root " + shlex.quote(str(decision_output_root))
+        for key in ("quota_guard_command", "task_body_quota_guard_command"):
+            commands[key] = str(commands[key]) + transport_args
+        commands["thin_prompt_command"] = str(commands["thin_prompt_command"]) + (
+            " --decision-output-root " + shlex.quote(str(decision_output_root))
+        )
     cli_preflight = render_cli_preflight(cli_bin=cli_bin)
     task_body_renderer = _select_task_body_renderer(
         traex_visible_goal=traex_visible_goal,
@@ -465,11 +479,13 @@ def build_heartbeat_prompt(
         compact_prompt_command=str(commands["compact_prompt_command"]),
         brief_prompt_command=str(commands["brief_prompt_command"]),
         thin_prompt_command=str(commands["thin_prompt_command"]),
+        **({"captured_envelope": True} if decision_output_root is not None else {}),
         **reward_memory_rule_kwargs,
     )
     task_body = bind_exact_turn_settlement_task_body(
         task_body,
         turn_instance_id=normalized_turn_instance_id,
+        captured_envelope=decision_output_root is not None,
     )
     if fine_grained:
         task_body = f"{task_body}\n\n{FINE_GRAINED_TURN_RULE}"

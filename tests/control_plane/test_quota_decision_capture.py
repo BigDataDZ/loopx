@@ -101,3 +101,27 @@ def test_real_guard_saved_before_envelope_and_read_without_reexecution(tmp_path)
     assert code == 0, fresh
     assert json.loads((second / 'decision.json').read_text())['heartbeat_receipt']['status'] == 'replayed'
     assert json.loads(saved.read_text()) == full
+
+
+@pytest.mark.parametrize('kind', ['missing', 'file', 'symlink'])
+def test_capture_root_rejects_invalid_destination(tmp_path, kind):
+    root = tmp_path / 'root'
+    if kind == 'file':
+        root.write_text('unchanged')
+    elif kind == 'symlink':
+        root.symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(QuotaCommandValidationError):
+        prepare_decision_capture(request(None, decision_output_root=root))
+    assert not list(tmp_path.glob('decision-*'))
+
+
+def test_capture_root_allocates_private_distinct_children(tmp_path):
+    args = request(None, decision_output_root=tmp_path)
+    first = prepare_decision_capture(args)
+    second = prepare_decision_capture(args)
+    assert first != second
+    assert first.parent == second.parent == tmp_path
+    if os.name != 'nt':
+        assert first.stat().st_mode & 0o777 == 0o700
+    with pytest.raises(QuotaCommandValidationError):
+        prepare_decision_capture(request(None, decision_output_root=tmp_path, turn_instance_id=None))

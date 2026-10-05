@@ -286,3 +286,48 @@ def test_native_failed_run_does_not_publish_completed_result(tmp_path, status):
     _write_native_final_result(tmp_path, RunResult(), status=status, agent="codex",
                               task="case", run_id="run", model="model", effort="xhigh")
     assert not (tmp_path / "final_result.json").exists()
+
+
+@pytest.mark.parametrize('profile', ['heartbeat-resume', 'heartbeat-explore'])
+def test_envelope_treatment_reaches_shared_worker_and_receipts(tmp_path, monkeypatch, profile):
+    pytest.importorskip('sforge')
+    pytest.importorskip('harbor')
+    from sforge.harness.config import SForgeConfig
+    from benchmark.runtime.sforge import SForgeWorker, BenchmarkCodex
+    monkeypatch.setenv('CODEX_AUTH_JSON_PATH', '/private-credential')
+    async def installed(self, environment):
+        pass  # Transport only; the real renderer/guard test runs without a solver.
+    monkeypatch.setattr(BenchmarkCodex, 'install', installed)
+    worker = SForgeWorker(SForgeConfig(agent_model='fixture', agent_effort='xhigh'),
+                          profile=profile, cwd='/task', turn_envelope=True)
+    worker.install_stop_hook(None, None, tmp_path, None)
+    env = worker.runtime._worker_env(cwd='/task')
+    assert env['LOOPX_TURN_ENVELOPE'] == '1'
+    assert worker.runtime.execution.turn_envelope is True
+    assert json.loads((tmp_path / 'worker-profile.json').read_text())['turn_envelope'] is True
+    # The opt-in only changes context transport, not resume or model settings.
+    assert env['LOOPX_ITERATION_CONTEXT'] == 'resume'
+    assert env['REASONING_EFFORT'] == 'xhigh'
+
+
+@pytest.mark.parametrize('profile', ['official', 'single', 'native-goal'])
+def test_envelope_rejects_incompatible_sforge_worker(profile):
+    pytest.importorskip('sforge')
+    pytest.importorskip('harbor')
+    from sforge.harness.config import SForgeConfig
+    from benchmark.runtime.sforge import SForgeWorker
+    with pytest.raises(ValueError, match='heartbeat worker'):
+        SForgeWorker(SForgeConfig(agent_model='fixture', agent_effort='xhigh'),
+                     profile=profile, cwd='/task', turn_envelope=True)
+
+
+def test_edgebench_rejects_envelope_before_creating_trial(tmp_path):
+    pytest.importorskip('sforge')
+    pytest.importorskip('harbor')
+    from benchmark.edgebench.run import main
+    with pytest.raises(SystemExit) as error:
+        main(['--task', 'fixture', '--tasks-dir', str(tmp_path), '--log-dir', str(tmp_path),
+              '--run-id', 'invalid', '--worker', 'native-goal', '--model', 'fixture',
+              '--effort', 'xhigh', '--judge-url', 'http://127.0.0.1:9999', '--turn-envelope'])
+    assert error.value.code == 2
+    assert not (tmp_path / 'runs').exists()

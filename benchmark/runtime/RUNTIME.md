@@ -26,6 +26,17 @@ agents:
       replan_after_todos: 3
 ```
 
+For an explicitly selected **heartbeat-only** context experiment, add
+`turn_envelope: true` to `kwargs` (default `false`). Each wake creates a private
+capture root and asks the product renderer for a short TurnEnvelope dispatcher.
+Full decisions remain available through `detail_ref.full_decision` from the same
+guard invocation. Selection/reentry still evaluate current authority; generated
+selection commands retain the capture root. The setting appears in install,
+execution and wake receipts. Invalid native-Goal/plain/Turn-driver combinations
+fail before execution. Set it back to `false` for the next run to roll back;
+do not change a running trial's treatment. Captures contain private Goal context.
+Transport tests do not establish lower token cost or better model decisions.
+
 | Mode | Execution/continuation | LoopX skills and state |
 | --- | --- | --- |
 | `plain` | One Codex exec, native Goals disabled | Absent |
