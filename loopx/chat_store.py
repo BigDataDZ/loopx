@@ -79,10 +79,16 @@ def _read_json(path: Path) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+def _read_jsonl(
+    path: Path, *, raise_on_error: bool = False,
+) -> list[dict[str, Any]]:
     try:
         lines = path.read_bytes().split(b"\n")
+    except FileNotFoundError:
+        return []
     except OSError:
+        if raise_on_error:
+            raise
         return []
     rows: list[dict[str, Any]] = []
     for line in lines:
@@ -194,7 +200,7 @@ class ChatSessionStore(ChatIngressStore):
         self._session_locks: WeakValueDictionary[str, threading.Lock] = WeakValueDictionary()
         self._event_lock = threading.RLock()
         self._event_cache = ChatEventCache(self._event_lock)
-        self._event_pending: dict[tuple[str, str], list[dict[str, Any]]] = {}
+        self._event_pending: dict[tuple[str, str], list[tuple[dict[str, Any], str]]] = {}
         self._event_flush_locks: WeakValueDictionary[tuple[str, str], threading.Lock] = WeakValueDictionary()
         self.sessions_root.mkdir(parents=True, exist_ok=True, mode=0o700)
         os.chmod(self.root, 0o700)
@@ -1702,7 +1708,7 @@ class ChatSessionStore(ChatIngressStore):
             "payload": payload,
         }
         with self._event_lock:
-            self._event_pending.setdefault(key, []).append(event)
+            self._event_pending.setdefault(key, []).append((event, uuid.uuid4().hex))
         if not buffered:
             self.flush_events(session_id, turn_id)
         return event
@@ -1721,24 +1727,79 @@ class ChatSessionStore(ChatIngressStore):
                     return flushed
                 try:
                     with exclusive_file_lock(path, agent_id="loopx-chat", operation="append_chat_events"):
-                        rows = self._event_rows_locked(session_id, turn_id)
-                        # Allocate after the last persisted sequence and append under the
-                        # same file lock: row order stays strictly increasing by sequence.
-                        # Compaction preserves this order but may leave sequence gaps.
-                        sequence = int(rows[-1].get("sequence") or 0) if rows else 0
-                        for event in pending:
-                            sequence += 1
-                            event["event_id"] = str(sequence)
-                            event["sequence"] = sequence
-                        _append_jsonl_rows(path, pending)
-                        if any(row["kind"] in TERMINAL_EVENT_KINDS for row in pending):
-                            self._event_cache.drop(key)
-                        else:
-                            self._event_cache.put(key, self._event_revision(path), [*rows, *pending])
+                        append_started = False
+                        try:
+                            uncertain = any("sequence" in event for event, _ in pending)
+                            rows = (
+                                _read_jsonl(path, raise_on_error=True)
+                                if uncertain
+                                else self._event_rows_locked(session_id, turn_id)
+                            )
+                            # A failed append may already have persisted all or part of
+                            # its batch. Match only this store's stable append ids; two
+                            # otherwise identical events are still separate writes.
+                            durable = (
+                                {
+                                    row["_append_id"]: row
+                                    for row in rows
+                                    if isinstance(row.get("_append_id"), str)
+                                }
+                                if uncertain
+                                else {}
+                            )
+                            # Allocate after the last persisted sequence under the same
+                            # file lock. Compaction may leave gaps; another writer may
+                            # have appended after a partial failed batch.
+                            sequence = int(rows[-1].get("sequence") or 0) if rows else 0
+                            to_append: list[dict[str, Any]] = []
+                            for event, append_id in pending:
+                                committed = durable.get(append_id)
+                                if committed is not None:
+                                    event["event_id"] = committed["event_id"]
+                                    event["sequence"] = committed["sequence"]
+                                    continue
+                                sequence += 1
+                                event["event_id"] = str(sequence)
+                                event["sequence"] = sequence
+                                to_append.append({**event, "_append_id": append_id})
+                            append_started = True
+                            _append_jsonl_rows(path, to_append)
+                            if any(event["kind"] in TERMINAL_EVENT_KINDS for event, _ in pending):
+                                self._event_cache.drop(key)
+                            else:
+                                self._event_cache.put(key, self._event_revision(path), [*rows, *to_append])
+                        except Exception:
+                            if not append_started:
+                                raise
+                            # Confirm visible writes before releasing the file lock:
+                            # another store may compact old events before our retry.
+                            try:
+                                written = {
+                                    row["_append_id"]: row
+                                    for row in _read_jsonl(path, raise_on_error=True)
+                                    if isinstance(row.get("_append_id"), str)
+                                }
+                            except OSError:
+                                pass  # Keep all uncertain events for a later retry.
+                            else:
+                                remaining = []
+                                for event, append_id in pending:
+                                    committed = written.get(append_id)
+                                    if committed is None:
+                                        remaining.append((event, append_id))
+                                    else:
+                                        event["event_id"] = committed["event_id"]
+                                        event["sequence"] = committed["sequence"]
+                                pending = remaining
+                            raise
                 except Exception:
+                    self._event_cache.drop(key)
                     with self._event_lock:
                         later = self._event_pending.get(key, [])
-                        self._event_pending[key] = [*pending, *later]
+                        if pending or later:
+                            self._event_pending[key] = [*pending, *later]
+                        else:
+                            self._event_pending.pop(key, None)
                     raise
                 flushed += len(pending)
 
@@ -1761,7 +1822,10 @@ class ChatSessionStore(ChatIngressStore):
         result = rows[start:]
         if rows and rows[-1].get("kind") in TERMINAL_EVENT_KINDS:
             self._event_cache.retain_terminal(key, rows)
-        return result
+        return [
+            {field: value for field, value in row.items() if field != "_append_id"}
+            for row in result
+        ]
 
     def compact_completed_events(self, *, older_than_hours: float = 24.0) -> int:
         """Drop replay-only deltas after the durable final message is old enough."""
