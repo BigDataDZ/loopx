@@ -797,6 +797,16 @@ deduplication and return. App settings select and read back the trigger per
 connection. External host-tool permission and sender-bound delegation remain
 separate gaps; receiving a request does not establish execution authority.
 
+An external steward can now select an operator-granted existing task binding
+from its exact source catalog and submit the handoff through the same governed
+delegation/Turn owner. Durable context receipt, bounded launch, receiver
+adoption, task acceptance and original-audience return remain distinct. No
+identity, task, runtime policy or scheduler is provisioned by the handoff. Local
+file/SQLite fixtures qualify dispatch, independent acceptance and return;
+provider/model routing, new-task allocation, operator UI discovery and complete
+stop/result presentation remain separate R3 gates. See
+[bound inbox execution](../../../loopx/capabilities/manager_context/README.md#executing-already-bound-work).
+
 Resolve source context before routing: a short reply retains the exact
 same-conversation parent, with missing and truncated material explicit. TS owns the bounded context projection;
 Lark transport and the private inbox preserve provider ancestry without granting
@@ -813,6 +823,16 @@ group requests, correction, adoption and original-route return separately. This
 is general semantic triage, not a new steward-specific classifier or scheduler.
 Typed admission owns provider-independent trigger reasons; the App renders those
 facts without treating a configuration change as retroactive execution.
+
+Native steward private admission now supplies the existing inbox's exact
+provider provenance before Turn launch, including prepared-request replay.
+It follows the resolved coordination owner when Chat storage is separate, with
+the retained layout for legacy controllers; source evidence does not fork into
+the private Chat store.
+Operator read/delivery configuration recognizes its full App/source channel;
+portfolio read alone still grants no delivery. Source/policy/replay fixtures
+qualify this entry prerequisite, not worker launch, adoption, automatic wake or
+original-route completion. Those remain the same R3 acceptance gates above.
 
 ### R4: Shared Goal Alignment and Evolution
 

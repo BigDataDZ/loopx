@@ -195,21 +195,21 @@ def test_blind_policy_removes_judge_route_and_credentials_native_is_unchanged(mo
     backend = object.__new__(RecordingDockerBackend)
     backend.auth_ips = []
     backend.blind_api_endpoint = None
-    judge = AllowedEndpoint(ip="172.17.0.1", port=8080, hostname="judge")
-    api = AllowedEndpoint(ip="172.17.0.1", port=9090, hostname="api-proxy")
+    judge = AllowedEndpoint(ip="192.0.2.1", port=8080, hostname="judge")
+    api = AllowedEndpoint(ip="192.0.2.1", port=9090, hostname="api-proxy")
     monkeypatch.setattr(DockerBackend, "create_network_isolation",
                         lambda self, handle, allowed_endpoints, logger: allowed_endpoints)
     env = {"SFORGE_TOKEN": "fixture", "SFORGE_JUDGE_URL": "http://judge:8080",
            "HTTPS_PROXY": "http://api-proxy:9090", "SFORGE_PATCH_DIR": "/task"}
     assert backend._agent_environment(env) is env
     assert backend.create_network_isolation(None, [judge, api], None) == [judge, api]
-    backend.blind_api_endpoint = ("172.17.0.1", 9090)
+    backend.blind_api_endpoint = ("192.0.2.1", 9090)
     assert backend.create_network_isolation(None, [judge, api], None) == [api]
     assert backend._agent_environment(env) == {
         "HTTPS_PROXY": "http://api-proxy:9090", "SFORGE_PATCH_DIR": "/task"}
     with pytest.raises(RuntimeError, match="admitted API-only endpoint"):
         backend.create_network_isolation(None, [judge], None)
-    alias = AllowedEndpoint(ip="172.17.0.1", port=9090, hostname="judge-alias")
+    alias = AllowedEndpoint(ip="192.0.2.1", port=9090, hostname="judge-alias")
     with pytest.raises(RuntimeError, match="distinct from the judge"):
         backend.create_network_isolation(None, [alias, api], None)
 
