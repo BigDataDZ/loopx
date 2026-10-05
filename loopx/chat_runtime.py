@@ -304,6 +304,8 @@ class ChatRuntimeController:
     ) -> None:
         self.store = store
         self.registry_path = registry_path
+        from .capabilities.native_chat.project_context import coordination_runtime_root
+        self.coordination_runtime_root = coordination_runtime_root(registry_path, store.root.parent)
         self.manager_scope_resolver = manager_scope_resolver
         self.project_contexts = project_contexts or ChatProjectContexts([])
         self.codex_bin = codex_bin
@@ -686,7 +688,7 @@ class ChatRuntimeController:
                 project_context=project_context,
                 steward_context=steward_context,
             )
-            persisted = self.project_contexts.initialize_bound_scope(self.store, persisted)
+            persisted = self.project_contexts.initialize_bound_scope(self.store, persisted, runtime_root=self.coordination_runtime_root)
             if is_manager_channel(selected_channel):
                 assert manager_runtime is not None
                 persisted = self.store.update_session(
@@ -1655,7 +1657,7 @@ class ChatRuntimeController:
                         self.manager_scope_resolver is None or not self.manager_scope_resolver(session)
                     ):
                         raise ValueError("manager connection authority is no longer available")
-                    receipt = deliver(self.store.root.parent, self.registry_path,
+                    receipt = deliver(self.coordination_runtime_root, self.registry_path,
                                       session=session, turn=self.store.load_turn(session_id, turn_id) or {},
                                       request=response["context_handoff"])
                     response = {**response, "proposals": [], "gate": None,

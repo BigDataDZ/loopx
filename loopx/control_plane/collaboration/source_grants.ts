@@ -32,6 +32,20 @@ function localScope(source: JsonObject): LocalDeliveryScope {
   return scope;
 }
 
+/** Trusted-local scope configuration preserves explicit recipient revocations. */
+export function configureSourceScope(params: JsonObject): JsonObject {
+  const source = requireJsonObject(params.source, "source policy");
+  grants(source);
+  const scope = localScope({local_delivery_scope: params.local_delivery_scope});
+  const senders = requireStringArray(source.sender_ids, "source senders");
+  if (!senders.length || senders.some(sender => !sender.trim())) {
+    throw new EffectRuntimeRequestError("external channel has no valid sender grant");
+  }
+  const next = {...source, local_delivery_scope: scope};
+  return {source: next, local_delivery_scope: scope,
+    would_change: JSON.stringify(next) !== JSON.stringify(source)};
+}
+
 function matches(grant: Recipient, target: Recipient): boolean {
   return grant.goal_id === target.goal_id && (grant.agent_id === undefined || grant.agent_id === target.agent_id);
 }
