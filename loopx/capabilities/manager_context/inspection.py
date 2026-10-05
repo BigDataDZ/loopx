@@ -191,7 +191,7 @@ def manager_index(context: dict[str, Any]) -> dict[str, Any]:
             if row.get("activation_state") != "stopped"
         ],
         "context_delegation": context.get("context_delegation"),
-        "context_execution": context.get("context_execution"),
+        **({"context_execution": context["context_execution"]} if "context_execution" in context else {}),
         "evidence_sources": context.get("evidence_sources", [])[:12],
         "evidence_source_count": len(context.get("evidence_sources", [])),
         "agent_discovery": {"tool": read_tool, "view": "agents", "scope": "permitted_registry",

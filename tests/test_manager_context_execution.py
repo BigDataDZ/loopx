@@ -109,6 +109,9 @@ def test_model_receives_authorized_task_choices_after_manager_context_compaction
     # choice. Registration/route discovery cannot substitute for this grant.
     assert '"binding_id": "review"' in prompt and '"todo_id": "todo_current"' in prompt
     assert str(root) not in prompt and "delegations.json" not in prompt
+    disabled = manager_index({})
+    assert "context_execution" not in disabled
+    assert "execution_binding_id" not in _turn_prompt(turn["message"], context_summary=json.dumps(disabled))
 
 
 @pytest.mark.parametrize("change", ["sender", "body", "channel", "revoke", "blocked", "requester", "stopped"])
