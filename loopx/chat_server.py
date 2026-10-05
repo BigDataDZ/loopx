@@ -91,6 +91,7 @@ from .extensions.runtime import (
 )
 from .history import load_registry
 from .chat_completed_todos import CompletedTodoPages, CompletedTodoRequestMixin
+from .chat_todo_detail import TodoDetailRequestMixin
 from .kiro_cli_goal_mode import KIRO_CLI_BIN
 from .paths import resolve_runtime_root
 from .release_manifest import release_runtime_identity
@@ -426,6 +427,9 @@ class ChatHTTPServer(ThreadingHTTPServer):
     goal_subagent_configuration_enabled: bool
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Freeze before serving: an in-place package upgrade must not retag the
+        # old process with the identity of bytes it has never loaded.
+        self.runtime_identity = release_runtime_identity()
         super().__init__(*args, **kwargs)
         self.completed_todo_pages = CompletedTodoPages()
 
@@ -446,6 +450,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
 class ChatRequestHandler(
     PrivateConversationRequestMixin,
     CompletedTodoRequestMixin,
+    TodoDetailRequestMixin,
     AttachedSessionRequestMixin,
     SshSourceRequestMixin,
     GoalSubagentConfigurationRequestMixin,
@@ -1391,7 +1396,7 @@ class ChatRequestHandler(
                 "manager": manager_capabilities_projection(
                     self.server.runtime_controller, self.server.chat_store
                 ),
-                "runtime_identity": release_runtime_identity(),
+                "runtime_identity": self.server.runtime_identity,
                 "agent_backend": "multi_adapter",
                 "sandbox": "read-only",
                 "approval_policy": "never",
@@ -1418,6 +1423,7 @@ class ChatRequestHandler(
                 }
             )
         get_dispatch = {
+            "/api/chat/todo/detail": self._todo_detail,
             "/api/chat/completed-todos": self._completed_todos,
             "/api/chat/goal-results": self._goal_results,
             CHAT_SESSIONS_PATH: self._list_sessions,
@@ -1553,6 +1559,7 @@ def serve_chat(
     open_browser: bool = False,
     verbose: bool = False,
     enable_goal_subagent_configuration: bool = False,
+    project_workspace_grant: str = "workspace_write",
 ) -> None:
     if not is_loopback_host(host):
         raise ValueError("loopx chat requires a loopback --host such as 127.0.0.1")
@@ -1606,7 +1613,7 @@ def serve_chat(
     server.runtime_controller = ChatRuntimeController(
         store=server.chat_store,
         registry_path=resolved_registry_path,
-        project_contexts=ChatProjectContexts(resolved_scan_roots),
+        project_contexts=ChatProjectContexts(resolved_scan_roots, workspace_grant=project_workspace_grant),
         manager_scope_resolver=lambda session: (
             server.runtime_controller.project_contexts.conversation_bindings.steward_scope(session)
             if isinstance(session.get("steward_context"), dict) else authorized_manager_goal_ids(
@@ -1666,7 +1673,7 @@ def serve_chat(
     )
     server.lark_goal_topic_runtime.start()
     from .extensions.lark.manager_returns import start_return_service
-    server.manager_return_service = start_return_service(server, runtime_root)
+    server.manager_return_service = start_return_service(server, server.runtime_controller.coordination_runtime_root)
     from .chat_loopx_mode import DelegationWakeService
 
     def _wake_goal_context(session):
@@ -1684,7 +1691,7 @@ def serve_chat(
     ).start()
     url = f"http://{host}:{port}{DEFAULT_CHAT_PATH}"
     print(f"Serving LoopX Chat at {url}", flush=True)
-    print("Agent boundary: local adapters, read-only sandbox, approval policy never", flush=True)
+    print(f"Agent boundary: local adapters, project grant {project_workspace_grant}, approval policy never", flush=True)
     print("Todo writes: preview-locked on loopback", flush=True)
     if enable_goal_subagent_configuration:
         print("Goal sub-agent configuration: preview-locked opt-in enabled", flush=True)
