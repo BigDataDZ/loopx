@@ -157,7 +157,7 @@ def send_return(
         return {"continue_delivery": current[:2] == (project, config_path) and current[3:] == (destination, message_id)}
 
     runner_kwargs: dict[str, Any] = {"runner": runner} if runner else {}
-    return reply_lark_event_inbox(
+    result: dict[str, Any] = reply_lark_event_inbox(
         project=project,
         config_path=config_path,
         message_id=message_id,
@@ -172,6 +172,7 @@ def send_return(
         short_message_limit=None,
         **runner_kwargs,
     )
+    return result
 
 
 def verify_return(
@@ -201,7 +202,7 @@ def verify_return(
     if runner is None and isinstance(session.get("steward_context"), dict):
         runner = private_transport._reply_runner
     runner_kwargs: dict[str, Any] = {"runner": runner} if runner else {}
-    return verify_lark_inbox_reply(
+    result: dict[str, Any] = verify_lark_inbox_reply(
         project=project,
         config_path=config_path,
         message_id=message_id,
@@ -210,6 +211,7 @@ def verify_return(
         source_membership_verifier=source_verifier,
         **runner_kwargs,
     )
+    return result
 
 
 class LarkManagerReturnTransport:
