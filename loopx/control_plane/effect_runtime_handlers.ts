@@ -734,7 +734,7 @@ export function createEffectRuntimeHandlers(
     ["explore.research.normalize", lazyHandler(() => import("./capabilities/explore_research.ts"), ({normalizeResearchObservation}) => normalizeResearchObservation)],
     ["explore.research.validate_attribution", lazyHandler(() => import("./capabilities/explore_research.ts"), ({validateResearchAttribution}) => validateResearchAttribution)],
     ["explore.research.frontier", lazyHandler(() => import("./capabilities/explore_research.ts"), ({projectResearchFrontier}) => projectResearchFrontier)],
-  ["work_item.replan_history.project", lazyHandler(() => import("./work_items/replan_history.ts"), ({projectReplanHistory}) => projectReplanHistory)],
+  ["work_item.replan_history.project", lazyHandler(() => import("./work_items/replan_history_settlement.ts"), ({projectSettledReplanHistory}) => projectSettledReplanHistory)],
   ["work_item.replan_history.project_snapshot", lazyHandler(() => import("./work_items/replan_history_snapshot.ts"), ({projectReplanHistorySnapshot}) => projectReplanHistorySnapshot)],
 
     [
