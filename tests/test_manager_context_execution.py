@@ -113,6 +113,11 @@ def test_model_receives_authorized_task_choices_after_manager_context_compaction
     disabled = manager_index({})
     assert "context_execution" not in disabled
     assert "execution_binding_id" not in _turn_prompt(turn["message"], context_summary=json.dumps(disabled))
+    assert manager_index({"context_execution": {"available": True, "bindings": []}}) == disabled
+    unavailable = manager_index({"context_execution": {"available": False, "bindings": [],
+                                                        "reason": "execution_bindings_unavailable"}})
+    assert unavailable["context_execution"]["available"] is False
+    assert "execution_binding_id" not in _turn_prompt(turn["message"], context_summary=json.dumps(unavailable))
 
 
 def test_handoff_response_preserves_receipt_and_separate_execution_status(flow):
