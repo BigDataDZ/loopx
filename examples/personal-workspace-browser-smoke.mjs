@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {nativeChildActivityScenario} from "./personal-workspace-browser/native-child-activity.mjs";
+import {privateStewardScopeScenario} from "./personal-workspace-browser/private-steward-scope.mjs";
 import {configurationBackupScenario} from "./personal-workspace-browser/configuration-backup.mjs";
 import {prReviewAgentOrderScenario} from "./personal-workspace-browser/pr-review-agent-order.mjs";
 import {conversationImageRequestScenario} from "./personal-workspace-browser/conversation-image-request.mjs";
@@ -40,6 +41,7 @@ import { automationCadenceScenario } from "./personal-workspace-browser/automati
 import { turnStepsScenario } from "./personal-workspace-browser/turn-steps.mjs";
 import { monitorReadbackScenario } from "./personal-workspace-browser/monitor-readback.mjs";
 import { teamEvidenceScenario } from "./personal-workspace-browser/team-evidence.mjs";
+import { taskInspectorReturnScenario } from "./personal-workspace-browser/task-inspector-return.mjs";
 import { managedGoalResultsScenario } from "./personal-workspace-browser/managed-goal-results.mjs";
 import { loopxModeScenario } from "./personal-workspace-browser/loopx-mode.mjs";
 import { progressiveLoadingScenario } from "./personal-workspace-browser/progressive-loading.mjs";
@@ -77,9 +79,11 @@ scenarioCatalog.push(goalWorkMapScenario);
 scenarioCatalog.push(performanceDiagnosisScenario);
 scenarioCatalog.push(blockedNoticeSettingsScenario);
 scenarioCatalog.push(nativeChildActivityScenario);
+scenarioCatalog.push(privateStewardScopeScenario);
 scenarioCatalog.push(externalEvidenceReadbackScenario);
 scenarioCatalog.push(configurationBackupScenario);
 scenarioCatalog.push(prReviewAgentOrderScenario);
+scenarioCatalog.push(taskInspectorReturnScenario);
 const requestedScenario = process.env.LOOPX_PERSONAL_WORKSPACE_SCENARIO;
 const scenarios = requestedScenario
   ? scenarioCatalog.filter((scenario) => scenario.id === requestedScenario)
