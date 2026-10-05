@@ -67,6 +67,13 @@ def test_real_worker_generated_guard_selection_reentry_and_settle_once(tmp_path,
         assert len(captures) == 1
         full = json.loads(captures[0].read_text())
         assert first['action_signature']['matches']
+        detail = shlex.split(first['detail_ref']['full_decision'])
+        assert detail[:2] == ['cat', '--']  # Depends on the saved-detail reader contract.
+        receipts = _heartbeat_receipt_count(runtime, TURN_ID)
+        readback = subprocess.run(detail, env=env, cwd=project, capture_output=True,
+                                  text=True, check=True)
+        assert json.loads(readback.stdout) == full
+        assert _heartbeat_receipt_count(runtime, TURN_ID) == receipts
     else:
         assert not root.exists()
         full = first
