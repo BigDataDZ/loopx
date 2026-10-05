@@ -1489,12 +1489,22 @@ Post-turn accounting protocol:
   registered project root. This lets validated non-repository work settle
   without inventing a repository, including peer research and material work.
   The existing Todo claim/lease and completion validator still apply; local
-  delivery is not `same_agent_non_delivery`. A Git peer delivery still requires
+  identity does not waive causal delivery requirements. A Git peer delivery still requires
   an `independent_git_worktree`. An explicit Git task repository or an explicit
   owner isolation requirement rejects a local Goal receipt. An outside-root
   workspace cannot produce that local receipt. For originless Git, the checkout
   root must equal the registered project root; nested repositories, linked
   worktrees, invalid/empty origins and failed Git config reads cannot fall back.
+- `quota should-run` also recognizes explicitly declared local material work:
+  `same_agent_non_delivery`, a non-code task domain, no task repository, and all
+  relative Todo write scopes contained by absolute Goal grants rooted at the
+  observed local project. These peer tasks keep their write scopes and use the
+  existing local Goal delivery snapshot instead of requiring a Git worktree.
+  Exact paths and recursive directory grants qualify; complex absolute globs
+  do not. Outside-root work receives a return-to-Goal diagnostic. Code work,
+  foreign repositories, undeclared contracts and explicit isolation policies
+  retain their existing guards. This changes local peer material admission,
+  not authorization, claim/lease rules or causal settlement requirements.
 - `todo complete --evidence <pointer>` can record a validated local artifact.
   `--result-file` additionally requires approved Goal acceptance criteria bound
   to that Todo. A standalone Todo validator does not establish Goal acceptance;

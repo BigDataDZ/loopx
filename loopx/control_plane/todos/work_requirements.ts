@@ -2,9 +2,45 @@
  * These validate requirements, never grant capabilities or write authority. */
 import type { JsonObject } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
-import { optionalNonEmptyString, requireStringArray } from "../runtime_decode.ts";
+import { optionalNonEmptyString, requireJsonObject, requireStringArray } from "../runtime_decode.ts";
 import { compactPythonWhitespace, stripPythonWhitespace } from "../coordination/todo_agents.ts";
 import { normalizeWriteScopes } from "../work_items/task_lease_acquire.ts";
+import { isAbsolute, resolve, sep } from "node:path";
+
+/** A Goal-local declaration keeps relative Todo scopes. Absolute Goal grants
+ * are projected only against the observed local Goal root, never by suffix or
+ * against a different repository. This is a read projection, not a grant. */
+export function projectGoalLocalWriteScopes(value: JsonObject): JsonObject {
+  const root = optionalNonEmptyString(value.project_root, "project_root");
+  const empty = { admitted: false, allowed_write_scopes: [] };
+  if (!root || !isAbsolute(root) || value.todo == null) return empty;
+  const todo = requireJsonObject(value.todo, "local write Todo");
+  if (todo.task_repository || !todo.task_domain || todo.task_domain === "code" ||
+    todo.continuation_policy !== "same_agent_non_delivery") return empty;
+  const required = requireStringArray(todo.required_write_scopes ?? [], "required_write_scopes");
+  if (!required.length || required.some(scope => !normalizeWriteScopes([scope]).length ||
+    scope.includes("\\") || scope.split("/").includes("."))) return empty;
+  const prefix = resolve(root).replaceAll(sep, "/").replace(/\/+$/, "") + "/";
+  const allowed: string[] = [];
+  for (const raw of requireStringArray(value.allowed_scopes ?? [], "allowed_scopes")) {
+    const scope = raw.replaceAll(sep, "/");
+    // Do not resolve a grant's dot segments: that would change its authority.
+    if (!scope.startsWith(prefix) || scope.includes("\\") || scope.split("/").some(part => part === "." || part === "..")) continue;
+    const relative = scope.slice(prefix.length);
+    if (!normalizeWriteScopes([relative]).length) continue;
+    // Exact paths and recursive directory grants have unambiguous containment.
+    // Complex glob grants stay on their existing path rather than widening here.
+    const base = relative.endsWith("/**") ? relative.slice(0, -3) : relative;
+    if (/[\[*?]/.test(base)) continue;
+    if (!allowed.includes(relative)) allowed.push(relative);
+  }
+  return {
+    admitted: required.every(scope => allowed.some(grant =>
+      scope === grant || (grant.endsWith("/**") && scope.startsWith(grant.slice(0, -2))))),
+    allowed_write_scopes: allowed,
+    workspace_repair_action: "move_to_goal_workspace",
+  };
+}
 
 function optionalText(value: unknown, label: string): string | null {
   const raw = optionalNonEmptyString(value, label);

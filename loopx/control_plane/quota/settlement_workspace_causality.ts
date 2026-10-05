@@ -9,6 +9,7 @@ import {
 } from "../coordination/coordination_state_contract.generated.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
 import { requireJsonObject as requiredObject } from "../runtime_decode.ts";
+import { projectGoalLocalWriteScopes } from "../todos/work_requirements.ts";
 
 export const DELIVERY_WORKSPACE_CAUSALITY_SCHEMA_VERSION =
   DELIVERY_WORKSPACE_CAUSALITY_SCHEMA;
@@ -38,6 +39,7 @@ export interface DeliveryWorkspaceCausality extends JsonObject {
 }
 
 type DeliveryWorkspaceCausalityOperation =
+  | "goal_local_write_scopes"
   | "classify"
   | "normalize"
   | "event_fields"
@@ -140,7 +142,7 @@ function operation(value: unknown): DeliveryWorkspaceCausalityOperation {
     value === "classify" || value === "normalize" ||
     value === "event_fields" || value === "missing_workspace" ||
     value === "settlement_requirement" ||
-    value === "from_event"
+    value === "from_event" || value === "goal_local_write_scopes"
   ) return value;
   throw new EffectRuntimeRequestError("delivery workspace causality operation is unsupported");
 }
@@ -349,6 +351,9 @@ export function evaluateDeliveryWorkspaceCausality(value: unknown): JsonObject {
     request.expected_todo_id,
     "expected_todo_id",
   );
+  if (selectedOperation === "goal_local_write_scopes") {
+    return result({ local_write_scopes: projectGoalLocalWriteScopes(request) });
+  }
   if (selectedOperation === "classify") {
     return result({
       causality: classifyDeliveryWorkspaceCausality(

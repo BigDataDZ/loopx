@@ -323,10 +323,13 @@ def _peer_work_requires_isolated_workspace(
     agent_todo_summary: dict[str, Any] | None,
     *,
     selected_todo: dict[str, Any] | None = None,
+    local_write_scope_admitted: bool = False,
 ) -> bool:
     explicit = workspace_guard_policy.get("peer_independent_worktree_required")
     if explicit is not None:
         return explicit is True
+    if local_write_scope_admitted:
+        return False
     candidate = (
         selected_todo
         if isinstance(selected_todo, dict) and selected_todo
@@ -344,6 +347,44 @@ def _peer_work_requires_isolated_workspace(
     )
 
 
+def observe_goal_local_write_scopes(
+    goal: dict[str, Any],
+    selected_todo: dict[str, Any] | None,
+    allowed_write_scopes: list[str] | None = None,
+) -> dict[str, Any]:
+    """Read physical Goal identity once; typed work requirements own admission."""
+    empty = {"admitted": False, "allowed_write_scopes": []}
+    if (
+        not selected_todo
+        or selected_todo.get("task_repository")
+        or selected_todo.get("continuation_policy") != "same_agent_non_delivery"
+        or not selected_todo.get("required_write_scopes")
+    ):
+        return empty
+    repo = goal.get("repo") or goal.get("project") or goal.get("root")
+    goal_id = goal.get("goal_id") or goal.get("id")
+    if not repo or not goal_id:
+        return empty
+    root = Path(str(repo)).expanduser()
+    if not root.is_absolute():
+        return empty
+    snapshot = capture_delivery_workspace(
+        root, local_goal_id=str(goal_id), local_project_root=root
+    )
+    if not snapshot or snapshot.get("identity_kind") != "local_goal":
+        return empty
+    boundary = goal.get("coordination") or {}
+    raw_scopes = boundary.get("write_scope") if isinstance(boundary, dict) else None
+    scopes = allowed_write_scopes if allowed_write_scopes is not None else raw_scopes
+    if not isinstance(scopes, list) or any(not isinstance(scope, str) for scope in scopes):
+        return empty
+    from ..quota.settlement_workspace_causality import project_goal_local_write_scopes
+
+    # Physical identity is resolved above. Scope authority stays relative to the
+    # registered spelling, including an explicit symlink alias of that root.
+    return project_goal_local_write_scopes(str(root), selected_todo, scopes)
+
+
 def build_agent_workspace_guard(
     goal: dict[str, Any],
     agent_identity: dict[str, Any] | None,
@@ -351,6 +392,7 @@ def build_agent_workspace_guard(
     agent_todo_summary: dict[str, Any] | None = None,
     selected_todo: dict[str, Any] | None = None,
     current_path: Path | None = None,
+    local_write_scopes: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not isinstance(agent_identity, dict):
         return None
@@ -361,18 +403,50 @@ def build_agent_workspace_guard(
     )
     if len(agent_identity.get("registered_agents") or []) <= 1:
         return None
-    if not _peer_work_requires_isolated_workspace(
-        workspace_guard_policy,
-        agent_todo_summary,
-        selected_todo=selected_todo,
-    ):
-        return None
     current_path = current_path or Path.cwd()
     candidate = (
         selected_todo
         if isinstance(selected_todo, dict) and selected_todo
         else next(iter(_peer_candidate_items(agent_todo_summary)), {})
     )
+    local = (
+        local_write_scopes
+        if local_write_scopes is not None
+        else observe_goal_local_write_scopes(goal, candidate)
+    )
+    root = goal.get("repo") or goal.get("project") or goal.get("root")
+    local_admitted = local.get("admitted") is True
+    if local_admitted and root:
+        current = capture_delivery_workspace(
+            current_path,
+            local_goal_id=str(goal.get("goal_id") or goal.get("id")),
+            local_project_root=Path(str(root)),
+        )
+        local_admitted = bool(current and current.get("identity_kind") == "local_goal")
+        if (
+            not local_admitted
+            and workspace_guard_policy.get("peer_independent_worktree_required")
+            is not False
+        ):
+            return {
+                "schema_version": AGENT_WORKSPACE_GUARD_SCHEMA_VERSION,
+                "source": "quota.should-run",
+                "action": local["workspace_repair_action"],
+                "current_workspace": "foreign_workspace",
+                "required_workspace": "local_goal_workspace",
+                "blocks_delivery": True,
+                "agent_id": agent_identity.get("agent_id"),
+                "repository_source": "goal.repo",
+                "reason": "declared local writes must run from the registered Goal workspace",
+                "required_action": "return to the registered Goal project and rerun quota should-run before local writes",
+            }
+    if not _peer_work_requires_isolated_workspace(
+        workspace_guard_policy,
+        agent_todo_summary,
+        selected_todo=selected_todo,
+        local_write_scope_admitted=local_admitted,
+    ):
+        return None
     task_repository = normalize_todo_task_repository(candidate.get("task_repository"))
     current_workspace = ""
     repository_source = "goal.repo"
