@@ -187,7 +187,7 @@ def member_literal_sites(source: str, members: frozenset[str]) -> list[int]:
     return [
         node.lineno
         for node in ast.walk(tree)
-        if (folded := folded_value(node)) == ("members", members)
+        if folded_value(node) == ("members", members)
     ]
 
 
