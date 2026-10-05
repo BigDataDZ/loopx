@@ -119,7 +119,7 @@ def source_context_target_authority(
     return _source_context_grant(runtime_root, session, turn, [target])
 
 
-def _source_registry_recipients(registry_path: Path | None, *, context_only: bool = False) -> dict:
+def _source_registry_recipients(registry_path: Path | None, *, context_only: bool = False) -> dict[str, Any]:
     if registry_path is None:
         raise ValueError("context source registry unavailable")
     registry = load_project_registry(registry_path)
@@ -156,16 +156,17 @@ def _source_registry_recipients(registry_path: Path | None, *, context_only: boo
 
 
 def source_execution_bindings(
-    runtime_root: Path, registry_path: Path | None, session: dict, turn: dict
-) -> dict:
+    runtime_root: Path, registry_path: Path | None, session: dict[str, Any], turn: dict[str, Any]
+) -> dict[str, Any]:
     """Observe one compatible registry; TS owns sender and exact binding grants."""
     if conversation_scope(session, origin=turn.get("origin", "unknown"))["kind"] != "external_audience":
         return {"bindings": []}
     observed = _source_registry_recipients(registry_path)
     ingress, source = external_source_policy(runtime_root, session, turn)
-    return effect_runtime_result("collaboration.source.execution_bindings", {
+    result: dict[str, Any] = effect_runtime_result("collaboration.source.execution_bindings", {
         "source": source, "sender_id": ingress["sender_id"], "available": observed["available"],
     })
+    return result
 
 
 def source_context_authority(

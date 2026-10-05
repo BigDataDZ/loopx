@@ -21,7 +21,7 @@ from test_local_delegation import brief, wait, service as delegation_service  # 
 from test_independent_delegation_validation import independent_binding
 
 
-def source(root, registry, *, goal_id, agent_id, requester, binding, source_id="lark:exact-message"):
+def source(root, registry, *, goal_id, agent_id, requester, binding, source_id="lark:exact-message", semantic_brief=None):
     store = ChatSessionStore(root)
     session = store.create_session(goal_id="loopx-manager", agent_id="codex",
                                    adapter_kind="codex_app_server", upstream_thread_id="original",
@@ -36,7 +36,7 @@ def source(root, registry, *, goal_id, agent_id, requester, binding, source_id="
     register_ingress(root, session_id=session["session_id"], client_turn_id=turn["client_turn_id"],
                      channel=session["channel_id"], sender_id="owner", message=turn["message"],
                      source_id=source_id)
-    request = {"goal_id": goal_id, "agent_id": agent_id, "execution_binding_id": binding, "brief": brief()}
+    request = {"goal_id": goal_id, "agent_id": agent_id, "execution_binding_id": binding, "brief": brief() if semantic_brief is None else semantic_brief}
     receipt = deliver(root, registry, session=session, turn=turn, request=request)
     return store, session, turn, request, receipt, policy
 
@@ -94,7 +94,8 @@ def test_exact_catalog_and_launch_keep_original_conversation_and_operation(flow)
     assert dispatch(flow)["status"] == "prepared"
     assert started[0][1] == "context-" + receipt["request_id"]
     assert started[0][3]["conversation"] == {"session_id": session["session_id"], "turn_id": turn["turn_id"]}
-    assert receipt["request_id"] in started[0][2]["return_requirement"]
+    assert started[0][2] == request["brief"]
+    assert started[0][3]["source_request_id"] == receipt["request_id"]
     assert dispatch(flow)["replayed"]
     assert len(started) == 1
 
@@ -204,7 +205,22 @@ def test_stop_during_preview_and_context_only_selection_do_not_launch(flow, monk
     assert "尚未启动执行" in execution.handoff_message(receipt, {"submitted": False})
 
 
-def test_governed_worker_adopts_original_request_and_returns_without_another_model_turn(delegation_service):  # noqa: F811
+def budget_brief(boundary):
+    semantic = brief()
+    if boundary == "return_field":
+        semantic["return_requirement"] = "r" * 2000
+    else:
+        semantic["context"] = "c" * 6000
+        semantic["constraints"] = ["x" * 1000] * 8
+        semantic["return_requirement"] = "r" * 1000
+        current = len(json.dumps(semantic, ensure_ascii=False, separators=(",", ":")).encode())
+        semantic["constraints"].append("x" * (15800 - current - 3))
+        assert len(json.dumps(semantic, ensure_ascii=False, separators=(",", ":")).encode()) == 15800
+    return semantic
+
+
+@pytest.mark.parametrize("boundary", ["short", "return_field", "encoded_total"])
+def test_governed_worker_adopts_original_request_and_returns_without_another_model_turn(delegation_service, boundary):  # noqa: F811
     root, service = delegation_service
     independent_binding(delegation_service)
     registry = service.registry
@@ -216,7 +232,7 @@ def test_governed_worker_adopts_original_request_and_returns_without_another_mod
     data["goals"][0]["spawn_policy"] = {"execution_config": ".loopx/config/delegations.json"}
     registry.write_text(json.dumps(data))
     store, session, turn, request, receipt, _ = source(service.root, registry, goal_id=service.goal_id,
-        agent_id="analyst", requester="lead", binding="analysis")
+        agent_id="analyst", requester="lead", binding="analysis", semantic_brief=budget_brief(boundary))
     # The fixture receiver (not the Chat caller) reads, decides and returns the
     # original owner request as well as its separately accepted peer result.
     host = root / "fixture-host.py"
@@ -225,8 +241,11 @@ def test_governed_worker_adopts_original_request_and_returns_without_another_mod
     statement = (
         "from loopx.control_plane.collaboration.peers import read_inbox\n"
         "from loopx.capabilities.manager_context.roundtrip import report\n"
-        "for item in read_inbox(root / 'runtime', root / 'registry.json', envelope['goal_id'], actor)['items']:\n"
-        "    if item.get('source_kind') != 'peer':\n"
+        "source_id = delegation['source_request_id']\n"
+        "items = read_inbox(root / 'runtime', root / 'registry.json', envelope['goal_id'], actor)['items']\n"
+        "assert any(item['request_id'] == source_id for item in items)\n"
+        "for item in items:\n"
+        "    if item['request_id'] == source_id:\n"
         "        acknowledge(root / 'runtime', envelope['goal_id'], actor, item['request_id'], 'adopt', 'Receiver independently read the original scope.')\n"
         "        report(root / 'runtime', envelope['goal_id'], actor, item['request_id'], 'conclusion', 'Independent fixture result returned to the original request.')\n"
     )
@@ -259,3 +278,78 @@ def test_governed_worker_adopts_original_request_and_returns_without_another_mod
         request=new_request, receipt=new_receipt, execution_allowed=lambda: True)
     assert not refused["submitted"] and refused["reason"] == "execution_not_launchable", refused
     assert (Path(worker.binding("analysis")["workspace"]) / "host-invocations").read_text() == "1"
+
+
+@pytest.mark.parametrize("boundary", ["return_field", "encoded_total"])
+def test_legal_brief_budget_survives_real_chat_dispatch(delegation_service, monkeypatch, boundary):  # noqa: F811
+    """Internal return routing must not consume a caller's semantic budget."""
+    from loopx.control_plane.collaboration.inbox import normalize_request, _read
+
+    root, service = delegation_service
+    independent_binding(delegation_service)
+    data = json.loads(service.registry.read_text())
+    project = Path(data["goals"][0]["repo"])
+    config = project / ".loopx/config/delegations.json"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_bytes(service.config.read_bytes())
+    data["goals"][0]["spawn_policy"] = {"execution_config": ".loopx/config/delegations.json"}
+    service.registry.write_text(json.dumps(data))
+    semantic = budget_brief(boundary)
+    semantic = normalize_request({"goal_id": service.goal_id, "agent_id": "analyst", "brief": semantic})["brief"]
+    store, session, turn, request, _, _ = source(service.root, service.registry,
+        goal_id=service.goal_id, agent_id="analyst", requester="lead", binding="analysis", semantic_brief=semantic)
+    # Let the production Chat adapter deliver and call the real start owner,
+    # but keep this admission oracle separate from the actual worker test.
+    started = []
+    monkeypatch.setattr(execution.Delegations, "_spawn", lambda _, operation: started.append(operation))
+    from loopx.chat_runtime import ChatRuntimeController
+    import loopx.chat_manager_context as manager_context
+    controller = ChatRuntimeController(store=store, codex_bin="codex", registry_path=service.registry,
+                                       manager_scope_resolver=lambda _: [service.goal_id])
+    store.update_session(session["session_id"], manager_authorization_scope_id="fixture-scope")
+    monkeypatch.setattr(manager_context, "collect_manager_turn_context", lambda *_, **__: {
+        "coverage": {}, "goals": [], "authorization_scope_id": "fixture-scope"})
+    model_calls = []
+    class Adapter:
+        upstream_thread_id = "fixture-upstream"
+        def start_turn(self, message, sink):
+            assert "context_execution" in message and '"binding_id": "analysis"' in message
+            model_calls.append(message)
+            return {"context_handoff": request, "proposals": [], "gate": None, "message": "Preparing work"}
+        def close_session(self):
+            pass
+    try:
+        controller._run_turn(session_id=session["session_id"], turn_id=turn["turn_id"],
+                             message=turn["message"], attachments=[], adapter=Adapter())
+        completed = store.load_turn(session["session_id"], turn["turn_id"])
+        assert completed["status"] == "completed", completed
+        response = completed["response"]
+        assert len(model_calls) == 1
+    finally:
+        controller.close()
+    assert response["context_handoff_receipt"]["status"] == "delivered"
+    assert response["context_execution"]["submitted"], response
+    worker, binding = execution._service(service.root, service.registry, {"goal_id": service.goal_id,
+        "agent_id": "analyst", "requester_agent_id": "lead", "binding_id": "analysis"})
+    operation = response["context_execution"]["operation_id"]
+    row = _read(worker.path(operation))
+    bootstrap = worker._delegation_bootstrap(row, binding)
+    assert bootstrap["brief"] == request["brief"]
+    assert response["context_handoff_receipt"]["request_id"] in bootstrap["instruction"]
+    assert started == [operation]
+    assert bootstrap["source_request_id"] == response["context_handoff_receipt"]["request_id"]
+    before = worker.path(operation).read_bytes()
+    # Another legitimate request with the same brief cannot replace the cause
+    # of this operation; invalid/mismatched references fail before dispatch.
+    _, _, _, _, other, _ = source(service.root, service.registry, goal_id=service.goal_id,
+        agent_id="analyst", requester="lead", binding="analysis", source_id="lark:other", semantic_brief=semantic)
+    with pytest.raises(ValueError, match="identity conflict"):
+        worker.start("analysis", operation, semantic, source_request_id=other["request_id"])
+    with pytest.raises(ValueError, match="invalid context request id"):
+        worker.start("analysis", "invalid-source", semantic, source_request_id="../outside")
+    with pytest.raises(ValueError, match="source request brief"):
+        worker.start("analysis", "mismatched-source", brief(), source_request_id=other["request_id"])
+    assert worker.path(operation).read_bytes() == before
+    assert started == [operation]
+    assert not worker.path("invalid-source").exists() and not worker.path("mismatched-source").exists()
+    assert not (Path(binding["workspace"]) / "host-invocations").exists()

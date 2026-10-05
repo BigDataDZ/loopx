@@ -103,15 +103,9 @@ def dispatch(root: Path, registry: Path, *, session: dict[str, Any], turn: dict[
         # preview. Delegations.start itself rechecks the exact binding and Turn.
         if not execution_allowed() or grant not in _grants(root, registry, session, turn):
             raise ValueError("source execution grant changed before launch")
-        requirement = (
-            "\nOriginal owner inbox request " + receipt["request_id"] + ": read its original context, "
-            "independently acknowledge adopt/defer/reject, and return an audience-safe conclusion "
-            "for that exact request with manager-inbox report. A peer return alone does not reply "
-            "to the original conversation. Final prose is not a receipt."
-        )
-        brief = {**request["brief"], "return_requirement": request["brief"]["return_requirement"] + requirement}
-        result = service.start(selected, operation, brief,
-                               conversation={"session_id": session["session_id"], "turn_id": turn["turn_id"]})
+        result = service.start(selected, operation, request["brief"],
+                               conversation={"session_id": session["session_id"], "turn_id": turn["turn_id"]},
+                               source_request_id=receipt["request_id"])
         return {"submitted": True, "operation_id": operation, "todo_id": binding["todo_id"],
                 "status": result["status"], "runtime_readiness": preflight["state"], "replayed": False}
     except (OSError, ValueError, KeyError, TypeError, EffectRuntimeRejected):

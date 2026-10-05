@@ -54,6 +54,11 @@ reported as ready, running or complete. Known unavailability or refused task
 admission does not launch. Retry preserves `context-<original-receipt-id>` and
 does not resume, reset or replace a stopped/completed operation.
 
+The original brief and its field/encoded-byte limits remain unchanged. The trusted
+host binds the original inbox request in the existing operation identity and
+receiver bootstrap instructions, outside user-authored fields. Replay preserves
+that binding; it cannot substitute another request.
+
 The receiver independently reads/adopts the original inbox request and returns
 an audience-safe conclusion with the existing `manager-inbox report` path, in
 addition to its peer result. Launch submission, receiver conclusion, canonical
