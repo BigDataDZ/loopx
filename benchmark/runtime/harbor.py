@@ -392,9 +392,7 @@ class BenchmarkCodex(CodexOffline):
         text = (
             f"[P0] Execute benchmark phase {self._phase_number}. Read the exact "
             f"current task from {self._task_document}; inspect the workspace, implement and "
-            "validate it against the task requirements. Continue cohesive work within "
-            "this Todo; create successors for distinct outcomes or actual handoffs, "
-            "not merely to end a wake. Preserve task-defined validation and stop gates."
+            "validate it."
         )
         if self._seeded_todo_id:
             listed = await self._loopx(environment, [
