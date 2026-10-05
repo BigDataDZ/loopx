@@ -1649,25 +1649,15 @@ class ChatRuntimeController:
                 event_buffer.close()
                 return
             if response.get("context_handoff") is not None:
-                from .capabilities.manager_context import deliver
+                from .capabilities.manager_context.execution import handoff_response
                 if scope["kind"] == "unavailable":
                     raise ValueError("context handoff requires a scoped conversation")
-                try:
-                    if scope["kind"] == "external_audience" and (
-                        self.manager_scope_resolver is None or not self.manager_scope_resolver(session)
-                    ):
-                        raise ValueError("manager connection authority is no longer available")
-                    receipt = deliver(self.coordination_runtime_root, self.registry_path,
-                                      session=session, turn=self.store.load_turn(session_id, turn_id) or {},
-                                      request=response["context_handoff"])
-                    response = {**response, "proposals": [], "gate": None,
-                                "context_handoff_receipt": receipt,
-                                "message": ("已将交办说明和原消息交给 " if response["context_handoff"].get("brief") else "已将原消息交给 ") + receipt["agent_id"] +
-                                "。材料已进入收件箱，后续处理结论会自动回到这里。"
-                                "（委托 " + receipt["request_id"][:8] + "）"}
-                except (OSError, ValueError):
-                    response = {**response, "proposals": [], "gate": None,
-                                "message": "材料尚未转交：目标绑定、来源授权或持久收件回读未通过。需要修复交接链路；没有改动任务或优先级。"}
+                response = handoff_response(
+                    self.coordination_runtime_root, self.registry_path, session=session,
+                    turn=self.store.load_turn(session_id, turn_id) or {}, response=response,
+                    source_authorized=lambda: scope["kind"] != "external_audience" or bool(
+                        self.manager_scope_resolver and self.manager_scope_resolver(session)),
+                    execution_allowed=lambda: not execution_ended())
             response = offer_team_plan_confirmation(
                 store=self.store,
                 session=session,
