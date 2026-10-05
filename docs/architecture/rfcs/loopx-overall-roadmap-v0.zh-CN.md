@@ -94,7 +94,7 @@ managed 与 attached 的工作对话都应能持续在 LoopX 中进行：沿用�
 
 [飞书个人事项跟进 profile](../../product/use-cases/office-operations/personal-follow-through.zh-CN.md) 是[管家 RFC](capable-manager-semantic-handoff-v0.zh-CN.md)在 S1/S5/S6/S8/S9 的有界应用。通用授权、持续跟进和返回沿用管家既有验收；场景文档保留来源理解与评测。原独立提案已归并，安装版私有桌面流程仍待验收，不关闭已有门槛。
 
-S6/S8 的有界来源读取切片提供[现有 Ego Page 的只读 MCP adapter](../../integrations/ego-source-reader.md)。它只返回受限 origin 与确切 URL 下的渲染文本，不创建会话、材料 authority 或浏览器服务。原生 Bot 调用和渠道回复须与模拟传输测试分开验收；验证墙、截断、图片及引用原帖的未核验状态保留，不以文本提取关闭整个材料工作流。
+S6/S8 的有界来源读取切片提供[现有 Ego Page 的只读 MCP adapter](../../integrations/ego-source-reader.md)。它返回受限 origin 与确切 URL 下的渲染文本、图片索引，以及按序号读取的单张渲染图片区域；不创建会话、材料 authority 或浏览器服务。原生 Bot 已验证单图内容消费；原渠道回复须独立验收。单图不证明全部图片、完整原文或引用原帖已读。来源捕获、验证墙、截断、未加载图片与可选 provider 设置入口仍保留各自的验收边界，不以文本或单图提取关闭整个材料工作流。
 
 ## 3. 组合里程碑、资源次序与完成定义
 

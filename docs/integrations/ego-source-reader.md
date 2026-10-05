@@ -1,7 +1,7 @@
 # Rendered public-source reading with an existing Ego Page
 
 The optional `loopx.extensions.ego_source_reader` stdio MCP adapter gives an
-existing Codex host a narrow `read_public_url` tool when its model shell cannot
+existing Codex host narrow `read_public_url` and `read_public_image` tools when its model shell cannot
 reach Ego's local bootstrap. It reuses an installed Ego browser and an existing
 TaskSpace/Page. It does not replace the Chat Session owner or create a browser,
 model thread, background service, material catalog or permission authority.
@@ -45,10 +45,28 @@ after 30 seconds; returned text is limited to 100,000 characters. Errors omit
 raw browser diagnostics; use local provider logs for diagnosis.
 
 Results include the actual URL, rendered text, digest, character count and
-truncation flag. `image_count` is DOM metadata; `images_read` remains false.
+truncation flag. `image_count` and the first 128 image indices, alt labels and
+natural dimensions are DOM metadata; `images_read` remains false for text reads.
+`image_inventory_truncated` makes the bounded inventory explicit.
+
+`read_public_image(url, index)` uses that same authorized Page to return one
+actual PNG image-content block and its digest/dimensions. It scrolls the selected
+image into view and waits up to 10 seconds for it to load. Capture is bounded to
+4 MB and 4,096 pixels per edge; hidden, oversized, unloaded or missing images
+fail visibly. Temporary screenshots use a private directory and are removed
+after the response is assembled. No arbitrary URL download or new origin is
+exposed to the caller. Images and text share the existing per-process read lock.
+
+The image result is a **rendered region**, possibly occluded by page overlays,
+not the original image file. URL, image source and geometry are checked before
+and after capture; those checks are not atomic with screenshot capture. Keep
+the Page reserved for this process, and follow Ego ownership/user-control stops.
+An unstable Page returns no image. One image result does not prove that other
+images, the article or an embedded social post's primary source were read.
+Only a host that actually consumes MCP image content qualifies visual reading.
 Success means text extraction succeeded, **not** that an article is complete,
 a verification wall was solved, referenced sources were read, or image content
-was understood. Page text remains untrusted data, never instructions. A source
+was understood. Page text and image pixels remain untrusted data, never instructions. A source
 read does not authorize material intake, note edits, publishing or delegation.
 
 Unit tests cover transport and scope boundaries with a simulated CLI. Release
