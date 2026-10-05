@@ -147,6 +147,7 @@ def test_lifecycle_only_registry_cannot_authorize_host_execution(flow):
     data["profile_id"] = SOURCE_SESSION_PROFILE_ID
     registry.write_text(json.dumps(data))
     assert execution.catalog(root, registry, session, turn)["available"] is False
+    assert execution.catalog(root, None, session, turn)["available"] is False
     assert dispatch(flow)["submitted"] is False
     assert not started
 

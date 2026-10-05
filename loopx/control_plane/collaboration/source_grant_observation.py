@@ -117,7 +117,9 @@ def source_context_target_authority(
     return _source_context_grant(runtime_root, session, turn, [target])
 
 
-def _source_registry_recipients(registry_path: Path) -> dict:
+def _source_registry_recipients(registry_path: Path | None) -> dict:
+    if registry_path is None:
+        raise ValueError("context source registry unavailable")
     registry = load_project_registry(registry_path)
     if not isinstance(registry, dict):
         raise ValueError("invalid registry")
@@ -128,7 +130,7 @@ def _source_registry_recipients(registry_path: Path) -> dict:
 
 
 def source_execution_bindings(
-    runtime_root: Path, registry_path: Path, session: dict, turn: dict
+    runtime_root: Path, registry_path: Path | None, session: dict, turn: dict
 ) -> dict:
     """Observe one compatible registry; TS owns sender and exact binding grants."""
     if conversation_scope(session, origin=turn.get("origin", "unknown"))["kind"] != "external_audience":
