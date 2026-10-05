@@ -162,9 +162,18 @@ urgency, reader action, or evidence maturity differs.
 
 Rerank from revision-bound Decision Context evidence.
 
-- Protect pinned entries and the project's declared stable prefix.
+- Protect explicitly pinned entries and the project's declared stable prefix;
+  a visible Top-N alone does not declare either protection.
 - Limit moved entries and rank displacement unless the owner explicitly
   approves a structural rebuild.
+- For one ranked material's evidence-backed move, use
+  `plan_material_single_move` with the complete ranked set, including backlog.
+  Preserve all other relative order and use its exact interval bounds in the
+  existing proposal. Recompute that preview before apply; do not relax the
+  constraints of a historical proposal.
+- Use `material_rerank_receipt_chunks` when a transition affects more than 100
+  refs. Build all existing receipts before CAS and persist all after readback;
+  verify complete coverage under the same proposal, revisions and owner gate.
 - Distinguish a rank move from lifecycle change and from new candidate intake.
 - Emit a no-change proposal when evidence does not justify movement.
 - Keep proposal and apply receipt separate.
@@ -239,8 +248,10 @@ A complete material operation reports:
 
 Stop without mutating the source when:
 
-- the project or goal is ambiguous;
-- Material Lifecycle is not explicitly active for the selected goal;
+- the project or current execution owner is ambiguous;
+- Material Lifecycle is not explicitly active for the selected Goal or the
+  ordinary project's source profile with its existing Core write grant;
+- a project source route attempts Goal-only migration, rebuild or Explore;
 - source authority, backup, revision, or stable ids cannot be verified;
 - exact-read evidence conflicts with the proposed change;
 - overflow would be hidden rather than independently ranked;

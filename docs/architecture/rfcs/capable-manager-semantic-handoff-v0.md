@@ -1,10 +1,10 @@
 # RFC: Capable Agent Manager and Semantic Work Handoff (v0)
 
 - **RFC status:** Accepted
-- **Supersedes / closes:** none
+- **Supersedes / closes:** [Personal Follow-through independent proposal](personal-follow-through-v0.md)
 - **Delivery maturity:** Partial; private runtime profile, team-plan confirmation and Todo materialization shipped; complete M1–M4 remain unqualified.
 - **Authors / owners:** LoopX maintainers; manager engineering owner
-- **Created / last normative revision:** 2026-09-13 / 2026-09-15
+- **Created / last normative revision:** 2026-09-13 / 2026-10-04
 - **Implementation baseline:** `7eb4b7bb1661bd5eff63a8725a33169792d5964b`
 - **Language mirror:** [中文版](capable-manager-semantic-handoff-v0.zh-CN.md)
 - **Related contracts:** [Effect interpreter](agent-loop-effect-interpreter-v0.md), [Manager continuity](../../reference/protocols/manager-evidence-and-continuity-v0.md), [Goal Vision/Replan](../../reference/protocols/goal-vision-replan-contract-v0.md), [Desktop frontends](desktop-execution-frontends-v0.md), [Shared authority](shared-goal-authority-state-provider-v0.md), [Shared Goal alignment/amendment](shared-goal-alignment-and-governed-amendment-v0.md), [TS migration](typescript-control-plane-migration-v0.md)
@@ -587,6 +587,21 @@ Reuse existing capability instructions, context hooks, memory and scheduling own
 
 Parallel work does not imply isolated execution resources. Reuse runtime serialization/leases for shared browser screens or mutable workspaces, separately from Core work ownership. Separate screens, agent names or conversation tabs are not permission boundaries. If a runtime lacks the required coordination, serialize the affected operation and expose the wait; unrelated evidence work can continue. M1 reports actual resource behavior rather than assuming a shared cloud-computer design.
 
+### 5.11.1 Lark personal follow-through profile
+
+[Lark personal follow-through](../../product/use-cases/office-operations/personal-follow-through.md)
+is a bounded application of this manager contract. Personal commitment interpretation,
+source coverage, deadline evidence and attention-cost evaluation stay in the profile;
+shared lifecycle, standing grants, preparation, recovery and return belong to this
+RFC and its referenced typed owners. The profile explicitly maps to
+A3/A5–A10/A13–A15/A20 and existing M1–M4, superseding the independent personal M1–M3
+plan. Reuse canonical User/Agent Todos, existing proposals and artifact references;
+add no parallel state, scheduler or approval layer. Proactive triggers use the existing
+schedule/event path and actual grants. The profile's TypeScript/Node requirement is
+bounded and does not mandate unrelated repository-wide migration. Scenario CLI code,
+scripted tests and this consolidation close no acceptance; real-source and complete
+packaged journeys still require their own evidence.
+
 ### 5.12 Integration with alignment, authority and the TS kernel
 
 **Classify the requested change before selecting its writer.** Consultation can return evidence without a Todo. An in-intent lane correction uses the receiver's existing Vision/Replan/Todo path. A shared dependency or work-graph change that requires an amendment under the alignment contract uses its proposal/admission path; changing shared objective, acceptance, non-goals, permissions or stop conditions never becomes a lane edit merely because the manager requested it. Stage 2 admission has `canonical_effect: none`. Until the corresponding governed commit class is implemented and qualified, retain the proposal and report that precise execution gap; continue unrelated authorized work. Do not invent a manager commit endpoint, peer vote or additional routine human confirmation. Each amendment class requires its own qualified policy/verifier/commit path. The first Stage 3 `GoalAmendmentAuthority` slice authorizes only intent-preserving `shared_work_graph`; it cannot commit acceptance, non-goal, permission, objective or stop-condition changes. Once a class is separately qualified, reuse that class's commit owner, exact-basis CAS and receipt; peers rebase or receive the specified in-flight-work disposition.
@@ -783,6 +798,13 @@ working executor. Shared changes belong to the
 execution or approval authority. Replacing a tenant-controlled App on another
 machine requires a freshly authorized App; credentials, source transcripts and
 permission bindings do not travel as a workstation backup.
+
+**Ordinary writable-project prompt checkpoint (S5):** project Turns use their
+authorized workspace, AGENTS and skills without manager Goal discovery, drafting
+or context-delegation instructions. Session, grants and the existing response
+envelope remain unchanged; manager and execution guidance retain their prior
+contract. Native fake-host tests qualify instruction routing and continuity,
+not source-reading success, model latency or sustained installed operation.
 
 Deliver these through M1/M3 and the existing S5 journey, without adding a parallel
 milestone or treating a periodic heartbeat as realtime transport:
