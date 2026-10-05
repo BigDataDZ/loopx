@@ -13,7 +13,10 @@ from typing import Any
 from ...boundary_authority import normalize_checkpointed_boundary_authority_entries
 from ...file_lock import exclusive_file_lock
 from ...runtime import validate_goal_id_path_segment
-from ..projects.registry_codec import load_project_registry
+from ..projects.registry_codec import (
+    load_project_registry,
+    require_runtime_compatible_project_registry,
+)
 from ..goals.first_party_host_admission import FirstPartyHostGoalAdmission
 from .driver import selected_turn_todo, session_identity_fields
 
@@ -349,6 +352,9 @@ def approved_codex_workspace_write_resume(
         return False
     try:
         registry = load_project_registry(registry_path)
+        require_runtime_compatible_project_registry(
+            registry, operation="Codex workspace-write session resume"
+        )
         goals = [goal for goal in registry.get("goals", [])
                  if goal.get("id") == lineage["goal_id"] and goal.get("status") == "active"]
         if len(goals) != 1:
