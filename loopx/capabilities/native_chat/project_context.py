@@ -120,7 +120,9 @@ def coordination_runtime_root(registry_path: Path | None, chat_root: Path) -> Pa
     """
     if registry_path is None or not registry_path.exists():
         return chat_root
-    from ...registry import load_registry
+    from ...control_plane.projects.registry_codec import load_project_registry
     from ...paths import resolve_runtime_root
-    registry = load_registry(registry_path)
+    # Reading the registered storage root is lifecycle metadata observation.
+    # Session/Turn admission still enforces the runtime profile and Goal lifetime.
+    registry = load_project_registry(registry_path)
     return resolve_runtime_root(registry, registry_path=registry_path) if registry.get("common_runtime_root") else chat_root
