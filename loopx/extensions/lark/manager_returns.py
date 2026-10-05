@@ -75,7 +75,8 @@ def _resolve_return(
 
 def _return_inbox(*, root: Path, registry: Path, snapshot_provider: Callable[[], dict[str, Any]],
                   route: dict[str, Any], session: dict[str, Any], turn: dict[str, Any],
-                  cancelled: Callable[[], bool], private_transport: Any) -> tuple[Path, Callable[[], bool] | None, object, str]:
+                  cancelled: Callable[[], bool], private_transport: Any) -> tuple[Path, Path, Callable[[], bool] | None, object, str]:
+    project = root
     source_verifier: Callable[[], bool] | None
     destination: object
     if isinstance(session.get("steward_context"), dict):
@@ -90,6 +91,10 @@ def _return_inbox(*, root: Path, registry: Path, snapshot_provider: Callable[[],
             )
         try:
             config_path, record = private_transport.return_inbox(route=route, session=session, turn=turn)
+            # The original Inbox belongs to the private Chat transport. Its
+            # relative paths must not be resolved against the coordination
+            # root, which continues to own grants and returned-result state.
+            project = private_transport.runtime_root
         except (KeyError, ValueError, OSError) as exc:
             raise ReturnResolutionBlocked(
                 "original_route_unavailable", "original private source unavailable"
@@ -110,12 +115,12 @@ def _return_inbox(*, root: Path, registry: Path, snapshot_provider: Callable[[],
         source_verifier = None
         destination = (routing, target_config)
         message_id = route["source_id"].removeprefix("lark:")
-    config = load_lark_event_inbox_config(project=root, config_path=config_path)
+    config = load_lark_event_inbox_config(project=project, config_path=config_path)
     if message_id not in _load_processed(config["inbox_path"] / "processed.json"):
         raise ReturnResolutionBlocked(
             "initial_delivery_receipt_unavailable", "initial reply has not been acknowledged"
         )
-    return config_path, source_verifier, destination, message_id
+    return project, config_path, source_verifier, destination, message_id
 
 
 def send_return(
@@ -132,7 +137,7 @@ def send_return(
     delivery_attempt_recorder: Callable[[Mapping[str, str | None]], None] | None = None,
     private_transport: Any = None,
 ) -> dict[str, Any]:
-    def resolve() -> tuple[Path, Callable[[], bool] | None, object, str]:
+    def resolve() -> tuple[Path, Path, Callable[[], bool] | None, object, str]:
         return _return_inbox(
             root=root,
             registry=registry,
@@ -144,16 +149,16 @@ def send_return(
             private_transport=private_transport,
         )
 
-    config_path, source_verifier, destination, message_id = resolve()
+    project, config_path, source_verifier, destination, message_id = resolve()
     if runner is None and isinstance(session.get("steward_context"), dict):
         runner = private_transport._reply_runner
     def before_send(_intent: str) -> dict[str, bool]:
         current = resolve()
-        return {"continue_delivery": current[0] == config_path and current[2:] == (destination, message_id)}
+        return {"continue_delivery": current[:2] == (project, config_path) and current[3:] == (destination, message_id)}
 
     runner_kwargs: dict[str, Any] = {"runner": runner} if runner else {}
     return reply_lark_event_inbox(
-        project=root,
+        project=project,
         config_path=config_path,
         message_id=message_id,
         text=text,
@@ -183,7 +188,7 @@ def verify_return(
     cancelled: Callable[[], bool] = lambda: False,
     private_transport: Any = None,
 ) -> dict[str, Any]:
-    config_path, source_verifier, _destination, message_id = _return_inbox(
+    project, config_path, source_verifier, _destination, message_id = _return_inbox(
         root=root,
         registry=registry,
         snapshot_provider=snapshot_provider,
@@ -197,7 +202,7 @@ def verify_return(
         runner = private_transport._reply_runner
     runner_kwargs: dict[str, Any] = {"runner": runner} if runner else {}
     return verify_lark_inbox_reply(
-        project=root,
+        project=project,
         config_path=config_path,
         message_id=message_id,
         text=text,

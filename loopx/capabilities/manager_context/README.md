@@ -437,6 +437,10 @@ Revocation or changed provenance blocks the return; a later conversation cannot
 receive it. The same Inbox and manager-context receipt owners handle delivery
 and recovery; ordinary private replies and legacy Goal-channel routes retain
 their existing behavior.
+When Chat storage and the coordination runtime are separate, original Inbox
+ACK lookup, provider preview/send and saved-attempt verification use the Chat
+transport's own project root. Grants and result receipts remain in the canonical
+coordination runtime; neither root is moved and path containment stays enforced.
 
 When the provider returned a trustworthy message locator before readback failed,
 the same background pump persists that private attempt and later performs a

@@ -5,14 +5,40 @@ from types import SimpleNamespace
 import pytest
 from test_native_steward_private import steward, finish  # noqa: F401
 
-from loopx.capabilities.manager_context import POLICY_SCHEMA, _root, _write, deliver, register_ingress
+from loopx.capabilities.manager_context import POLICY_SCHEMA, _root, _write, deliver
 from loopx.chat_store import _atomic_write_json, _read_json
 from loopx.extensions.lark.manager_returns import LarkManagerReturnTransport
+from loopx.chat_store import ChatSessionStore
+from loopx.capabilities.manager_context import acknowledge
+from loopx.capabilities.manager_context.roundtrip import drain, report, reply_status
+
+
+@pytest.fixture(params=["shared", "separate"])
+def return_root(steward, request):  # noqa: F811
+    store, runtime, _, transport, _, _, _ = steward
+    root = transport.runtime_root if request.param == "shared" else store.root.parent / "coordination"
+    registry = json.loads(runtime.registry_path.read_text())
+    registry["common_runtime_root"] = str(root)
+    runtime.registry_path.write_text(json.dumps(registry))
+    runtime.coordination_runtime_root = root
+    return root
 
 
 @pytest.fixture(params=["native", "legacy"])
-def private_return(steward, request):  # noqa: F811
+def private_return(steward, request, return_root, monkeypatch):  # noqa: F811
     store, runtime, provider, transport, binding, _, _ = steward
+    if request.param == "legacy":
+        # Exercise historical provider provenance through the ingress writer,
+        # without rewriting a current receipt or changing the audience.
+        from loopx.capabilities import manager_context
+        register = manager_context.register_ingress
+
+        def legacy_ingress(root, **kwargs):
+            if kwargs["message"] == "Ask the authorized worker to assess the constraint":
+                kwargs["source_id"] = "lark:om_original"
+            register(root, **kwargs)
+
+        monkeypatch.setattr(manager_context, "register_ingress", legacy_ingress)
     transport.admit("steward-app", provider.event("steward-app", "delegate", "/delegate --tokens 12000 Inspect README"))
     transport.reconcile()
     proposal = transport.core.actions.store.list()[0]
@@ -30,12 +56,10 @@ def private_return(steward, request):  # noqa: F811
     session = store.load_session(row["session_id"])
     turn = store.load_turn(row["session_id"], row["turn_id"])
     target = {"goal_id": resources["goal_id"], "agent_id": "codex"}
-    _write(_root(transport.runtime_root) / "policy.json", {"schema_version": POLICY_SCHEMA, "sources": {
-        session["channel_id"]: {"local_delivery_scope": "selected", "sender_ids": [event["sender_id"]], "targets": [target]}}})
+    _write(_root(return_root) / "policy.json", {"schema_version": POLICY_SCHEMA, "sources": {
+        session["channel_id"]: {"local_delivery_scope": "selected", "sender_ids": [binding["operator_ref"]], "targets": [target]}}})
     source_id = row["request_ref"] if request.param == "native" else "lark:" + event["message_id"]
-    register_ingress(transport.runtime_root, session_id=session["session_id"], client_turn_id=turn["client_turn_id"],
-        channel=session["channel_id"], sender_id=event["sender_id"], message=turn["message"], source_id=source_id)
-    delivered = deliver(transport.runtime_root, runtime.registry_path, session=session, turn=turn, request=target)
+    delivered = deliver(return_root, runtime.registry_path, session=session, turn=turn, request=target)
     route = {**target, "request_id": delivered["request_id"], "session_id": session["session_id"], "source_id": source_id}
     original_runner = provider.__call__
     replies = []
@@ -53,7 +77,7 @@ def private_return(steward, request):  # noqa: F811
         if "--dry-run" in args:
             data = {"api": [{"body": {"msg_type": "post", "content": content}}]}
             if getattr(provider, "revoke_before_send", False):
-                _write(_root(transport.runtime_root) / "policy.json", {"schema_version": POLICY_SCHEMA, "sources": {}})
+                _write(_root(return_root) / "policy.json", {"schema_version": POLICY_SCHEMA, "sources": {}})
         else:
             replies.append(list(args))
             ref = "om_out_worker"
@@ -64,7 +88,7 @@ def private_return(steward, request):  # noqa: F811
     transport.runner = runner
     server = SimpleNamespace(registry_path=runtime.registry_path, lark_private_conversations=transport,
         lark_goal_topic_runtime=SimpleNamespace(snapshot_provider=lambda: pytest.fail("private return cannot use legacy Goal bindings")))
-    sender = LarkManagerReturnTransport(server, transport.runtime_root)
+    sender = LarkManagerReturnTransport(server, return_root)
     # The production transport uses this same profile-aware CLI runner.
     yield sender, session, turn, route, row, provider, transport, replies
 
@@ -123,11 +147,16 @@ def test_private_return_rejects_changed_authority_or_original_source(private_ret
         value["turn_id"] = "another-turn"
         _atomic_write_json(path, value)
     elif fault == "scope":
+        binding = transport._binding("steward-app")
+        transport.bindings.configure(transport_ref="steward-app", project_ref=binding["project_ref"],
+            executor_endpoint_id=binding["executor_endpoint_id"], context_kind="steward", goal_scope="selected")
+        # An explicit selected scope no longer includes the commissioned Goal.
+        # Empty goal_ids alone does not revoke the current all_registered default.
         value = transport.bindings.read()
         next(b for b in value["bindings"] if b["binding_id"] == row["binding_id"])["goal_ids"] = []
         _atomic_write_json(transport.bindings.path, value)
     elif fault == "policy":
-        _write(_root(transport.runtime_root) / "policy.json", {"schema_version": POLICY_SCHEMA, "sources": {}})
+        _write(_root(sender.root) / "policy.json", {"schema_version": POLICY_SCHEMA, "sources": {}})
     else:
         config, _ = transport.return_inbox(route=route, session=session, turn=turn)
         from loopx.extensions.lark.event_inbox import load_lark_event_inbox_config
@@ -139,3 +168,32 @@ def test_private_return_rejects_changed_authority_or_original_source(private_ret
     except ValueError:
         pass
     assert replies == []
+
+
+def test_production_pump_returns_to_original_private_source_after_restart(private_return):
+    sender, session, turn, route, _, provider, transport, replies = private_return
+    controller = transport.core.controller
+    store = controller.store
+    before_turns = sorted((store.root / "sessions" / session["session_id"] / "turns").glob("*.json"))
+    capture = store.root.parent.parent / "requests.jsonl"
+    before_host_calls = capture.read_bytes()
+    rid = route["request_id"]
+    acknowledge(sender.root, route["goal_id"], route["agent_id"], rid, "adopt", "Receiver independently accepts this scope")
+    report(sender.root, route["goal_id"], route["agent_id"], rid, "conclusion", "Verified worker result for the original private audience")
+    provider.verify_replies = False
+    drain(sender.root, controller.registry_path, store, sender)
+    assert len(replies) == 1
+    assert reply_status(sender.root, route)[0]["status"] == "verification_required"
+    provider.verify_replies = True
+    # Reload the actual Chat store; the persisted attempt drives read-only recovery.
+    from datetime import datetime, timedelta, timezone
+    recovered = ChatSessionStore(store.root.parent)
+    drain(sender.root, controller.registry_path, recovered, sender, now=datetime.now(timezone.utc) + timedelta(minutes=10))
+    assert reply_status(sender.root, route)[0]["status"] == "delivered"
+    assert len(replies) == 1
+    returned = [r for r in recovered.messages(session["session_id"]) if r.get("origin") == "manager_followup"]
+    assert len(returned) == 1 and returned[0]["turn_id"] == turn["turn_id"]
+    assert "Verified worker result" in returned[0]["text"]
+    assert "Receiver independently" not in returned[0]["text"]
+    assert sorted((store.root / "sessions" / session["session_id"] / "turns").glob("*.json")) == before_turns
+    assert capture.read_bytes() == before_host_calls
