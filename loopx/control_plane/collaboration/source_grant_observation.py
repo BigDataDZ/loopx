@@ -4,7 +4,9 @@ from pathlib import Path
 
 from ...agent_registry import registered_agent_ids_for_goal
 from ..goals.activation import goal_is_stopped
+from ..goals.goal_ref_validation import exact_goal_ref
 from ..projects.registry_codec import (
+    SOURCE_SESSION_PROFILE_ID,
     load_project_registry,
     require_runtime_compatible_project_registry,
 )
@@ -126,9 +128,33 @@ def source_context_authority(
         registry = load_project_registry(registry_path)
         if not isinstance(registry, dict):
             raise ValueError("invalid registry")
-        require_runtime_compatible_project_registry(
-            registry, operation="context source recipient observation"
-        )
+        if registry.get("profile_id") == SOURCE_SESSION_PROFILE_ID:
+            goals = registry.get("goals")
+            if not isinstance(goals, list):
+                raise ValueError("source-session registry has no Goal list")
+            # This is observation for context handoff, not execution admission.
+            # Enumerate only instance-bound Goals; the handoff's own Goal scope
+            # still rechecks the selected exact GoalRef before it commits.
+            instantiated = []
+            for goal in goals:
+                if not isinstance(goal, dict):
+                    continue
+                goal_id = goal.get("id")
+                instance_id = goal.get("goal_instance_id")
+                if not isinstance(goal_id, str) or not isinstance(instance_id, str):
+                    continue
+                try:
+                    exact_goal_ref(goal_id, instance_id)
+                except ValueError:
+                    continue
+                instantiated.append(goal)
+            if not instantiated:
+                raise ValueError("source-session registry has no instantiated Goal")
+            registry = {**registry, "goals": instantiated}
+        else:
+            require_runtime_compatible_project_registry(
+                registry, operation="context source recipient observation"
+            )
     except (OSError, ValueError, TypeError):
         return {"mode": "unavailable", "targets": []}
     observed = registered_context_recipients(registry)
