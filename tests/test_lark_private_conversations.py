@@ -153,17 +153,17 @@ def test_native_private_admission_queue_other_app_stop_and_verified_delivery(ord
         runtime.close()
 
 
-def test_source_rejection_attachment_notice_and_ambiguous_reply_readback(ordinary):  # noqa: F811
+def test_source_rejection_unsupported_file_notice_and_ambiguous_reply_readback(ordinary):  # noqa: F811
     _, runtime, provider, transport = connect(ordinary)
     try:
-        image = provider.event("notes-app", "image", "", kind="image")
+        image = provider.event("notes-app", "file", "", kind="file")
         assert transport.admit("notes-app", {**image, "sender_type": "app"})["status"] == "audience_rejected"
         assert transport.admit("steward-app", image)["status"] == "audience_rejected"
         assert transport.core.pending() == []
         assert transport.admit("notes-app", image)["status"] == "command_recorded"
         provider.verify_replies = False
         assert transport.reconcile() == 0
-        assert len(provider.writes) == 1 and "图片或文件没有交给模型" in provider.writes[0][1]
+        assert len(provider.writes) == 1 and "未提交执行" in provider.writes[0][1]
         assert transport.reconcile() == 0 and len(provider.writes) == 1
         provider.verify_replies = True
         assert transport.reconcile() == 1 and len(provider.writes) == 1
