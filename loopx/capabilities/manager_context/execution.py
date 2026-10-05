@@ -136,3 +136,26 @@ def handoff_message(receipt: dict[str, Any], execution: dict[str, Any]) -> str:
     if execution.get("reason"):
         return prefix + "交接已保存，但执行绑定或任务准入未通过，尚未启动执行。"
     return prefix + "材料已进入收件箱，尚未启动执行；收到接收方的处理结论后会回到这里。"
+
+
+def handoff_response(root: Path, registry: Path, *, session: dict[str, Any],
+                     turn: dict[str, Any], response: dict[str, Any],
+                     source_authorized: Callable[[], bool],
+                     execution_allowed: Callable[[], bool]) -> dict[str, Any]:
+    """Present context delivery and separately admitted execution on one path."""
+    from . import deliver
+
+    try:
+        if not source_authorized():
+            raise ValueError("manager connection authority is no longer available")
+        receipt = deliver(root, registry, session=session, turn=turn,
+                          request=response["context_handoff"])
+        execution = dispatch(root, registry, session=session, turn=turn,
+                             request=response["context_handoff"], receipt=receipt,
+                             execution_allowed=execution_allowed)
+        return {**response, "proposals": [], "gate": None,
+                "context_handoff_receipt": receipt, "context_execution": execution,
+                "message": handoff_message(receipt, execution)}
+    except (OSError, ValueError):
+        return {**response, "proposals": [], "gate": None,
+                "message": "材料尚未转交：目标绑定、来源授权或持久收件回读未通过。需要修复交接链路；没有改动任务或优先级。"}

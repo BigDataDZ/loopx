@@ -114,6 +114,32 @@ def test_model_receives_authorized_task_choices_after_manager_context_compaction
     assert "execution_binding_id" not in _turn_prompt(turn["message"], context_summary=json.dumps(disabled))
 
 
+def test_handoff_response_preserves_receipt_and_separate_execution_status(flow):
+    root, registry, (_, session, turn, request, _, _), started = flow
+    response = execution.handoff_response(root, registry, session=session, turn=turn,
+        response={"context_handoff": request, "message": "Unverified model completion claim.",
+                  "proposals": [{"kind": "unused"}], "gate": {"kind": "unused"}},
+        source_authorized=lambda: True, execution_allowed=lambda: True)
+    assert response["context_handoff_receipt"]["status"] == "delivered"
+    assert response["context_execution"]["status"] == "prepared"
+    assert "受理不代表完成" in response["message"]
+    assert response["proposals"] == [] and response["gate"] is None
+    assert len(started) == 1
+
+
+def test_handoff_scope_revocation_stops_before_inbox_delivery(flow, monkeypatch):
+    root, registry, (_, session, turn, request, _, _), started = flow
+    from loopx.capabilities import manager_context
+    def forbidden_delivery(*args, **kwargs):
+        pytest.fail("revoked manager scope must not publish an inbox request")
+    monkeypatch.setattr(manager_context, "deliver", forbidden_delivery)
+    response = execution.handoff_response(root, registry, session=session, turn=turn,
+        response={"context_handoff": request}, source_authorized=lambda: False,
+        execution_allowed=lambda: True)
+    assert "尚未转交" in response["message"]
+    assert "context_handoff_receipt" not in response and not started
+
+
 @pytest.mark.parametrize("change", ["sender", "body", "channel", "revoke", "blocked", "requester", "stopped", "binding"])
 def test_no_launch_after_source_or_registration_changes(flow, change):
     root, registry, (_, session, turn, _, _, policy), started = flow
