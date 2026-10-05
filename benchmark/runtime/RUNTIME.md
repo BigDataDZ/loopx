@@ -67,11 +67,18 @@ validator protection remains the environment owner's responsibility.
 - `seeded-todo` (the compatibility default) writes a generic execution Todo.
   Follow-up phases update that Todo while it remains live and owned by this
   agent; completed or deferred work gets a new Todo. Updates preserve blocked
-  state. The agent can still plan and replan during execution.
+  state. The agent can still plan and replan during execution. The seed asks the
+  worker to read, implement and validate the task. It leaves task decomposition
+  to the worker and the existing task protocol. This removes the previous
+  unconditional successor instruction for newly seeded or updated phases.
 - `loopx-planned` runs the installed `$loopx` skill against the public
   `loopx todo plan` checkpoint before execution. The checkpoint shares the
   product's planner and continuation-aware Todo delta; it creates no planning
   Todo and starts no host loop. Select it only for heartbeat, Turn or LoopX Goal.
+
+For a task-entry comparison, pin the same source and vary only `task_entry`;
+keep task inputs, scoring, model, budget and evaluation windows fixed. Include
+planning time in the common run budget.
 
 The model writes or reuses actual task Todos through the public CLI. The worker
 reads the product packet again and checks the input digest, identity, Todo ids

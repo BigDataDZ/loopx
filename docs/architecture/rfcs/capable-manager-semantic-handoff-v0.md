@@ -799,6 +799,13 @@ execution or approval authority. Replacing a tenant-controlled App on another
 machine requires a freshly authorized App; credentials, source transcripts and
 permission bindings do not travel as a workstation backup.
 
+**Ordinary writable-project prompt checkpoint (S5):** project Turns use their
+authorized workspace, AGENTS and skills without manager Goal discovery, drafting
+or context-delegation instructions. Session, grants and the existing response
+envelope remain unchanged; manager and execution guidance retain their prior
+contract. Native fake-host tests qualify instruction routing and continuity,
+not source-reading success, model latency or sustained installed operation.
+
 Deliver these through M1/M3 and the existing S5 journey, without adding a parallel
 milestone or treating a periodic heartbeat as realtime transport:
 
