@@ -1,4 +1,4 @@
-"""Local material writes retain scopes and a causal workspace without Git."""
+"""Registered local writes reuse Goal identity and baseline scope matching."""
 
 import json
 import subprocess
@@ -6,196 +6,86 @@ import subprocess
 import pytest
 
 from loopx.control_plane.agents.workspace_guard import (
-    build_agent_workspace_guard,
-    observe_goal_local_write_scopes,
+    build_agent_workspace_guard, observe_goal_local_workspace,
 )
 from loopx.control_plane.quota.projection_repair import (
     build_boundary_projection_repair_hint,
 )
 from loopx.control_plane.quota.settlement_workspace_causality import (
-    project_goal_local_write_scopes,
+    project_goal_write_scopes,
 )
 
 
 def declaration():
     return {
-        "todo_id": "todo_local_material",
-        "role": "agent",
-        "status": "open",
-        "task_class": "advancement_task",
-        "task_domain": "validation",
-        "action_kind": "validate_material",
-        "continuation_policy": "same_agent_non_delivery",
+        "todo_id": "todo_local_material", "role": "agent", "status": "open",
+        "task_class": "advancement_task", "action_kind": "validate_material",
         "required_write_scopes": ["materials/run/**", "reports/result.md"],
     }
 
 
-def test_absolute_scope_projection_is_root_bound_and_does_not_widen(tmp_path):
+def scope_admitted(root, todo, grants):
+    projected = project_goal_write_scopes(root, grants)["allowed_write_scopes"]
+    return build_boundary_projection_repair_hint(
+        {"write_scope": [*grants, *projected]},
+        {"first_executable_items": [todo]}, candidate_should_run=True,
+        selected_todo=todo,
+    ) is None
+
+
+def test_scope_projection_keeps_baseline_relative_and_glob_matching(tmp_path):
     root = str(tmp_path)
     todo = declaration()
-    grants = [f"{root}/materials/**", f"{root}/reports/result.md"]
-    assert project_goal_local_write_scopes(root, todo, grants)["admitted"] is True
-    for bad in [
-        "reports/other.md",
-        "materials-elsewhere/run/**",
-        "../materials/**",
-        "/materials/**",
-        "materials/./run/**",
-        "materials/run/..\\other",
+    for grants in [
+        ["materials/**", "reports/result.md"],
+        [f"{root}/materials/**", f"{root}/reports/result.md"],
+        ["material*/**", "reports/*.md"],
+        [f"{root}/material*/**", f"{root}/reports/*.md"],
     ]:
-        assert (
-            project_goal_local_write_scopes(
-                root, {**todo, "required_write_scopes": [bad]}, grants
-            )["admitted"]
-            is False
-        )
-    for bad_grant in [
-        f"{root}-other/materials/**",
-        f"{root}/../materials/**",
-        "materials/**",
-        f"{root}/material*/**",
-    ]:
-        assert (
-            project_goal_local_write_scopes(root, todo, [bad_grant])["admitted"]
-            is False
-        )
+        assert scope_admitted(root, todo, grants) is True
+    for grants in [[], [f"{root}-other/**"], [f"{root}/../elsewhere/**"], ["other/**"]]:
+        assert scope_admitted(root, todo, grants) is False
+    assert scope_admitted(root, {**todo, "required_write_scopes": ["reports/other.txt"]}, ["reports/*.md"]) is False
 
 
-@pytest.mark.parametrize(
-    "metadata",
-    [
-        {"task_repository": "git:github.com/example/project"},
-        {"task_domain": "code"},
-        {"task_domain": None},
-        {"continuation_policy": "independent_handoff"},
-        {"continuation_policy": None},
-        {"required_write_scopes": []},
-    ],
-)
-def test_repository_and_unknown_contracts_never_become_local(tmp_path, metadata):
-    todo = {**declaration(), **metadata}
-    assert (
-        project_goal_local_write_scopes(
-            str(tmp_path), todo, [f"{tmp_path}/materials/**", f"{tmp_path}/reports/**"]
-        )["admitted"]
-        is False
-    )
-
-
-def test_peer_local_materials_admit_both_guards_and_reject_foreign_workspace(tmp_path):
+@pytest.mark.parametrize("metadata", [{}, {"task_domain": "code"}, {"continuation_policy": "independent_handoff"}])
+def test_local_identity_avoids_git_requirement_without_special_task_flags(tmp_path, metadata):
     root = tmp_path / "local"
     root.mkdir()
-    goal = {
-        "id": "local-materials",
-        "repo": str(root),
-        "coordination": {
-            "write_scope": [f"{root}/materials/**", f"{root}/reports/result.md"],
-        },
-    }
-    todo = declaration()
+    goal = {"id": "local-work", "repo": str(root), "coordination": {"write_scope": ["materials/**", "reports/*.md"]}}
+    todo = {**declaration(), **metadata}
     identity = {"agent_id": "worker", "registered_agents": ["worker", "peer"]}
-    local = observe_goal_local_write_scopes(goal, todo)
-    assert local["admitted"] is True
-    assert (
-        build_agent_workspace_guard(
-            goal,
-            identity,
-            selected_todo=todo,
-            current_path=root,
-            local_write_scopes=local,
-        )
-        is None
-    )
-
-    assert (
-        build_boundary_projection_repair_hint(
-            goal["coordination"],
-            {"first_executable_items": [todo]},
-            candidate_should_run=True,
-            selected_todo=todo,
-            local_write_scopes=local,
-        )
-        is None
-    )
-    guard = build_agent_workspace_guard(
-        goal,
-        identity,
-        selected_todo=todo,
-        current_path=tmp_path,
-        local_write_scopes=local,
-    )
-    assert guard["blocks_delivery"] is True
-    assert guard["required_workspace"] == "local_goal_workspace"
-    assert guard["action"] == "move_to_goal_workspace"
-    assert (
-        build_agent_workspace_guard(
-            {
-                **goal,
-                "workspace_guard_policy": {"peer_independent_worktree_required": True},
-            },
-            identity,
-            selected_todo=todo,
-            current_path=root,
-            local_write_scopes=local,
-        )["blocks_delivery"]
-        is True
-    )
-    # Preserve the explicit off-state policy without creating a new switch.
-    assert (
-        build_agent_workspace_guard(
-            {
-                **goal,
-                "workspace_guard_policy": {"peer_independent_worktree_required": False},
-            },
-            identity,
-            selected_todo=todo,
-            current_path=tmp_path,
-            local_write_scopes=local,
-        )
-        is None
-    )
-    nested = root / "nested"
-    nested.mkdir()
-    subprocess.run(["git", "init", "-q", str(nested)], check=True)
-    assert (
-        build_agent_workspace_guard(
-            goal,
-            identity,
-            selected_todo=todo,
-            current_path=nested,
-            local_write_scopes=local,
-        )["blocks_delivery"]
-        is True
-    )
+    local = observe_goal_local_workspace(goal, todo)
+    assert local["workspace"]["identity_kind"] == "local_goal"
+    # Caller cwd does not rebase the declared output target or demand a repo.
+    assert build_agent_workspace_guard(goal, identity, selected_todo=todo, current_path=tmp_path, local_workspace=local) is None
+    assert build_agent_workspace_guard({**goal, "workspace_guard_policy": {"peer_independent_worktree_required": False}}, identity, selected_todo=todo, current_path=tmp_path) is None
+    assert build_agent_workspace_guard({**goal, "workspace_guard_policy": {"peer_independent_worktree_required": True}}, identity, selected_todo=todo, current_path=root)["blocks_delivery"] is True
+    assert observe_goal_local_workspace(goal, {**todo, "task_repository": "git:github.com/example/project"}) == {}
 
 
-def test_registered_root_alias_keeps_its_literal_authorization(tmp_path):
+def test_registered_local_identity_reuses_originless_owner_and_literal_grants(tmp_path):
     physical = tmp_path / "physical"
     physical.mkdir()
+    subprocess.run(["git", "init", "-q", str(physical)], check=True)
     registered = tmp_path / "registered"
     registered.symlink_to(physical, target_is_directory=True)
-    goal = {
-        "id": "local-alias",
-        "repo": str(registered),
-        "coordination": {
-            "write_scope": [
-                f"{registered}/materials/**",
-                f"{registered}/reports/result.md",
-            ],
-        },
-    }
-    assert observe_goal_local_write_scopes(goal, declaration())["admitted"] is True
-    # A different spelling is not silently added as a second grant.
-    goal["coordination"]["write_scope"] = [
-        f"{physical}/materials/**",
-        f"{physical}/reports/result.md",
-    ]
-    assert observe_goal_local_write_scopes(goal, declaration())["admitted"] is False
+    goal = {"id": "local-alias", "repo": str(registered), "coordination": {"write_scope": [f"{registered}/materials/**"]}}
+    local = observe_goal_local_workspace(goal, declaration())
+    assert local["workspace"]["identity_kind"] == "local_goal"
+    assert local["allowed_write_scopes"] == ["materials/**"]
+    goal["coordination"]["write_scope"] = [f"{physical}/materials/**"]
+    assert observe_goal_local_workspace(goal, declaration())["allowed_write_scopes"] == []
+    subprocess.run(["git", "-C", str(physical), "remote", "add", "origin", "https://github.com/example/project.git"], check=True)
+    assert observe_goal_local_workspace(goal, declaration()) == {}
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
+@pytest.mark.parametrize("agent_count", [1, 2])
+@pytest.mark.parametrize("isolation_policy", [None, False])
+@pytest.mark.parametrize("scope_style", ["absolute", "relative_glob"])
 def test_real_cli_local_write_guard_replay_and_causal_settlement(
-    tmp_path, monkeypatch, provider
+    tmp_path, monkeypatch, provider, agent_count, isolation_policy, scope_style
 ):
     from canonical_authority_fixture import (
         initialize_canonical_authority,
@@ -222,9 +112,15 @@ def test_real_cli_local_write_guard_replay_and_causal_settlement(
     config = json.loads(registry.read_text())
     goal = config["goals"][0]
     goal["coordination"].update(
-        registered_agents=[AGENT_ID, "other-worker"],
+        registered_agents=[AGENT_ID, "other-worker"][:agent_count],
         write_scope=[f"{project}/materials/**", f"{project}/reports/result.md"],
     )
+    if isolation_policy is not None:
+        goal["workspace_guard_policy"] = {
+            "peer_independent_worktree_required": isolation_policy,
+        }
+    if scope_style == "relative_glob":
+        goal["coordination"]["write_scope"] = ["material*/**", "reports/*.md"]
     registry.write_text(json.dumps(config))
     state = project / goal["state_file"]
     todos = parse_active_state_todos(state.read_text(), item_limit=None)["agent_todos"][
@@ -269,8 +165,11 @@ def test_real_cli_local_write_guard_replay_and_causal_settlement(
         *caps,
     ]
     rc, outside = _run_cli(registry, runtime, *guard_args, cwd=tmp_path)
-    assert rc == 0 and outside["normal_delivery_allowed"] is False, outside
-    assert outside["workspace_guard"]["required_workspace"] == "local_goal_workspace"
+    assert rc == 0 and outside["normal_delivery_allowed"] is True, outside
+    assert not outside.get("workspace_guard"), outside
+    assert outside["selected_todo"]["required_write_scopes"] == todos[0]["required_write_scopes"]
+    hint = outside["interaction_contract"]["cli_channel"]["delivery_workspace_causality"]["refresh"]
+    assert "--delivery-workspace-path" in hint
     assert _spend_run_count(runtime) == 0
     rc, guard = _run_cli(registry, runtime, *guard_args, cwd=project)
     assert rc == 0 and guard["normal_delivery_allowed"] is True, guard
@@ -295,6 +194,9 @@ def test_real_cli_local_write_guard_replay_and_causal_settlement(
         turn,
         *caps,
     ]
+    artifact = project / "reports" / "result.md"
+    artifact.parent.mkdir()
+    artifact.write_text("Validated local output.\n")
     rc, writeback = _run_cli(
         registry,
         runtime,
@@ -312,7 +214,9 @@ def test_real_cli_local_write_guard_replay_and_causal_settlement(
         "advanced",
         "--progress-surface-id",
         "material:source-review",
-        cwd=project,
+        "--delivery-workspace-path",
+        str(project),
+        cwd=tmp_path,
     )
     assert rc == 0 and writeback["appended"] is True, writeback
     assert writeback["delivery_workspace"]["identity_kind"] == "local_goal"
@@ -327,9 +231,9 @@ def test_real_cli_local_write_guard_replay_and_causal_settlement(
         "heartbeat",
         "--execute",
     ]
-    rc, settled = _run_cli(registry, runtime, *spend, cwd=project)
+    rc, settled = _run_cli(registry, runtime, *spend, cwd=tmp_path)
     assert rc == 0 and settled["ok"] is True, settled
-    rc, repeated = _run_cli(registry, runtime, *spend, cwd=project)
+    rc, repeated = _run_cli(registry, runtime, *spend, cwd=tmp_path)
     assert rc == 0 and repeated["ok"] is True, repeated
     assert repeated["idempotent_replay"] is True
     assert repeated["appended"] is False

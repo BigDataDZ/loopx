@@ -182,7 +182,6 @@ def build_boundary_projection_repair_hint(
     candidate_should_run: bool,
     capability_gate: dict[str, Any] | None = None,
     selected_todo: dict[str, Any] | None = None,
-    local_write_scopes: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     if not candidate_should_run or not isinstance(agent_todo_summary, dict):
         return None
@@ -220,12 +219,6 @@ def build_boundary_projection_repair_hint(
         return None
     boundary = goal_boundary if isinstance(goal_boundary, dict) else {}
     allowed_scopes = normalize_required_write_scopes(boundary.get("write_scope"))
-    if local_write_scopes:
-        allowed_scopes.extend(
-            normalize_required_write_scopes(
-                local_write_scopes.get("allowed_write_scopes")
-            )
-        )
     missing_scopes = [
         scope
         for scope in required_scopes

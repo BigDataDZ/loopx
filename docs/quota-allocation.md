@@ -1495,16 +1495,18 @@ Post-turn accounting protocol:
   workspace cannot produce that local receipt. For originless Git, the checkout
   root must equal the registered project root; nested repositories, linked
   worktrees, invalid/empty origins and failed Git config reads cannot fall back.
-- `quota should-run` also recognizes explicitly declared local material work:
-  `same_agent_non_delivery`, a non-code task domain, no task repository, and all
-  relative Todo write scopes contained by absolute Goal grants rooted at the
-  observed local project. These peer tasks keep their write scopes and use the
-  existing local Goal delivery snapshot instead of requiring a Git worktree.
-  Exact paths and recursive directory grants qualify; complex absolute globs
-  do not. Outside-root work receives a return-to-Goal diagnostic. Code work,
-  foreign repositories, undeclared contracts and explicit isolation policies
-  retain their existing guards. This changes local peer material admission,
-  not authorization, claim/lease rules or causal settlement requirements.
+- `quota should-run` reuses that registered `local_goal` identity for local
+  tasks by default. Declaring write scopes does not turn local work into a Git
+  edit or require a particular task domain or continuation marker. An explicit
+  task repository and owner isolation requirements keep their existing guards.
+  Relative Goal scopes keep their existing matching semantics; absolute grants
+  under the registered root are projected into the same relative view, including
+  existing glob patterns. The existing boundary guard alone checks coverage.
+  Caller cwd does not rebase the declared targets or itself block local work.
+  If actual delivery is produced in the Goal project from another cwd, use
+  `refresh-state --delivery-workspace-path <Goal-project>`; settlement consumes
+  that recorded local workspace without requiring a cwd move. This changes local
+  task admission, not grants, claim/lease or causal settlement requirements.
 - `todo complete --evidence <pointer>` can record a validated local artifact.
   `--result-file` additionally requires approved Goal acceptance criteria bound
   to that Todo. A standalone Todo validator does not establish Goal acceptance;

@@ -32,25 +32,22 @@ LEGACY_SETTLEMENT_RECEIPT_EVIDENCE_SCHEMA_VERSION = (
 DELIVERY_WORKSPACE_REQUIREMENTS = frozenset({"required", "not_required", "unknown"})
 
 
-def project_goal_local_write_scopes(
+def project_goal_write_scopes(
     project_root: str,
-    todo: Mapping[str, Any],
     allowed_scopes: list[str],
 ) -> dict[str, Any]:
     """Adapt observed local-root facts to the existing typed work owner."""
     result = _runtime_result(
-        "goal_local_write_scopes",
+        "goal_write_scopes",
         project_root=project_root,
-        todo=dict(todo),
         allowed_scopes=allowed_scopes,
-    ).get("local_write_scopes")
+    ).get("write_scope_projection")
     if (
         not isinstance(result, Mapping)
-        or not isinstance(result.get("admitted"), bool)
         or not isinstance(result.get("allowed_write_scopes"), list)
         or any(not isinstance(scope, str) for scope in result["allowed_write_scopes"])
     ):
-        raise RuntimeError("TypeScript local write scope result shape mismatch")
+        raise RuntimeError("TypeScript Goal write scope projection shape mismatch")
     return dict(result)
 
 
