@@ -2047,7 +2047,7 @@
     },
     {
       "site": "loopx/project_prompt.py::<module>.build_new_project_prompt::codec_read:load_registry#1",
-      "line": 426,
+      "line": 427,
       "column": 9,
       "kind": "codec_read",
       "api": "load_registry",
