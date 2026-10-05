@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import plistlib
 import shutil
@@ -214,6 +215,10 @@ def main() -> int:
             fake_bin / "loopx",
             "#!/usr/bin/env bash\n"
             "if [[ \"$*\" == *\"--format json doctor\"* ]]; then\n"
+            "  if [[ -n \"${FAKE_RUNTIME_IDENTITY:-}\" ]]; then\n"
+            "    printf '{\"service_runtime_identity\":%s}\\n' \"$FAKE_RUNTIME_IDENTITY\"\n"
+            "    exit 0\n"
+            "  fi\n"
             "  printf '%s\\n' '{\"release_manifest\":{\"manifest\":{\"release_id\":\"current-release\",\"package\":{\"version\":\"0.5.3\"},\"source\":{\"git_commit\":\"current-revision\"}}}}'\n"
             "  exit 0\n"
             "fi\n"
@@ -228,6 +233,10 @@ def main() -> int:
             fake_bin / "curl",
             "#!/usr/bin/env bash\n"
             "if [[ \"$*\" == *\"/api/chat/capabilities\"* ]]; then\n"
+            "  if [[ -n \"${FAKE_RUNTIME_IDENTITY:-}\" ]]; then\n"
+            "    printf '{\"ok\":true,\"schema_version\":\"loopx_chat_capabilities_v1\",\"runtime_identity\":%s}\\n' \"$FAKE_RUNTIME_IDENTITY\"\n"
+            "    exit 0\n"
+            "  fi\n"
             "  printf '%s\\n' '{\"ok\":true,\"schema_version\":\"loopx_chat_capabilities_v1\",\"runtime_identity\":{\"schema_version\":\"loopx_runtime_identity_v1\",\"package_version\":\"0.5.3\",\"release_id\":\"current-release\",\"source_revision\":\"current-revision\"}}'\n"
             "  exit 0\n"
             "fi\n"
@@ -262,7 +271,8 @@ def main() -> int:
         default_plist = status_plist.read_text(encoding="utf-8")
         default_chat_plist = chat_plist.read_text(encoding="utf-8")
         assert "--enable-control-plane-write-api" not in default_plist, default_plist
-        assert " chat --global-registry " in default_chat_plist, default_chat_plist
+        assert " chat --host " in default_chat_plist, default_chat_plist
+        assert "--global-registry" not in default_chat_plist, default_chat_plist
         assert "--port 8767" in default_chat_plist, default_chat_plist
         assert "--replace-existing-loopx-chat" in default_chat_plist, default_chat_plist
         assert "--no-open" in default_chat_plist, default_chat_plist
@@ -298,10 +308,87 @@ def main() -> int:
         selected_chat_plist = chat_plist.read_text(encoding="utf-8")
         assert "--enable-control-plane-write-api" in write_plist, write_plist
         selected = (home / 'selected-codex-home').resolve()
-        assert f"export CODEX_HOME={selected};" in selected_chat_plist, selected_chat_plist
+        assert f"export LOOPX_CHAT_CODEX_HOME={selected};" in selected_chat_plist, selected_chat_plist
+        assert f"export CODEX_HOME={(home / '.codex').resolve()};" in selected_chat_plist, selected_chat_plist
         run_script(fake_bin, home, ["install"], schema_version=2,
                    extra_env={"CODEX_HOME": str(home / "unrelated-upgrader")})
         assert plistlib.loads(chat_plist.read_bytes())["EnvironmentVariables"]["LOOPX_CHAT_CODEX_HOME"] == str(selected)
+
+        # Two independently selected workspaces and a custom registry survive
+        # reinstall. Shell metacharacters in a directory are literal arguments.
+        workspaces = [(home / "workspace one").resolve(), (home / "workspace $(touch sentinel) & two").resolve()]
+        for workspace in workspaces:
+            workspace.mkdir()
+        import shlex
+        custom_registry = (home / "isolated" / "registry.json").resolve()
+        run_script(fake_bin, home, ["install"], schema_version=2, extra_env={
+            "LOOPX_CHAT_SCAN_PATHS_JSON": json.dumps([str(p) for p in workspaces]),
+            "LOOPX_GLOBAL_REGISTRY": str(custom_registry),
+        })
+        run_script(fake_bin, home, ["restart"], schema_version=2)
+        context_plist = plistlib.loads(chat_plist.read_bytes())
+        assert json.loads(context_plist["EnvironmentVariables"]["LOOPX_CHAT_SCAN_PATHS_JSON"]) == [str(p) for p in workspaces]
+        command = shlex.split(context_plist["ProgramArguments"][2])
+        assert [command[i + 1] for i, word in enumerate(command[:-1]) if word == "--scan-path"] == [str(p) for p in workspaces]
+        assert command[command.index("--registry") + 1] == str(custom_registry)
+        assert "--global-registry" not in command
+        assert str(custom_registry) in status_plist.read_text()
+        status_command = shlex.split(plistlib.loads(status_plist.read_bytes())["ProgramArguments"][2])
+        assert [status_command[i + 1] for i, word in enumerate(status_command[:-1]) if word == "--scan-path"] == [str(p) for p in workspaces]
+        before = chat_plist.read_bytes()
+        rejected = run_script(fake_bin, home, ["install"], schema_version=2,
+                              extra_env={"LOOPX_CHAT_SCAN_PATHS_JSON": '["relative"]'}, check=False)
+        assert rejected.returncode != 0
+        assert chat_plist.read_bytes() == before
+
+        wheel_identity = {"schema_version": "loopx_runtime_identity_v1", "package_version": "1.2.4",
+                          "release_id": None, "source_revision": None, "package_fingerprint": "sha256:" + "a" * 64}
+        run_script(fake_bin, home, ["restart"], schema_version=2,
+                   extra_env={"FAKE_RUNTIME_IDENTITY": json.dumps(wheel_identity)})
+        before = chat_plist.read_bytes()
+        del wheel_identity["package_fingerprint"]
+        rejected = run_script(fake_bin, home, ["install"], schema_version=2,
+                              extra_env={"FAKE_RUNTIME_IDENTITY": json.dumps(wheel_identity)}, check=False)
+        assert rejected.returncode != 0
+        assert chat_plist.read_bytes() == before
+
+        # A coordinator can resume workers from another existing Codex home.
+        # The Chat override must not overwrite that execution profile.
+        execution_home = (home / "worker home").resolve()
+        run_script(fake_bin, home, ["install"], schema_version=2,
+                   extra_env={"CODEX_HOME": str(execution_home),
+                              "LOOPX_CHAT_CODEX_HOME": str(selected)})
+        installed = plistlib.loads(chat_plist.read_bytes())
+        assert installed["EnvironmentVariables"]["CODEX_HOME"] == str(execution_home)
+        assert installed["EnvironmentVariables"]["LOOPX_CHAT_CODEX_HOME"] == str(selected)
+        run_script(fake_bin, home, ["restart"], schema_version=2)
+        preserved = plistlib.loads(chat_plist.read_bytes())
+        assert preserved["EnvironmentVariables"] == installed["EnvironmentVariables"]
+        # Execute the generated wrapper with a bounded fixture entrypoint.
+        # It must transport both settings, including spaces, to the same child.
+        fake_loopx = fake_bin / "loopx"
+        original_entry = fake_loopx.read_bytes()
+        write_executable(fake_loopx, f"#!{sys.executable}\nimport json, os, sys\n"
+                         "print(json.dumps({'homes':{k:os.environ[k] for k in "
+                         "['CODEX_HOME','LOOPX_CHAT_CODEX_HOME']},'argv':sys.argv[1:]}))\n")
+        try:
+            launched = subprocess.run(preserved["ProgramArguments"],
+                                      capture_output=True, text=True, check=True)
+            transported = json.loads(launched.stdout)
+            assert transported["homes"] == {key: preserved["EnvironmentVariables"][key]
+                                            for key in ("CODEX_HOME", "LOOPX_CHAT_CODEX_HOME")}
+            argv = transported["argv"]
+            assert argv[argv.index("--registry") + 1] == str(custom_registry)
+            assert [argv[i + 1] for i, word in enumerate(argv[:-1]) if word == "--scan-path"] == [str(p) for p in workspaces]
+            assert "--global-registry" not in argv
+            assert not (root_sentinel := REPO_ROOT / "sentinel").exists(), root_sentinel
+        finally:
+            fake_loopx.write_bytes(original_entry)
+        before_invalid_home = chat_plist.read_bytes()
+        rejected = run_script(fake_bin, home, ["install"], schema_version=2,
+                              extra_env={"CODEX_HOME": "relative-worker-home"}, check=False)
+        assert rejected.returncode != 0 and "CODEX_HOME must be absolute" in rejected.stderr
+        assert chat_plist.read_bytes() == before_invalid_home
 
         # Legacy generated plists used only a shell export. Preserve quoted
         # paths across upgrades without ever executing their command contents.

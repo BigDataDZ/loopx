@@ -37,6 +37,10 @@ type CapabilityMutationState = Readonly<{
 
 function goalWriteDraft(selected: CapabilityConfigurationCatalog["capabilities"][number], draft: Record<string, unknown>) {
   const writable = projectEditableCapabilityConfiguration(selected.configuration_editor, draft, selected.default);
+  if (selected.capability_id === "pull_request_review" && !Object.hasOwn(selected.current ?? {}, "owner_logins")
+    && JSON.stringify(writable.owner_logins ?? []) === JSON.stringify(selected.effective_configuration?.configuration?.owner_logins ?? [])) {
+    delete writable.owner_logins;
+  }
   if (selected.capability_id === "pull_request_review"
     && !Object.hasOwn(selected.current ?? {}, "wait_for_ci") && !Object.hasOwn(selected.current ?? {}, "review_order")) {
     const effective = selected.effective_configuration?.configuration;
@@ -308,7 +312,7 @@ function CapabilityCatalog({ callbacks, catalog, goalId, notification, onApplied
           {editorMode === "guided" ? <section className="personal-capability-field-summary">
             <CapabilityConfigurationFields
               disabled={Boolean(busy)}
-              copy={localizedCapabilityFieldCopy(locale)}
+              copy={localizedCapabilityFieldCopy(locale, localizedSelected.capability_id)}
               editor={localizedSelected.configuration_editor}
               onChange={changeDraft}
               value={draft}
