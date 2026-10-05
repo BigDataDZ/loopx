@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { configureSourceRecipient, resolveSourceRecipients, sourceExecutionBindings } from "../../loopx/control_plane/collaboration/source_grants.ts";
+import { configureSourceRecipient, configureSourceScope, resolveSourceRecipients, sourceExecutionBindings } from "../../loopx/control_plane/collaboration/source_grants.ts";
 
 const worker = { goal_id: "research", agent_id: "worker" };
 const peer = { goal_id: "research", agent_id: "peer" };
@@ -20,6 +20,18 @@ test("execution needs an independent exact grant, current sender and both regist
   for (const bad of [null, {}, [binding, binding], [{...binding, requester_agent_id: "worker"}],
     [{...binding, workspace: "/injected"}], [{...binding, binding_id: "../escape"}]]) {
     assert.throws(() => sourceExecutionBindings({...params, source: {...source, execution_bindings: bad}}));
+  }
+});
+
+test("operator scope repair shares the existing source policy and preserves revocations", () => {
+  const policy = {...source, blocked_targets: [peer], evidence_goal_ids: ["research"]};
+  const result = configureSourceScope({source: policy, local_delivery_scope: "all_registered"});
+  assert.deepEqual(resolveSourceRecipients({sender_id: "owner", source: result.source, available}), {targets: [other, worker]});
+  assert.deepEqual((result.source as typeof policy).evidence_goal_ids, policy.evidence_goal_ids);
+  assert.equal(configureSourceScope({source: result.source, local_delivery_scope: "all_registered"}).would_change, false);
+  for (const bad of [{local_delivery_scope: "all"}, {source: {...policy, sender_ids: []}},
+    {source: {...policy, sender_ids: [" "]}}, {source: {...policy, blocked_targets: null}}]) {
+    assert.throws(() => configureSourceScope({source: policy, local_delivery_scope: "all_registered", ...bad}));
   }
 });
 

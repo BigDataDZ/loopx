@@ -21,8 +21,8 @@ from test_local_delegation import brief, wait, service as delegation_service  # 
 from test_independent_delegation_validation import independent_binding
 
 
-def source(root, registry, *, goal_id, agent_id, requester, binding, source_id="lark:exact-message", semantic_brief=None):
-    store = ChatSessionStore(root)
+def source(root, registry, *, goal_id, agent_id, requester, binding, source_id="lark:exact-message", semantic_brief=None, chat_root=None):
+    store = ChatSessionStore(root if chat_root is None else chat_root)
     session = store.create_session(goal_id="loopx-manager", agent_id="codex",
                                    adapter_kind="codex_app_server", upstream_thread_id="original",
                                    channel_id="manager.external.test")
@@ -286,7 +286,8 @@ def test_governed_worker_adopts_original_request_and_returns_without_another_mod
 
 
 @pytest.mark.parametrize("boundary", ["return_field", "encoded_total"])
-def test_legal_brief_budget_survives_real_chat_dispatch(delegation_service, monkeypatch, boundary):  # noqa: F811
+@pytest.mark.parametrize("separate_chat_store", [False, True])
+def test_legal_brief_budget_survives_real_chat_dispatch(delegation_service, monkeypatch, boundary, separate_chat_store):  # noqa: F811
     """Internal return routing must not consume a caller's semantic budget."""
     from loopx.control_plane.collaboration.inbox import normalize_request, _read
 
@@ -298,11 +299,14 @@ def test_legal_brief_budget_survives_real_chat_dispatch(delegation_service, monk
     config.parent.mkdir(parents=True, exist_ok=True)
     config.write_bytes(service.config.read_bytes())
     data["goals"][0]["spawn_policy"] = {"execution_config": ".loopx/config/delegations.json"}
+    if separate_chat_store:
+        data["common_runtime_root"] = str(service.root)
     service.registry.write_text(json.dumps(data))
     semantic = budget_brief(boundary)
     semantic = normalize_request({"goal_id": service.goal_id, "agent_id": "analyst", "brief": semantic})["brief"]
     store, session, turn, request, _, _ = source(service.root, service.registry,
-        goal_id=service.goal_id, agent_id="analyst", requester="lead", binding="analysis", semantic_brief=semantic)
+        goal_id=service.goal_id, agent_id="analyst", requester="lead", binding="analysis", semantic_brief=semantic,
+        chat_root=service.root / "private-chat" if separate_chat_store else None)
     # Let the production Chat adapter deliver and call the real start owner,
     # but keep this admission oracle separate from the actual worker test.
     started = []
@@ -311,6 +315,9 @@ def test_legal_brief_budget_survives_real_chat_dispatch(delegation_service, monk
     import loopx.chat_manager_context as manager_context
     controller = ChatRuntimeController(store=store, codex_bin="codex", registry_path=service.registry,
                                        manager_scope_resolver=lambda _: [service.goal_id])
+    assert controller.coordination_runtime_root == service.root
+    if separate_chat_store:
+        assert store.root.parent != service.root
     store.update_session(session["session_id"], manager_authorization_scope_id="fixture-scope")
     monkeypatch.setattr(manager_context, "collect_manager_turn_context", lambda *_, **__: {
         "coverage": {}, "goals": [], "authorization_scope_id": "fixture-scope"})

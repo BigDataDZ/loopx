@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {nativeChildActivityScenario} from "./personal-workspace-browser/native-child-activity.mjs";
+import {privateStewardScopeScenario} from "./personal-workspace-browser/private-steward-scope.mjs";
 import {configurationBackupScenario} from "./personal-workspace-browser/configuration-backup.mjs";
 import {prReviewAgentOrderScenario} from "./personal-workspace-browser/pr-review-agent-order.mjs";
 import {conversationImageRequestScenario} from "./personal-workspace-browser/conversation-image-request.mjs";
@@ -78,6 +79,7 @@ scenarioCatalog.push(goalWorkMapScenario);
 scenarioCatalog.push(performanceDiagnosisScenario);
 scenarioCatalog.push(blockedNoticeSettingsScenario);
 scenarioCatalog.push(nativeChildActivityScenario);
+scenarioCatalog.push(privateStewardScopeScenario);
 scenarioCatalog.push(externalEvidenceReadbackScenario);
 scenarioCatalog.push(configurationBackupScenario);
 scenarioCatalog.push(prReviewAgentOrderScenario);
