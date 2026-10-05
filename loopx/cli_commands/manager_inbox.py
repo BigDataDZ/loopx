@@ -78,11 +78,13 @@ def register_manager_inbox(subparsers, add_format):
 
 def handle_manager_inbox(args, registry_path, runtime_root):
     try:
-        if args.manager_inbox_action != "configure-delivery-scope" and (args.local_delivery_scope is not None or args.sender_id is not None):
+        local_delivery_scope = getattr(args, "local_delivery_scope", None)
+        sender_id = getattr(args, "sender_id", None)
+        if args.manager_inbox_action != "configure-delivery-scope" and (local_delivery_scope is not None or sender_id is not None):
             raise ValueError("--local-delivery-scope and --sender-id are only supported for configure-delivery-scope")
         if args.manager_inbox_action == "configure-delivery-scope":
             result = configure_delivery_scope(runtime_root, channel=args.channel_id or "",
-                local_delivery_scope=args.local_delivery_scope or "", sender_id=args.sender_id,
+                local_delivery_scope=local_delivery_scope or "", sender_id=sender_id,
                 execute=args.execute)
             print(json.dumps(result, ensure_ascii=False, indent=2))
             return 0

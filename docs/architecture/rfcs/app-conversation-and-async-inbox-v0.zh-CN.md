@@ -91,6 +91,9 @@ typed Core、HTTP 与原生宿主回归覆盖默认读写、明确只读、工�
 发现目录不证明执行就绪，也不增加受保护操作权限。可信本地的
 `manager-inbox configure-delivery-scope` 复用相同 source-policy owner；新核验私聊来源
 仅初始化一次策略，普通消息不会重新放宽人工收紧的既有策略。
+升级先写入并核验所有已知交办策略，再发布扩大的绑定范围。I/O 写入失败时，
+界面保留原绑定范围并允许明确重试；本次升级已授权、先前成功的来源策略可能
+保留，重试会收敛而不重置单个收件人的撤权。这不声称跨文件原子事务。
 
 配置的 registry 声明 `common_runtime_root` 时，即使 Chat 使用独立存储 override，
 协调上下文、inbox 和返回处理仍使用该根目录。App 绑定、对话和 provider 凭据保留

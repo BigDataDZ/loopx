@@ -209,6 +209,70 @@ def test_steward_admission_configures_delivery_once_and_explicit_upgrade_preserv
     assert transport.bindings.path.read_bytes() == before
 
 
+@pytest.mark.parametrize("failure_at", ["first_policy", "second_policy", "binding"])
+def test_scope_upgrade_io_failure_keeps_old_binding_and_explicit_retry_converges(steward, monkeypatch, failure_at):
+    from copy import deepcopy
+    from loopx.capabilities import manager_context
+    from loopx.capabilities.native_chat import conversation_bindings
+    store, runtime, provider, transport, binding, _, _ = steward
+    transport.admit("steward-app", provider.event("steward-app", "before-upgrade", "/status"))
+    transport.bindings.configure(transport_ref="steward-app", project_ref=binding["project_ref"],
+        executor_endpoint_id="codex", context_kind="steward", goal_scope="selected")
+    policy_path = manager_context._root(runtime.coordination_runtime_root) / "policy.json"
+    policy = json.loads(policy_path.read_text())
+    channel = next(iter(policy["sources"]))
+    second = transport.bindings.resolve(binding_id=binding["binding_id"], source_ref="b" * 24,
+        sender_ref=binding["operator_ref"], private_human_message=True)["channel_id"]
+    source = policy["sources"][channel]
+    source["blocked_targets"] = [{"goal_id": "maintenance", "agent_id": "reviewer"}]
+    policy["sources"][second] = deepcopy(source)
+    policy_path.write_text(json.dumps(policy))
+    before_binding = transport.bindings.path.read_bytes()
+    unrelated = deepcopy(transport.bindings.read()["bindings"][0])
+    original_policy, original_binding = manager_context._write, conversation_bindings._atomic_write_json
+    writes = 0
+
+    def write_policy(path, value):
+        nonlocal writes
+        writes += 1
+        if writes == {"first_policy": 1, "second_policy": 2}.get(failure_at):
+            raise OSError("synthetic policy publication failure")
+        original_policy(path, value)
+
+    def write_binding(path, value):
+        if path == transport.bindings.path and failure_at == "binding":
+            raise OSError("synthetic binding publication failure")
+        original_binding(path, value)
+
+    def upgrade():
+        return transport.bindings.configure(transport_ref="steward-app", project_ref=binding["project_ref"],
+            executor_endpoint_id="codex", context_kind="steward", goal_scope="all_registered")
+
+    with monkeypatch.context() as fault:
+        fault.setattr(manager_context, "_write", write_policy)
+        fault.setattr(conversation_bindings, "_atomic_write_json", write_binding)
+        with pytest.raises(OSError, match="publication failure"):
+            upgrade()
+    assert transport.bindings.path.read_bytes() == before_binding
+    # Normal admission retains the old, honest scope and never rewrites a
+    # source policy to compensate for a failed operator configuration command.
+    transport.admit("steward-app", provider.event("steward-app", "after-failure", "/status"))
+    assert transport.bindings.read()["bindings"][1]["goal_scope"] == "selected"
+    if failure_at == "first_policy":
+        assert all(row["local_delivery_scope"] == "selected"
+                   for row in json.loads(policy_path.read_text())["sources"].values())
+    upgraded = upgrade()
+    assert upgraded["binding_id"] == binding["binding_id"] and upgraded["goal_scope"] == "all_registered"
+    for row in json.loads(policy_path.read_text())["sources"].values():
+        assert row["local_delivery_scope"] == "all_registered"
+        assert row["blocked_targets"] == source["blocked_targets"]
+        assert row["sender_ids"] == source["sender_ids"]
+    assert transport.bindings.read()["bindings"][0] == unrelated
+    state = transport.bindings.read()
+    assert upgrade() == upgraded and transport.bindings.read() == state
+    assert store.list_sessions() == []
+
+
 def test_confirmed_commission_runs_native_goal_returns_result_and_extends_same_session(steward):
     store, runtime, provider, transport, binding, capture, _ = steward
     transport.admit("steward-app", provider.event("steward-app", "before", "Check the empty portfolio"))

@@ -22,6 +22,10 @@ export const privateStewardScopeScenario = {
               throw new Error("Scope upgrade did not retain its target and select all registered work");
             }
             writes.push(body);
+            if (writes.length === 1) {
+              await route.fulfill({status: 500, json: {ok: false, error: "Scope publication failed; retry the upgrade."}});
+              return;
+            }
             Object.assign(row, {goal_scope: "all_registered", goal_count: 150});
           }
           await route.fulfill({json: {ok: true, revision: writes.length + 1, connections: [row]}});
@@ -42,8 +46,15 @@ export const privateStewardScopeScenario = {
       await page.screenshot({path: resolve(outputDir, "private-steward-scope-before.png"), animations: "disabled"});
       await upgrade.focus();
       await page.keyboard.press("Enter");
+      await panel.getByRole("alert").filter({hasText: "Scope publication failed; retry the upgrade."}).waitFor();
+      await panel.getByText("LoopX 管家 · 已选范围 · 1 个 Goal", {exact: true}).waitFor();
+      if (await upgrade.isDisabled()) throw new Error("Failed upgrade must allow an explicit retry");
+      await upgrade.focus();
+      await page.keyboard.press("Enter");
       await panel.getByText("LoopX 管家 · 全部已注册工作 · 150 个 Goal", {exact: true}).waitFor();
-      if (writes.length !== 1 || await upgrade.count()) throw new Error("Upgrade must read back once without another form");
+      if (writes.length !== 2 || await upgrade.count() || await panel.getByRole("alert").count()) {
+        throw new Error("Retry must read back the upgraded scope and clear the failure");
+      }
       await panel.scrollIntoViewIfNeeded();
       await page.screenshot({path: resolve(outputDir, "private-steward-scope-after.png"), animations: "disabled"});
       await page.reload();
@@ -54,8 +65,9 @@ export const privateStewardScopeScenario = {
       await panel.scrollIntoViewIfNeeded();
       await page.screenshot({path: resolve(outputDir, "private-steward-scope-mobile.png"), animations: "disabled"});
       if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) throw new Error("Scope readback overflows");
-      if (context.errors.length) throw new Error(context.errors.join(" | "));
-      return {coverageEntries: await context.close(), note: "Existing selected steward upgrades in place with one keyboard action and survives reload; desktop/mobile, synthetic API paired with native backend scope regressions"};
+      const expectedErrors = context.errors.filter(error => error === "Failed to load resource: the server responded with a status of 500 (Internal Server Error)");
+      if (expectedErrors.length !== 1 || context.errors.length !== 1) throw new Error(context.errors.join(" | "));
+      return {coverageEntries: await context.close(), note: "Failed scope publication retains selected scope and allows keyboard retry; success clears the failure and survives reload; desktop/mobile, synthetic API paired with native backend fault regressions"};
     } catch (error) {await context.close(); throw error;}
   },
 };

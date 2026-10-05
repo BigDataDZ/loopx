@@ -127,6 +127,11 @@ remain effective; discovery does not prove execution readiness or grant protecte
 operations. Trusted-local `manager-inbox configure-delivery-scope` uses the same
 source-policy owner, and a verified new private source initializes that policy once.
 An explicitly narrowed existing source policy is not widened by ordinary admission.
+An upgrade verifies every known delivery policy before publishing the broader
+binding. If an I/O write fails, the UI retains the old binding scope and offers
+an explicit retry. Earlier source-policy writes authorized by that upgrade may
+remain applied; retry converges them without resetting recipient revocations.
+This ordering does not claim an atomic transaction across separate files.
 
 When the configured registry declares `common_runtime_root`, coordination context,
 inboxes and return processing use that declared root even if Chat has a separate

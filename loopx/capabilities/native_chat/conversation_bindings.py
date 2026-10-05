@@ -84,14 +84,18 @@ class ChatConversationBindings:
             channels = self.delivery_channels(proposed) if goal_scope is not None else []
             for channel in channels:
                 self.ensure_delivery_scope({"binding": proposed, "channel_id": channel}, execute=False)
+            # Publish the advertised scope only after every known source policy
+            # has applied and verified. On IO failure the old binding remains;
+            # retrying the explicit scope operation converges any earlier source
+            # writes without making ordinary admission undo a manual restriction.
+            for channel in channels:
+                self.ensure_delivery_scope({"binding": proposed, "channel_id": channel}, if_absent=False)
             if result["changed"]:
                 _atomic_write_json(self.path, result["state"])
             readback = self.read()
             if readback != result["state"]:
                 raise OSError("conversation binding publication did not verify")
             binding = next(row for row in readback["bindings"] if row["transport_ref"] == transport_ref)
-            for channel in channels:
-                self.ensure_delivery_scope({"binding": binding, "channel_id": channel}, if_absent=False)
             return binding
 
     def disconnect(self, binding_id: str, *, expected_revision: int) -> dict[str, Any]:
