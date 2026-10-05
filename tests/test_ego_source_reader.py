@@ -27,6 +27,8 @@ def extraction(**changes):
 
 
 def response(value, *, stderr=False):
+    if isinstance(value, dict) and "url" in value:
+        value = {"requested_url": URL, "canonical_url": URL, **value}
     output = reader.MARKER + json.dumps(value)
     return subprocess.CompletedProcess([], 0, "" if stderr else output,
                                        output if stderr else "")
@@ -125,6 +127,12 @@ def test_concurrent_call_does_not_navigate_reserved_page(configured, monkeypatch
         assert reader.read_public_url(URL)["error"] == "source_reader_busy"
 
 
+def test_missing_config_does_not_invoke_browser(configured, monkeypatch):
+    monkeypatch.delenv("LOOPX_EGO_READ_BIN")
+    monkeypatch.setattr(reader.subprocess, "run", lambda *a, **k: pytest.fail("browser accessed"))
+    assert reader.read_public_url(URL)["error"] == "source_reader_not_configured"
+
+
 def test_duplicate_or_non_json_result_is_rejected():
     assert not reader._result(reader.MARKER + "not json", "", URL)["ok"]
     output = reader.MARKER + json.dumps(extraction())
@@ -135,7 +143,9 @@ def test_url_is_json_data_and_fence_precedes_dom_read(configured):
     config = reader.ReaderConfig.from_environment()
     url = 'https://example.com/?q=";process.exit();//'
     script = reader._script(config, url)
-    assert "p.goto(" + json.dumps(url) + ")" in script
+    assert "requestedUrl=" + json.dumps(url) in script
+    assert "await p.goto(target.href)" in script
+    assert script.index("new URL(requestedUrl)") < script.index("await p.goto(")
     assert script.index("current.href!==request.url") < script.index("document.body")
 
 
@@ -230,7 +240,8 @@ def test_image_mcp_stdio_returns_native_image_content(configured, monkeypatch):
         "import sys,re,json,base64\nfrom pathlib import Path\n" +
         "path=json.loads(re.search(r'path:(\"[^\"]+\")',sys.argv[-1])[1])\n" +
         "Path(path).write_bytes(base64.b64decode(" + repr(base64.b64encode(png()).decode()) + "))\n" +
-        "print('LOOPX_PUBLIC_SOURCE:'+" + repr(json.dumps({"url": URL, "index": 8, "alt": "figure"})) + ")\n")
+        "print('LOOPX_PUBLIC_SOURCE:'+" + repr(json.dumps({"url": URL, "requested_url": URL,
+        "canonical_url": URL, "index": 8, "alt": "figure"})) + ")\n")
     configured.chmod(0o700)
     async def journey():
         async with stdio_client(StdioServerParameters(command=sys.executable,
@@ -253,3 +264,77 @@ def test_text_read_exposes_image_indices_without_claiming_visual_read(configured
     result = reader.read_public_url(URL)
     assert result["images"] == [item] and result["image_inventory_truncated"] is True
     assert result["images_read"] is False
+
+
+def run_generated_script(config, url, image, path, *, redirect=None):
+    """Execute the production script in Node, without the user's browser/Page."""
+    import shutil
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node required for the WHATWG URL boundary check")
+    script = (reader._image_script(config, url, 0, str(path)) if image
+              else reader._script(config, url))
+    harness = """
+const vm=require('node:vm'),fs=require('node:fs');
+let href='',domReads=0,captures=0;
+const image={alt:'figure',currentSrc:'https://example.com/image.png',complete:true,
+ naturalWidth:2,naturalHeight:2,scrollIntoView(){},
+ getBoundingClientRect(){return {left:0,top:0,width:2,height:2};}};
+const doc=new Proxy({title:'Article',body:{innerText:'Source evidence'},images:[image]},
+ {get(target,key){domReads++;return target[key];}});
+const page={async goto(url){href=new URL(redirect||url).href;},
+ async evaluate(fn,arg){return vm.runInNewContext('('+fn.toString()+')(arg)',
+ {URL,location:{href},document:doc,arg,scrollX:0,scrollY:0});},
+ async waitForFunction(fn,arg){if(!await this.evaluate(fn,arg))throw Error('not loaded');},
+ async screenshot(options){captures++;fs.writeFileSync(options.path,Buffer.from(pixels,'base64'));}};
+async function taskSpace(){return {page(){return page;}};}
+(async()=>{await eval('(async()=>{'+source+'})()');
+ console.log('SCRIPT_OBSERVATION:'+JSON.stringify({domReads,captures}));})()
+ .catch(error=>{console.error(error);process.exitCode=1;});
+"""
+    import base64
+    inputs = ("const source=" + json.dumps(script) + ";const redirect=" + json.dumps(redirect)
+              + ";const pixels=" + json.dumps(base64.b64encode(png()).decode()) + ";")
+    result = subprocess.run([node, "-e", inputs + harness], capture_output=True,
+                            text=True, timeout=10, check=True)
+    observed = next(line.split(":", 1)[1] for line in result.stdout.splitlines()
+                    if line.startswith("SCRIPT_OBSERVATION:"))
+    decoded = (reader._image_result(result.stdout, result.stderr, url, 0, str(path)) if image
+               else reader._result(result.stdout, result.stderr, url))
+    return decoded, json.loads(observed)
+
+
+@pytest.mark.parametrize("image", [False, True])
+@pytest.mark.parametrize("url,canonical", [
+    ("https://example.com/a/../", "https://example.com/"),
+    ('https://example.com/?q="x"', "https://example.com/?q=%22x%22"),
+    ("https://example.com/a/%2e%2e/article", "https://example.com/article"),
+])
+def test_browser_equivalent_urls_keep_exact_resource_fence(configured, tmp_path, image, url, canonical):
+    result, observation = run_generated_script(reader.ReaderConfig.from_environment(), url,
+                                               image, tmp_path / "image.png")
+    assert result["ok"], result
+    assert result["url"] == canonical and result["requested_url"] == url
+    assert observation["domReads"] > 0
+    assert observation["captures"] == int(image)
+
+
+@pytest.mark.parametrize("image", [False, True])
+@pytest.mark.parametrize("redirect", ["https://example.com/different", "https://other.test/private"])
+def test_generated_scripts_reject_real_redirect_before_dom(configured, tmp_path, image, redirect):
+    result, observation = run_generated_script(reader.ReaderConfig.from_environment(), URL,
+                                               image, tmp_path / "image.png", redirect=redirect)
+    assert result == {"ok": False, "error": "source_url_changed"}
+    assert observation == {"domReads": 0, "captures": 0}
+
+
+@pytest.mark.parametrize("field,value", [("requested_url", "https://example.com/different"),
+                                        ("canonical_url", "https://example.com/different"),
+                                        ("requested_url", None), ("canonical_url", None)])
+def test_result_url_provenance_is_required_and_bound_to_request(tmp_path, field, value):
+    path = tmp_path / "image.png"
+    path.write_bytes(png())
+    text = response(extraction(**{field: value})).stdout
+    image = response({"url": URL, "index": 8, "alt": "", field: value}).stdout
+    assert not reader._result(text, "", URL)["ok"]
+    assert not reader._image_result(image, "", URL, 8, str(path))["ok"]

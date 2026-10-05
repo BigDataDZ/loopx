@@ -39,7 +39,7 @@ def _url(value: str) -> tuple[str, str]:
     if (parsed.scheme != "https" or not parsed.hostname or parsed.username is not None
             or parsed.password is not None or parsed.port not in {None, 443}):
         raise ValueError("HTTPS public-source URL required")
-    # One canonical spelling avoids authority/redirect comparisons disagreeing.
+    # Coarse input/origin preflight; browser normalization belongs to WHATWG URL.
     origin = "https://" + parsed.hostname.lower()
     canonical = origin + (parsed.path or "/")
     if parsed.query:
@@ -72,12 +72,23 @@ class ReaderConfig:
         return cls(str(executable.resolve(strict=True)), space, page, frozenset(origins))
 
 
+def _navigation(config: ReaderConfig, url: str) -> str:
+    # Use the browser's URL rules before navigation, including dot segments and
+    # query escaping. The fixed operator-owned script, not page data, supplies
+    # this canonical target. Recheck its origin before touching the reserved Page.
+    return (
+        f"const requestedUrl={json.dumps(url)};const target=new URL(requestedUrl);target.hash='';"
+        f"const origins={json.dumps(sorted(config.origins))}.map(o=>new URL(o).origin);"
+        "if(!origins.includes(target.origin))throw new Error('source_origin_not_authorized');"
+        f"const t=await taskSpace({config.task_space});const p=t.page({json.dumps(config.page)});"
+        "await p.goto(target.href);"
+    )
+
+
 def _script(config: ReaderConfig, url: str) -> str:
     # No caller-selected code, executable, browser, Page or CLI arguments.
     return (
-        f"const t=await taskSpace({config.task_space});"
-        f"const p=t.page({json.dumps(config.page)});"
-        f"await p.goto({json.dumps(url)});"
+        _navigation(config, url) +
         "const r=await p.evaluate((request)=>{"
         "const current=new URL(location.href);current.hash='';"
         # Fence before reading DOM, atomically with extraction. A raced Page or
@@ -89,9 +100,23 @@ def _script(config: ReaderConfig, url: str) -> str:
         "image_count:document.images.length,images:Array.from(document.images).slice(0,128)"
         ".map((im,index)=>({index,alt:im.alt.slice(0,512),"
         "natural_width:im.naturalWidth,natural_height:im.naturalHeight}))};"
-        f"}},{{url:{json.dumps(url)},limit:{MAX_TEXT_CHARS}}});"
-        f"console.log({json.dumps(MARKER)}+JSON.stringify(r));"
+        f"}},{{url:target.href,limit:{MAX_TEXT_CHARS}}});"
+        f"console.log({json.dumps(MARKER)}+JSON.stringify({{...r,"
+        "requested_url:requestedUrl,canonical_url:target.href}));"
     )
+
+
+def _result_url(value: dict[str, object], requested: str) -> str:
+    observed, target = value["url"], value["canonical_url"]
+    if not isinstance(observed, str) or not isinstance(target, str):
+        raise ValueError("URL strings required")
+    final, origin = _url(observed)
+    canonical, canonical_origin = _url(target)
+    if (value.get("requested_url") != requested or value["url"] != final
+            or value["canonical_url"] != canonical or final != canonical
+            or origin != canonical_origin or origin != _url(requested)[1]):
+        raise ValueError("invalid URL provenance")
+    return final
 
 
 def _result(stdout: str, stderr: str, url: str) -> dict[str, object]:
@@ -105,9 +130,9 @@ def _result(stdout: str, stderr: str, url: str) -> dict[str, object]:
             raise ValueError("object required")
         if value.get("error") == "source_url_changed":
             return {"ok": False, "error": "source_url_changed"}
-        final, _ = _url(value["url"])
+        final = _result_url(value, url)
         text, title = value["text"], value["title"]
-        if (final != url or not isinstance(text, str) or not text.strip()
+        if (not isinstance(text, str) or not text.strip()
                 or len(text) > MAX_TEXT_CHARS or not isinstance(title, str)
                 or len(title) > 8192 or type(value["truncated"]) is not bool
                 or type(value["image_count"]) is not int or value["image_count"] < 0):
@@ -145,10 +170,9 @@ def _image_inventory(value: object) -> list[dict[str, object]]:
 
 def _image_script(config: ReaderConfig, url: str, index: int, path: str) -> str:
     # Capture one rendered image region, never a caller-selected path or script.
-    request = json.dumps({"url": url, "index": index, "edge": MAX_IMAGE_EDGE})
+    request = f"{{url:target.href,index:{index},edge:{MAX_IMAGE_EDGE}}}"
     return (
-        f"const t=await taskSpace({config.task_space});"
-        f"const p=t.page({json.dumps(config.page)});await p.goto({json.dumps(url)});"
+        _navigation(config, url) +
         f"const request={request};"
         "const initial=await p.evaluate((r)=>{"
         "const u=new URL(location.href);u.hash='';"
@@ -156,7 +180,8 @@ def _image_script(config: ReaderConfig, url: str, index: int, path: str) -> str:
         "const im=document.images[r.index];if(!im)return {error:'source_image_unavailable'};"
         "im.scrollIntoView({block:'center'});return {ok:true};},request);"
         "if(initial.error){console.log('LOOPX_PUBLIC_SOURCE:'+JSON.stringify(initial));}else{"
-        "await p.waitForFunction((r)=>{const im=document.images[r.index];"
+        "await p.waitForFunction((r)=>{const u=new URL(location.href);u.hash='';"
+        "if(u.href!==r.url)return true;const im=document.images[r.index];"
         "return im&&im.complete&&im.naturalWidth>1&&im.naturalHeight>1;},"
         "request,{timeout:10000});"
         "const before=await p.evaluate((r)=>{const u=new URL(location.href);u.hash='';"
@@ -169,12 +194,14 @@ def _image_script(config: ReaderConfig, url: str, index: int, path: str) -> str:
         "if(before.error){console.log('LOOPX_PUBLIC_SOURCE:'+JSON.stringify(before));}else{"
         f"await p.screenshot({{path:{json.dumps(path)},fullPage:true,clip:before.clip}});"
         "const stable=await p.evaluate((r)=>{const u=new URL(location.href);u.hash='';"
+        "if(u.href!==r.url)return false;"
         "const im=document.images[r.index];const b=im?.getBoundingClientRect();"
         "return u.href===r.url&&im?.currentSrc===r.src&&b&&"
         "b.left+scrollX===r.clip.x&&b.top+scrollY===r.clip.y&&"
         "b.width===r.clip.width&&b.height===r.clip.height;},before);"
         "console.log('LOOPX_PUBLIC_SOURCE:'+JSON.stringify(stable?"
-        "{url:before.url,index:before.index,alt:before.alt}:{error:'source_url_changed'}));}}"
+        "{url:before.url,requested_url:requestedUrl,canonical_url:target.href,"
+        "index:before.index,alt:before.alt}:{error:'source_url_changed'}));}}"
     )
 
 
@@ -190,7 +217,8 @@ def _image_result(stdout: str, stderr: str, url: str, index: int, path: str) -> 
         if value.get("error") in {"source_url_changed", "source_image_unavailable",
                                    "source_image_bounds_unsupported"}:
             return {"ok": False, "error": value["error"]}
-        if (value.get("url") != url or type(value.get("index")) is not int
+        final = _result_url(value, url)
+        if (type(value.get("index")) is not int
                 or value["index"] != index or not isinstance(value.get("alt"), str)
                 or len(value["alt"]) > 512):
             raise ValueError("invalid image provenance")
@@ -205,7 +233,7 @@ def _image_result(stdout: str, stderr: str, url: str, index: int, path: str) -> 
             raise ValueError("image edge limit")
     except (OSError, KeyError, TypeError, ValueError):
         return {"ok": False, "error": "browser_image_result_invalid"}
-    return {"ok": True, "url": url, "index": index, "alt": value["alt"],
+    return {"ok": True, "url": final, "requested_url": url, "index": index, "alt": value["alt"],
             "width": width, "height": height, "sha256": hashlib.sha256(data).hexdigest(),
             "image_data": base64.b64encode(data).decode(),
             "limitations": "One rendered image region, possibly occluded; not the original "

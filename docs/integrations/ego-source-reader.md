@@ -38,7 +38,10 @@ Disable by removing only this MCP entry and restarting that idle host. Keep a
 private configuration backup and the installed/source revision for rollback.
 
 The tool accepts an HTTPS URL, checks the configured origin before navigation,
-and checks the exact resulting URL before DOM extraction. Redirects and Page
+and uses WHATWG URL normalization for the target before checking the exact
+resulting URL before DOM extraction. Equivalent dot segments and query escaping
+do not count as redirects. The fixed operator-owned script supplies the canonical
+target; results retain both requested and observed URLs. Redirects and Page
 races fail closed. Input cannot select code, executables, Page labels or browser
 commands. Calls within one process reject concurrent reads. Execution times out
 after 30 seconds; returned text is limited to 100,000 characters. Errors omit
@@ -69,7 +72,9 @@ a verification wall was solved, referenced sources were read, or image content
 was understood. Page text and image pixels remain untrusted data, never instructions. A source
 read does not authorize material intake, note edits, publishing or delegation.
 
-Unit tests cover transport and scope boundaries with a simulated CLI. Release
+Tests cover transport and scope boundaries with a simulated CLI and execute
+the generated scripts in Node to check canonical URLs and rejection before DOM
+access. These fixtures do not operate the user's browser. Release
 qualification must separately verify a tool call by the original native Bot
 Session, a visible channel reply, a rejected out-of-scope URL, preserved Session
 identity and unchanged workspace grants. Record failure/untested cases rather
