@@ -599,6 +599,10 @@ def _projected_cli_args(command: str, *, turn_instance_id: str) -> tuple[str, ..
 
 def _bind_selected_replan_guard(
     registry: Path, runtime: Path, project: Path, turn_instance_id: str,
+    *,
+    goal_id: str = GOAL_ID,
+    agent_id: str = AGENT_ID,
+    todo_id: str = SELECTED_REPLAN_TODO_ID,
 ) -> dict[str, Any]:
     """Choose the fixture Todo explicitly, then consume the generated recovery.
 
@@ -607,9 +611,9 @@ def _bind_selected_replan_guard(
     """
     rc, deferred = _run_cli(
         registry, runtime, "quota", "should-run", "--codex-app",
-        "--goal-id", GOAL_ID, "--agent-id", AGENT_ID,
+        "--goal-id", goal_id, "--agent-id", agent_id,
         "--turn-instance-id", turn_instance_id, "--scan-path", str(project),
-        "--todo-id", SELECTED_REPLAN_TODO_ID,
+        "--todo-id", todo_id,
     )
     if rc == 0:
         bound = deferred
@@ -619,7 +623,7 @@ def _bind_selected_replan_guard(
         [command] = deferred["interaction_contract"]["cli_channel"]["next_cli_actions"]
         rc, bound = _run_generated_cli(command, registry_path=registry)
     assert rc == 0, bound
-    assert bound["heartbeat_receipt"]["settlement_identity"]["todo_id"] == SELECTED_REPLAN_TODO_ID
+    assert bound["heartbeat_receipt"]["settlement_identity"]["todo_id"] == todo_id
     return bound
 
 
@@ -5086,7 +5090,7 @@ def test_pending_action_selection_does_not_commit_after_new_user_gate(
     assert all(not event["details"].get("settlement_effect_id") for event in events)
 
 
-def test_todoless_autonomous_replan_settles_quota_refresh_spend_chain(
+def test_todoless_replan_settles_once_and_rearms_missing_vision(
     tmp_path: Path,
 ) -> None:
     project, runtime, registry_path = _write_fixture(tmp_path)
@@ -5279,11 +5283,17 @@ def test_todoless_autonomous_replan_settles_quota_refresh_spend_chain(
     )
 
     assert fresh_rc == 0, fresh
-    assert fresh["decision"] == "skip", fresh
-    assert fresh["effective_action"] == "monitor_quiet_skip"
-    assert fresh["execution_obligation"]["must_attempt_work"] is False
-    assert fresh.get("autonomous_replan_obligation") is None
-    assert fresh.get("replan_action_packet") is None
+    # The original Turn is settled, but its material write did not establish
+    # a per-agent Vision baseline. The next Turn must address that independent
+    # gap without replaying the previous obligation or spending a second slot.
+    assert fresh["decision"] == "autonomous_replan_required", fresh
+    assert fresh["execution_obligation"]["must_attempt_work"] is True
+    assert fresh["autonomous_replan_obligation"]["rearmed_after_obligation_id"] == obligation_id
+    assert fresh["autonomous_replan_obligation"]["obligation_id"] != obligation_id
+    assert any(
+        gap["kind"] == "vision_checkpoint_missing" and gap["missing_baseline"]
+        for gap in fresh["goal_frontier_projection"]["acceptance_gaps"]
+    )
     assert fresh["heartbeat_receipt"]["turn_instance_id"] == fresh_turn_id
     assert _spend_run_count(runtime) == 1
 
