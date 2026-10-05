@@ -7,19 +7,22 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 from ...capabilities.native_chat.external_conversations import ChatExternalConversations
-from ...chat_store import _atomic_write_json, _read_json
+from ...chat_store import TERMINAL_TURN_STATES, _atomic_write_json, _read_json
 from ...file_lock import exclusive_file_lock
+from ...presentation.markdown import markdown_scalar
+from ...presentation.renderers.conversation_status_markdown import render_conversation_status
 from .conversation_identity import identity_ref, lark_private_source
 from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
 from .goal_channel_transport import APP_ID_PATTERN, call, json_payload, lark_args
 from .inbox_reply import _message, reply_lark_event_inbox, verify_lark_inbox_reply
 from .inbox_reactions import mark_lark_event_inbox_processing, mark_lark_event_inbox_received
-from .private_images import private_message_images
+from .private_images import private_message_caption, private_message_images
 
 
 class LarkPrivateConversations:
@@ -197,18 +200,19 @@ class LarkPrivateConversations:
                         record["attachment_notice"] = str(exc)
                     _atomic_write_json(path, record)
                 text, attachments = record.get("message", ""), record.get("attachments", [])
-            command = {"/status": "status", "/help": "help", "/new": "new", "/stop": "stop"}.get(text.strip())
-            if text.strip() == "/agents":
+            command_input = private_message_caption(record["source_content"]) if attachments else text.strip()
+            command = {"/status": "status", "/help": "help", "/new": "new", "/stop": "stop"}.get(command_input)
+            if command_input == "/agents":
                 command = "agents"
-            elif text.strip() == "/project":
+            elif command_input == "/project":
                 command = "select_project"
-            elif text.strip() == "/agent" or text.strip().startswith("/agent "):
+            elif command_input == "/agent" or command_input.startswith("/agent "):
                 command = "select_agent"
             if binding["context_kind"] == "steward":
                 for prefix, selected_command in [("/delegate", "commission"), ("/委托", "commission"),
                                                   ("/confirm", "confirm_commission"), ("/cancel", "cancel_commission"),
                                                   ("/stop-commission", "stop_commission"), ("/resume-commission", "resume_commission")]:
-                    if text.strip() == prefix or text.strip().startswith(prefix + " "):
+                    if command_input == prefix or command_input.startswith(prefix + " "):
                         command = selected_command
                         break
             if message_type not in {"text", "image", "post"} or record.get("attachment_notice"):
@@ -235,6 +239,44 @@ class LarkPrivateConversations:
 
     def _reply_runner(self, args: Sequence[str]) -> Any:
         return self.runner([self.cli_bin, *args[1:]], None, 30)
+
+    def return_inbox(self, *, route: dict[str, Any], session: dict[str, Any],
+                     turn: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+        """Resolve an original worker return through its admitted private source.
+
+        Core revalidates the saved steward context. The two correlation records
+        must still name the exact canonical Session/Turn; neither the current
+        conversation nor a worker-supplied destination can replace that source.
+        Manager-context retains ownership of the return attempt and recovery.
+        """
+        saved = session["steward_context"]
+        selected = self.bindings.session_context(saved)
+        client = str(turn.get("client_turn_id") or "")
+        request = client.removeprefix("external-")
+        if client != f"external-{request}" or not re.fullmatch(r"[a-f0-9]{24}", request):
+            raise ValueError("original private request unavailable")
+        record = _read_json(self.root / f"{request}.json")
+        native = self.core.read_request(request)
+        message_id = str(record.get("event", {}).get("message_id") or "")
+        if (route["source_id"] not in (request, f"lark:{message_id}")
+                or identity_ref(selected["binding"]["provider_ref"], message_id) != request
+                or session.get("goal_id") != "loopx-manager"
+                or session.get("channel_id") != selected["channel_id"]
+                or route["goal_id"] not in selected["context"]["goal_ids"]
+                or route["session_id"] != session["session_id"]
+                or turn.get("session_id") != session["session_id"]
+                or record.get("profile") != selected["binding"]["transport_ref"]
+                or record.get("request_ref") != request
+                or record.get("source") != lark_private_source(
+                    provider_ref=selected["binding"]["provider_ref"], event=record["event"])
+                or record["source"]["source_ref"] != saved["source_ref"]
+                or any(row.get("binding_id") != saved["binding_id"]
+                       or row.get("source") != record["source"]
+                       or row.get("session_id") != session["session_id"]
+                       or row.get("turn_id") != turn["turn_id"]
+                       for row in (record, native))):
+            raise ValueError("original private return source changed")
+        return self._inbox(record), record
 
     def _feedback(self, path: Path, record: dict[str, Any], *, inbox: Callable[[], Path], processing: bool = False) -> None:
         """Render observed Core admission/execution through the shared Inbox owner.
@@ -362,10 +404,11 @@ class LarkPrivateConversations:
                         self._deliver(path, record, "admission", admission, inbox=inbox)
                     if turn and turn["status"] in {"starting", "running"}:
                         self._feedback(path, record, inbox=inbox, processing=True)
-                    if not turn or turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
+                    if not turn or turn["status"] not in TERMINAL_TURN_STATES:
                         return 0
                     response = str((turn.get("response") or {}).get("message") or "") if turn["status"] == "completed" else (
                         "本次执行已停止。" if turn["status"] == "interrupted" else
+                        "本次执行超时，原会话已保留；请发送 /status 查看状态后再决定是否重试。" if turn["status"] == "timed_out" else
                         "本次执行失败或已过期，原会话已保留；请发送 /status 后再决定是否重试。")
                 else:
                     if record["status"] != "rejected":
@@ -380,12 +423,14 @@ class LarkPrivateConversations:
                         first_turn = self.core.controller.store.load_turn(resources["session_id"], resources["turn_id"])
                         if first_turn and first_turn["status"] in {"starting", "running"}:
                             self._feedback(path, record, inbox=inbox, processing=True)
-                        if not first_turn or first_turn["status"] not in {"completed", "failed", "interrupted", "expired"}:
+                        if not first_turn or first_turn["status"] not in TERMINAL_TURN_STATES:
                             record["status"] = "commission_running"
                             _atomic_write_json(path, record)
                             return 0
                         result_text = str((first_turn.get("response") or {}).get("message") or "")
-                        result_text = "委托执行结果：\n" + result_text if first_turn["status"] == "completed" else "委托首轮执行未完成；原 Goal 和回执已保留，请查看状态后决定恢复。"
+                        result_text = ("委托执行结果：\n" + result_text if first_turn["status"] == "completed" else
+                            "委托首轮执行超时；原 Goal 和回执已保留，请查看状态后决定恢复。" if first_turn["status"] == "timed_out" else
+                            "委托首轮执行未完成；原 Goal 和回执已保留，请查看状态后决定恢复。")
                         proposal_id = native.get("proposal_id")
                         if proposal_id:
                             result_text += f"\n如需恢复暂停或额度受限的原执行：/resume-commission {proposal_id} --tokens N（N 为包含历史用量的总上限，须大于已用量；不会重开线程）。"
@@ -413,37 +458,24 @@ def _command_text(code: str) -> str:
 
 
 def _status_text(snapshot: dict[str, Any], *, help_requested: bool) -> str:
-    """Localize Core facts; never infer an Agent, grant or model completion."""
+    """Render Core facts with provider-specific commands and help."""
     steward = snapshot["context_kind"] == "steward"
-    phases = {"queued": "已受理等待执行", "starting": "正在启动", "running": "正在执行",
-        "completing": "正在收尾", "interrupting": "正在停止", "completed": "原生执行结束",
-        "interrupted": "已停止", "timed_out": "执行超时", "failed": "执行失败"}
-    if snapshot["session_status"] is None:
-        state = "尚无会话；发送文字即可开始。"
-    elif not snapshot["active_turn_observation_available"]:
-        state = "执行证据暂不可读；请在本机检查原会话。"
-    elif snapshot["active_turn_status"]:
-        state = phases.get(snapshot["active_turn_status"], "执行状态暂不可判定；请在本机检查原会话。")
-    else:
-        state = {"failed": "会话恢复失败；请在本机检查原会话。",
-            "resume_failed": "会话恢复失败；请在本机检查原会话。", "stale": "会话需要恢复。",
-            "starting": "会话正在启动。", "resuming": "会话正在恢复。",
-            "ready": "会话可继续。", "closed": "会话已关闭。"}.get(
-                snapshot["session_status"], "会话状态暂不可判定；请在本机检查原会话。")
-    text = (f"状态快照（{snapshot['observed_at']}）\n角色：{'长期管家' if steward else '普通项目对话'}"
-        f"\n工作区：{snapshot['workspace_path']}\n执行器：{snapshot['executor_endpoint_id']}"
-        f"\n{state}\n已持久排队：{snapshot['queued_count']} 条。")
-    if snapshot.get("recipient_agent_id"):
-        return text + f"\n已选择 Agent：{snapshot['recipient_agent_id']} · {snapshot['recipient_goal_id']}。等待原宿主领取队列；/agents 查看授权，/project 返回普通项目对话。实时停止或新建请在原宿主处理。"
-    text += (f"\n已授权新委托：{snapshot['authorized_commission_count']}；执行结束不代表委托验收。" if steward else
-        ("\n已明确授权此工作区读写，按项目规则和 skills 执行当前指令；没有自动选用注册 Agent 或创建 Goal。"
-         if snapshot["grant"] == "workspace_write" else "\n当前仅有工作区只读授权；没有自动选用注册 Agent 或创建 Goal。"))
-    text += "\n/status 查看状态；/stop 停止当前聊天执行；/new 关闭当前聊天并开启下次新会话；/help 查看用法。"
-    if not steward:
-        text += "\n/agents 查看本 App 已授权的 Agent；使用列表中的完整 /agent 命令选择，/project 返回此项目会话。"
+    attached = bool(snapshot.get("recipient_agent_id"))
+    text = render_conversation_status(snapshot)
+    text += ("\n\n/agents 授权 Agent · /project 返回项目 · /help 用法" if attached else
+             "\n\n/stop 停止当前聊天 · /new 新会话 · /help 用法")
     if help_requested:
-        text += "\n可直接发送图片或图文消息（PNG/JPEG/GIF/WebP，最多 4 张，单张 5 MB、合计 12 MB）。文件与音视频暂不支持；选择原宿主 Agent 后仅支持文字。"
-        text += "\n工作区、执行器与解绑：本机 Chat → 设置 → Lark。变更或解绑会重新核验授权；已受理工作不会迁移到新会话。"
+        if not steward and not attached and snapshot.get("grant") == "workspace_write":
+            text += "\n按项目规则和 skills 执行当前指令；读写授权不会创建 Goal 或提高原宿主权限。"
+        text += ("\n\n/status 查看当前状态；/help 查看用法。"
+                 "\n/agents 查看本 App 已授权的 Agent；使用列表中的完整 /agent 命令选择，/project 返回项目对话。")
+        if not attached:
+            text += "\n/stop 停止当前聊天执行；/new 关闭当前聊天，下条消息开启新会话。"
+        text += (f"\n\n工作区：{markdown_scalar(snapshot['workspace_path'])}"
+                 f"\n执行器：{markdown_scalar(snapshot['executor_endpoint_id'])}"
+                 f"\n观察时间：{markdown_scalar(snapshot['observed_at'])}"
+                 "\n工作区、执行器与解绑：本机 Chat → 设置 → Lark。变更或解绑会重新核验授权；已受理工作不会迁移到新会话。"
+                 "\n可直接发送图片或图文消息（PNG/JPEG/GIF/WebP，最多 4 张，单张 5 MB、合计 12 MB）。文件与音视频暂不支持；选择原宿主 Agent 后仅支持文字。")
         if steward:
             text += "\n新委托：/delegate --tokens N 具体目标；读完预览后从原私聊发送完整 /confirm。/cancel 取消预览；/stop-commission 和 /resume-commission 使用原回执中的完整命令。"
     return text

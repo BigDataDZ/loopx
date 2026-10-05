@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 
-from . import chat_configuration_api as config_api
+from .presentation import configuration_api as config_api
 from .attached_session_api import AttachedSessionRequestMixin
 from .chat import (
     TodoReviewPreviewConflict,
@@ -55,6 +55,7 @@ from .extensions.lark.private_conversations import LarkPrivateConversations
 from .chat_loopx_mode import handle_loopx_request
 from .capabilities.manager_context.roundtrip import project_chat_session_snapshot
 from .control_plane.goals.active_state_metadata import active_state_section_text
+from .control_plane.coordination.local_authority import LocalCoordinationAuthorityUnavailable
 from .control_plane.status.ssh_host_catalog import (
     SSH_HOST_CATALOG_PATH,
     ssh_host_catalog_payload,
@@ -90,6 +91,7 @@ from .extensions.runtime import (
 )
 from .history import load_registry
 from .chat_completed_todos import CompletedTodoPages, CompletedTodoRequestMixin
+from .chat_todo_detail import TodoDetailRequestMixin
 from .kiro_cli_goal_mode import KIRO_CLI_BIN
 from .paths import resolve_runtime_root
 from .release_manifest import release_runtime_identity
@@ -425,6 +427,9 @@ class ChatHTTPServer(ThreadingHTTPServer):
     goal_subagent_configuration_enabled: bool
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Freeze before serving: an in-place package upgrade must not retag the
+        # old process with the identity of bytes it has never loaded.
+        self.runtime_identity = release_runtime_identity()
         super().__init__(*args, **kwargs)
         self.completed_todo_pages = CompletedTodoPages()
 
@@ -445,6 +450,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
 class ChatRequestHandler(
     PrivateConversationRequestMixin,
     CompletedTodoRequestMixin,
+    TodoDetailRequestMixin,
     AttachedSessionRequestMixin,
     SshSourceRequestMixin,
     GoalSubagentConfigurationRequestMixin,
@@ -1153,6 +1159,16 @@ class ChatRequestHandler(
         except ActionConflictError as exc:
             self._send_error(str(exc), status=409, error_code="action_conflict")
             return
+        except LocalCoordinationAuthorityUnavailable as exc:
+            # The canonical owner already decided this refusal. Adapt its
+            # diagnostic without publishing the source snapshot or granting
+            # an actor/lease on the caller's behalf.
+            self._send_error(
+                redact_local_paths(str(exc)) + ". Resolve the canonical authority requirement and retry.",
+                status=400,
+                error_code=exc.code,
+            )
+            return
         except (KeyError, ValueError) as exc:
             self._send_error(str(exc), status=400, error_code="invalid_action_preview")
             return
@@ -1380,7 +1396,7 @@ class ChatRequestHandler(
                 "manager": manager_capabilities_projection(
                     self.server.runtime_controller, self.server.chat_store
                 ),
-                "runtime_identity": release_runtime_identity(),
+                "runtime_identity": self.server.runtime_identity,
                 "agent_backend": "multi_adapter",
                 "sandbox": "read-only",
                 "approval_policy": "never",
@@ -1407,6 +1423,7 @@ class ChatRequestHandler(
                 }
             )
         get_dispatch = {
+            "/api/chat/todo/detail": self._todo_detail,
             "/api/chat/completed-todos": self._completed_todos,
             "/api/chat/goal-results": self._goal_results,
             CHAT_SESSIONS_PATH: self._list_sessions,
@@ -1658,7 +1675,7 @@ def serve_chat(
     )
     server.lark_goal_topic_runtime.start()
     from .extensions.lark.manager_returns import start_return_service
-    server.manager_return_service = start_return_service(server, runtime_root)
+    server.manager_return_service = start_return_service(server, server.runtime_controller.coordination_runtime_root)
     from .chat_loopx_mode import DelegationWakeService
 
     def _wake_goal_context(session):

@@ -132,3 +132,33 @@ def test_resource_bytes_are_checked_before_core_admission(raw, notice):
         private_message_images(content="![Image](img_example)", message_type="image",
             message_id="om_example", profile="notes-app", cli_bin="lark-cli",
             runner=image_runner(None, content=raw))
+
+
+@pytest.mark.parametrize("command", ["/status", "/stop", "/new", "/project", "/agents"])
+def test_image_control_caption_never_starts_or_controls_native_work(ordinary, command):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    transport.runner = image_runner(provider)
+    try:
+        event = provider.event("notes-app", "image-control",
+            command + "\n![Image](img_example)", kind="post")
+        assert transport.admit("notes-app", event)["status"] == "command_recorded"
+        transport.reconcile()
+        assert store.list_sessions() == []
+        assert any("未提交执行" in text for _, text in provider.writes)
+    finally:
+        runtime.close()
+
+
+def test_help_describes_default_images_without_creating_work(ordinary):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    try:
+        event = provider.event("notes-app", "image-help", "/help")
+        assert transport.admit("notes-app", event)["status"] == "command_recorded"
+        transport.reconcile()
+        answer = provider.writes[-1][1]
+        assert "PNG/JPEG/GIF/WebP" in answer
+        assert "文件与音视频暂不支持" in answer
+        assert "仅支持文字" in answer
+        assert store.list_sessions() == []
+    finally:
+        runtime.close()

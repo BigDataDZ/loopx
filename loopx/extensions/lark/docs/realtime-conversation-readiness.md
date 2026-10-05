@@ -80,6 +80,15 @@ approval store, scheduler or model-execution authority. Missing evidence is not
 permission to restart a request in a fresh model thread, elevate host policy
 or acknowledge work as completed.
 
+Private DM result reconciliation uses the existing Chat store's terminal-state
+owner, including `timed_out`, for ordinary replies and commission results.
+Timeouts return an explicit failure and the original conversation's recovery
+controls. Provider readback still gates delivery: restarting the transport or
+redelivering the source reconciles the saved attempt without another send or
+model execution. Synthetic host/provider checks cover idle/hard DM timeouts
+and an injected commission timeout; a live-provider recovery drill remains
+part of the switch gate below.
+
 ## Qualification before switching
 
 The acceptance owner is the steward RFC's

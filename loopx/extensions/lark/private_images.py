@@ -21,6 +21,11 @@ _IMAGE = re.compile(r"(?:!\[[^\]]*\]\(|\[Image: *)(img_[A-Za-z0-9_-]+)[)\]]")
 _OTHER_RESOURCE = re.compile(r"<(?:file|folder|audio|video|media)\b")
 
 
+def private_message_caption(content: str) -> str:
+    """Control parsing reads the caption; model input keeps image placeholders."""
+    return _IMAGE.sub("", content).strip()
+
+
 def private_message_images(*, content: str, message_type: str, message_id: str,
                            profile: str, cli_bin: str, runner: Any) -> tuple[str, list[dict[str, Any]]]:
     """Read all images or reject the whole message; never execute a partial post."""

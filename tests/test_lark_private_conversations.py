@@ -115,6 +115,19 @@ def test_native_private_admission_queue_other_app_stop_and_verified_delivery(ord
         assert transport.admit("notes-app", queued)["status"] == "durably_accepted"
         assert time.monotonic() - started < 3
         assert len(store.queued_turns(sid)) == 1
+        # Status uses the canonical running Turn/queue, without another model call.
+        status_event = provider.event("notes-app", "current-status", "/status")
+        assert transport.admit("notes-app", status_event)["status"] == "command_recorded"
+        status_snapshot = next(row["status_snapshot"] for row in transport.core.pending()
+                               if row["command"] == "status")
+        assert status_snapshot["active_turn_status"] in {"starting", "running"}
+        transport.reconcile()
+        status_reply = next(text for profile, text in provider.writes
+                            if profile == "notes-app" and "排队消息：1 条" in text)
+        phase = "正在启动" if status_snapshot["active_turn_status"] == "starting" else "正在执行"
+        assert phase in status_reply and "个人助手 · notes" in status_reply
+        assert str(ordinary[-1]) not in status_reply and "/help" in status_reply
+        assert len(store.queued_turns(sid)) == 1
         assert transport.admit("notes-app", {**queued, "event_id": "redelivery"})["status"] == "durably_accepted"
         assert len(store.queued_turns(sid)) == 1
         other = provider.event("steward-app", "other", "different audience")
@@ -123,7 +136,7 @@ def test_native_private_admission_queue_other_app_stop_and_verified_delivery(ord
         assert runtime.wait_for_turn(session_id=other_row["session_id"], turn_id=other_row["turn_id"], timeout_sec=10)["status"] == "completed"
         transport.reconcile()
         assert any(profile == "steward-app" and text == "Runtime response." for profile, text in provider.writes)
-        assert any(profile == "notes-app" and "已排队" in text for profile, text in provider.writes)
+        assert any(profile == "notes-app" and "这条已排队" in text for profile, text in provider.writes)
         stop = provider.event("notes-app", "stop", "/stop")
         assert transport.admit("notes-app", stop)["status"] == "command_recorded"
         queued_row = next(row for row in transport.core.pending() if row["message"] == "follow-up")
@@ -171,28 +184,6 @@ def test_existing_consumer_dispatches_private_admission_without_waiting_for_mode
         private_admitter=lambda profile, event: admitted.append((profile, event)) or {"status": "durably_accepted"})
     assert result["event_statuses"] == ["durably_accepted"]
     assert admitted == [("notes-app", event)]
-
-
-def test_revocation_during_source_read_prevents_native_admission(ordinary):  # noqa: F811
-    store, runtime, provider, transport = connect(ordinary)
-    try:
-        event = provider.event("notes-app", "revoked", "must not execute")
-        binding = transport.bindings.read()["bindings"][0]
-
-        def revoke_after_read(args, cwd=None, timeout=None):
-            result = provider(args, cwd, timeout)
-            if "+messages-mget" in args:
-                transport.bindings.disconnect(binding["binding_id"],
-                    expected_revision=transport.bindings.read()["revision"])
-            return result
-
-        transport.runner = revoke_after_read
-        assert transport.admit("notes-app", event)["status"] == "command_rejected"
-        assert transport.core.pending() == []
-        assert store.list_sessions() == []
-        assert provider.writes == []
-    finally:
-        runtime.close()
 
 
 def test_new_session_replay_cannot_close_a_later_session(ordinary):  # noqa: F811
@@ -294,6 +285,30 @@ def test_private_app_alias_guard_rejects_unknown_or_unverified_identity():
             _app_identity_for_private_guard("notes-app", unverified, "lark-cli")
 
 
+
+def test_revocation_during_source_read_prevents_native_admission(ordinary):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    try:
+        event = provider.event("notes-app", "revoked", "must not execute")
+        binding = transport.bindings.read()["bindings"][0]
+
+        def revoke_after_read(args, cwd=None, timeout=None):
+            result = provider(args, cwd, timeout)
+            if "+messages-mget" in args:
+                transport.bindings.disconnect(binding["binding_id"],
+                    expected_revision=transport.bindings.read()["revision"])
+            return result
+
+        transport.runner = revoke_after_read
+        assert transport.admit("notes-app", event)["status"] == "command_rejected"
+        assert transport.core.pending() == []
+        assert store.list_sessions() == []
+        assert provider.writes == []
+    finally:
+        runtime.close()
+
+
+
 def test_listener_discovery_is_separate_from_current_owner_authorization(ordinary):  # noqa: F811
     _, runtime, _, transport = connect(ordinary)
     original = transport.bindings.observe
@@ -318,6 +333,7 @@ def test_listener_discovery_is_separate_from_current_owner_authorization(ordinar
         runtime.close()
 
 
+
 def test_listener_lease_uses_current_app_and_detects_removal_or_retarget(ordinary):  # noqa: F811
     import hashlib
 
@@ -338,6 +354,7 @@ def test_listener_lease_uses_current_app_and_detects_removal_or_retarget(ordinar
         runtime.close()
 
 
+
 @pytest.mark.parametrize("result", [
     {"returncode": 1, "stdout": "", "timed_out": True},
     {"returncode": 0, "stdout": "not JSON"},
@@ -351,6 +368,7 @@ def test_unreadable_local_profile_inventory_is_unknown_not_removed(ordinary, res
             transport.profiles()
     finally:
         runtime.close()
+
 
 
 def test_actual_stream_survives_probe_and_inventory_fault_then_stops_on_disconnect(ordinary):  # noqa: F811
@@ -420,6 +438,7 @@ def test_actual_stream_survives_probe_and_inventory_fault_then_stops_on_disconne
         runtime.close()
 
 
+
 def test_slow_reply_readback_does_not_hold_independent_stop_or_other_app(ordinary, monkeypatch):  # noqa: F811
     import threading
     from loopx.extensions.lark.goal_topic_runtime_service import LarkGoalTopicRuntimeService
@@ -452,7 +471,7 @@ def test_slow_reply_readback_does_not_hold_independent_stop_or_other_app(ordinar
         # received feedback. No Session/model was needed for these controls.
         assert not release.is_set()
         assert ("notes-app", "当前没有正在执行的消息。") in provider.writes
-        assert any(profile == "steward-app" and "角色：普通项目对话" in text
+        assert any(profile == "steward-app" and "个人助手 · notes" in text
                    for profile, text in provider.writes)
         assert store.list_sessions() == []
     finally:
@@ -464,6 +483,7 @@ def test_slow_reply_readback_does_not_hold_independent_stop_or_other_app(ordinar
     writes = list(provider.writes)
     transport.reconcile()
     assert provider.writes == writes  # Recovery does not resend an attempted reply.
+
 
 
 def test_private_reply_workers_have_no_executor_backlog_and_stop_scheduling(tmp_path):
@@ -502,6 +522,7 @@ def test_private_reply_workers_have_no_executor_backlog_and_stop_scheduling(tmp_
         service._closed.set()
         release.set()
         worker.join(10)
+
 
 
 def test_scoped_recovery_does_not_probe_unrelated_app_and_revocation_blocks_reply(ordinary):  # noqa: F811
