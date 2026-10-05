@@ -267,7 +267,7 @@ def run_once(env: dict[str, str]) -> dict:
         "mode": execution.mode,
         "context": execution.context,
         "task_entry": execution.task_entry,
-        "turn_envelope": execution.turn_envelope,
+        **({"turn_envelope": True} if execution.turn_envelope else {}),
         "stage": stage,
         "home_scope": "trial",
         "ok": False,

@@ -166,7 +166,7 @@ class SForgeWorker(CodexAgent):
             "profile": self.profile, "model": self._config.agent_model,
             "reasoning_effort": effort, "timeout_seconds": self.timeout_seconds,
             "stop_hook": self.profile == "official",
-            "turn_envelope": self.turn_envelope,
+            **({"turn_envelope": True} if self.turn_envelope else {}),
             "outer_resume": self.resume_cmd is not None,
             "explore_graph": self.profile == "heartbeat-explore",
             "explore_harness": self.profile == "heartbeat-explore",

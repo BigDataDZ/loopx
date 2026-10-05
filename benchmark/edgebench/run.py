@@ -136,7 +136,7 @@ def main(argv=None):
         "run_id": args.run_id, "task": args.task, "worker": args.worker,
         "model": args.model, "effort": args.effort, "timeout_seconds": args.timeout,
         "loopx_commit": pins[0], "runner_commit": pins[1],
-        "turn_envelope": args.turn_envelope,
+        **({"turn_envelope": True} if args.turn_envelope else {}),
         "task_sha256": hashlib.sha256(task_file.read_bytes()).hexdigest(),
         "feedback": args.feedback, "internet": task.internet,
         "eval_interval": args.eval_interval, "submission_cooldown": args.submission_cooldown,
