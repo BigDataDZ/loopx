@@ -60,6 +60,19 @@ per-job execution flags, reason and coverage scope. The merge gate requires
 success for required jobs and an explicit skip for exempt ones; failure,
 cancellation, missing outputs, contradictory flags or unexpected skips fail.
 
+Specialized workflows already use GitHub's PR path filters: release artifacts
+follow packaged source/build inputs, desktop artifacts follow native/Desktop
+and shared Dashboard inputs, optional Ark follows its adapter and shared turn
+boundaries, and Frontstage follows its published content. Their filters remain
+separate from the required Python merge gate, which starts for every PR and
+decides exemptions inside the workflow. Regression fixtures cover both related
+and unrelated paths, including a mixed PR that still triggers Ark.
+
+按需触发以整个 PR 的累计改动为输入，先判断职责，再决定运行哪些完整 job。
+文档与纯前端 PR 已有明确豁免；后端、桌面、共享依赖或混合改动仍保留完整
+Python 主门禁。桌面、发布、Ark 和 Frontstage 的专用 workflow 则继续按各自
+路径触发。当前没有实现逐个测试的依赖图选择，也不声称所有后端 PR 都能缩减。
+
 Stage2c retains all correctness cases: its E2E lane uses two runners with two
 workers each, while mutants and installed-package lanes remain separate. The
 small pytest plugin assigns whole modules using deterministic largest-first
@@ -81,7 +94,9 @@ Full Public Smokes runs daily at `18:37 UTC` and by manual dispatch on the
 selected ref; ordinary main pushes no longer launch it. Its five complete
 shards share one built and source-verified Chat artifact, with at most two
 shard jobs running at once. Each consumer rejects missing, stale or corrupt
-assets before running smokes. This reduces repeated frontend builds from five
+assets before running smokes and installs its own locked Dashboard test
+dependencies; a shared build artifact does not provide a runner's test runtime.
+This reduces repeated frontend builds from five
 to one and background shard occupancy from five runners to two; the complete
 sweep may take longer. The existing fleet-health readback still checks receipts.
 

@@ -79,6 +79,39 @@ def test_main_supersession_does_not_cancel_nightly_or_manual_full_qualification(
     assert [expression(concurrency["cancel-in-progress"], context) for context in contexts] == [True, True, False, False, False]
 
 
+def test_required_merge_gate_workflow_is_not_suppressed_by_path_filters() -> None:
+    # A required workflow omitted by a path filter can leave a PR pending. The
+    # stable gate always starts; job-level exemptions handle unrelated changes.
+    triggers = workflow("python-tests")[True]
+    assert "pull_request" in triggers
+    assert "paths" not in triggers["pull_request"]
+    assert "paths-ignore" not in triggers["pull_request"]
+
+
+@pytest.mark.parametrize("name,paths,expected", [
+    ("release-artifacts", ["loopx/cli.py"], True),
+    ("release-artifacts", ["docs/development/testing-and-quality.md"], False),
+    ("release-artifacts", ["apps/presentation/dashboard/src/App.tsx"], True),
+    ("desktop-release-artifacts", ["loopx/cli.py"], False),
+    ("desktop-release-artifacts", ["apps/desktop/loopx-control-plane/src-tauri/src/main.rs"], True),
+    ("desktop-release-artifacts", ["apps/presentation/dashboard/src/App.tsx"], True),
+    ("desktop-updater", ["apps/presentation/dashboard/src/App.tsx"], False),
+    ("desktop-updater", ["apps/desktop/loopx-control-plane/src-tauri/src/main.rs"], True),
+    ("ark-turn", ["packages/loopx-ark-turn/src/loopx_ark_turn/adapter.py"], True),
+    ("ark-turn", ["apps/presentation/dashboard/src/App.tsx", "docs/guide.md"], False),
+    ("ark-turn", ["loopx/control_plane/turn_driver/runtime.py", "apps/presentation/dashboard/src/App.tsx"], True),
+    ("frontstage-pages", ["docs/guide.md"], True),
+    ("frontstage-pages", ["loopx/cli.py"], False),
+])
+def test_specialized_workflows_trigger_for_related_pr_paths(name: str, paths: list[str], expected: bool) -> None:
+    patterns = workflow(name)[True]["pull_request"]["paths"]
+    # Current filters use only literal paths and */**. In GitHub syntax a
+    # single star cannot cross a directory; a double star can.
+    assert all(not any(char in pattern for char in "!?+[") for pattern in patterns)
+    regexes = [re.escape(pattern).replace(r"\*\*", ".*").replace(r"\*", "[^/]*") for pattern in patterns]
+    assert any(re.fullmatch(regex, path) for regex in regexes for path in paths) is expected
+
+
 @pytest.mark.parametrize("name", ["push", "pull_request", "merge_group", "schedule", "workflow_dispatch"])
 @pytest.mark.parametrize("backend", [True, False])
 def test_future_node_probe_is_background_only(name: str, backend: bool) -> None:
@@ -106,6 +139,13 @@ def test_daily_smokes_keep_every_shard_and_verify_one_shared_source_artifact() -
     assert upload["with"]["path"] == download["with"]["path"] == "loopx/web/chat/"
     verify = next(step for step in consumers["steps"] if step.get("run") == "python scripts/chat_bundle.py verify --source")
     run = next(step for step in consumers["steps"] if step.get("name") == "Run full-public shard")
+    # Demo-readiness skips when the Dashboard compiler is absent. Shared build
+    # output must not remove the consumer's local npm runtime preparation.
+    dependencies = next(step for step in consumers["steps"]
+                        if step.get("run") == "npm --prefix apps/presentation/dashboard ci --ignore-scripts")
+    node = next(step for step in consumers["steps"] if step.get("uses", "").startswith("actions/setup-node@"))
+    assert consumers["steps"].index(node) < consumers["steps"].index(dependencies) < consumers["steps"].index(run)
+    assert "continue-on-error" not in dependencies
     assert consumers["steps"].index(download) < consumers["steps"].index(verify) < consumers["steps"].index(run)
     assert "continue-on-error" not in verify
     assert jobs["smoke-fleet-health"]["needs"] == "full-public-smokes"

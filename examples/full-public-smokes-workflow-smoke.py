@@ -69,6 +69,7 @@ def main() -> int:
     assert producer.index("chat_bundle.py verify --source") < producer.index("actions/upload-artifact")
     assert "if-no-files-found: error" in producer
     assert "chat_bundle.py build" not in consumers
+    assert "npm --prefix apps/presentation/dashboard ci --ignore-scripts" in consumers
     assert "actions/download-artifact@" in consumers
     for job in (producer, consumers):
         assert "name: full-public-chat-${{ github.sha }}" in job
