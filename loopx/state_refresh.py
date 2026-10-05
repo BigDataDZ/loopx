@@ -7,7 +7,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
-from .capabilities.todo_replan_cadence.context import effective_turn_cadence_context
+from .control_plane.work_items.replan_history_codec import effective_turn_cadence_context
 from .control_plane.progress_scope import AGENT_LANE_PROGRESS_SCOPE
 from .control_plane.runtime.time import chronology_key, now_local_iso
 from .control_plane.goals.state_resolution import resolve_goal_state as resolve_goal_state
