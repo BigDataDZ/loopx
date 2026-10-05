@@ -57,6 +57,7 @@ class ChatExternalConversations:
 
     def _admit_prepared(self, path: Path, row: dict[str, Any], selected: dict[str, Any]) -> dict[str, Any]:
         controller = self.controller
+        self.bindings.ensure_delivery_scope(selected)
         if not row.get("routing_recorded"):
             choices = [item for item in self.pending() if item["binding_id"] == row["binding_id"]
                 and item["source"]["source_ref"] == row["source"]["source_ref"]

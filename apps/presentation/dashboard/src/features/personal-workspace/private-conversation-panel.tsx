@@ -68,15 +68,18 @@ export function PrivateConversationPanel() {
   }
   return <section className="personal-detail-card personal-private-conversation" aria-label={zh ? "本人飞书私聊" : "Owner private Chat"}>
     <h3>{zh ? "本人私聊 · 项目助手与管家" : "Owner private Chat · Project assistant and steward"}</h3>
-    <p>{zh ? "每个 App 单独核验本人。项目助手默认支持工作区读写，按项目规则与 skills 执行编辑；可选只读。普通聊天不创建隐藏 Goal。管家从空 portfolio 开始，只管理在此入口明确确认的新委托。" : "Verify the owner independently for each App. Project Chat defaults to workspace writes under project rules and skills; read-only remains available without hidden Goals. A steward starts with an empty portfolio and manages only new commissions explicitly confirmed here."}</p>
+    <p>{zh ? "每个 App 单独核验本人。项目助手默认支持工作区读写，按项目规则与 skills 执行编辑；可选只读。普通聊天不创建隐藏 Goal。本人管家默认读取本机已注册的 Goal 与 Agent；没有注册工作时显示空态。旧连接保留原范围，需明确升级授权。交办不提升执行或发布权限。" : "Verify the owner independently for each App. Project Chat defaults to workspace writes under project rules and skills; read-only remains available without hidden Goals. A personal steward defaults to the registered local Goals and Agents, including an honest empty state. Existing connections retain their scope until explicitly upgraded. Handoff does not elevate execution or publishing permissions."}</p>
     {rows.map(row => <article key={row.binding_id}>
       <strong>{row.app_ref} · {row.context_available ? row.project_title : (zh ? "工作区不可用" : "Workspace unavailable")}</strong>
-      <p>{row.context_kind === "steward" ? (zh ? `LoopX 管家 · ${row.goal_count === 0 ? "暂无已授权的新委托；没有继承旧目标。" : `${row.goal_count} 个已确认的新委托`}` : `LoopX steward · ${row.goal_count} new confirmed commissions; no inherited Goals.`) : (row.grant === "workspace_write" ? (zh ? "普通项目助手 · 已授权工作区读写" : "Project assistant · Workspace writes authorized") : (zh ? "普通项目助手 · 只读对话" : "Project assistant · Read-only Chat"))}</p>
+      <p>{row.context_kind === "steward" ? (row.goal_scope === "all_registered"
+        ? (zh ? `LoopX 管家 · 全部已注册工作 · ${row.goal_count} 个 Goal` : `LoopX steward · All registered work · ${row.goal_count} Goals`)
+        : (zh ? `LoopX 管家 · 已选范围 · ${row.goal_count} 个 Goal` : `LoopX steward · Selected scope · ${row.goal_count} Goals`)) : (row.grant === "workspace_write" ? (zh ? "普通项目助手 · 已授权工作区读写" : "Project assistant · Workspace writes authorized") : (zh ? "普通项目助手 · 只读对话" : "Project assistant · Read-only Chat"))}</p>
       <p>{row.executor_endpoint_id} · {zh ? "监听状态" : "Listener"}: {listenerLabel(row.listener_status)}</p>
       <p>{zh ? `待处理或回复：${row.pending_count}` : `Pending execution or reply: ${row.pending_count}`}</p>
       {row.recovery_count > 0 ? <p role="status">{zh ? "存在尚未确认的发送回执。服务会读取原回执恢复；不要重新发送同一任务。检查 App 登录、权限和原会话后刷新状态。" : "A send receipt is unconfirmed. The service reads the original receipt to recover; avoid resending the same task. Check this App login, permissions and original Session, then refresh status."}</p> : null}
       {!row.context_available ? <p role="alert">{zh ? "工作区授权已失效；请恢复原工作区或重新选择。旧会话不会移到其它工作区。" : "The workspace grant is unavailable. Restore the original workspace or select a new one; the old Session will not move."}</p> : null}
       {row.context_kind === "project" ? <PrivateAgentTargets row={row} revision={revision} zh={zh} busy={busy} act={act}/> : null}
+      {row.context_kind === "steward" && row.goal_scope !== "all_registered" ? <button disabled={busy || !row.context_available} onClick={() => void act(() => connectPrivateConversation(row.app_ref, row.project_ref, row.executor_endpoint_id, "steward"))} type="button">{zh ? "授权全部已注册工作" : "Authorize all registered work"}</button> : null}
       <button disabled={busy} onClick={() => void act(() => disconnectPrivateConversation(row.binding_id, revision))} type="button">{zh ? "解绑" : "Disconnect"}</button>
     </article>)}
     {rows.length === 0 ? <p>{zh ? "尚未连接本人私聊。" : "No owner private Chat connected."}</p> : null}
@@ -85,7 +88,7 @@ export function PrivateConversationPanel() {
       {apps.map(app => <option key={app.app_ref} value={app.app_ref}>{app.label} · {app.app_ref}</option>)}
     </select></label>
     <label>{zh ? "角色" : "Role"}<select aria-label={zh ? "私聊角色" : "Private Chat role"} value={role} disabled={busy} onChange={event => setRole(event.target.value as "project" | "steward")}>
-      <option value="project">{zh ? "普通项目助手" : "Project assistant"}</option><option value="steward">{zh ? "LoopX 管家（新委托）" : "LoopX steward (new commissions)"}</option>
+      <option value="project">{zh ? "普通项目助手" : "Project assistant"}</option><option value="steward">{zh ? "LoopX 管家（全部已注册工作）" : "LoopX steward (all registered work)"}</option>
     </select></label>
     <label>{zh ? "工作区" : "Workspace"}<select aria-label={zh ? "私聊工作区" : "Private Chat workspace"} value={project} disabled={busy} onChange={event => setProject(event.target.value)}>
       <option value="">{zh ? "选择授权工作区" : "Select an authorized workspace"}</option>
