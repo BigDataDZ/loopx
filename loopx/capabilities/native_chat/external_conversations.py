@@ -197,7 +197,8 @@ class ChatExternalConversations:
             return
         if session.get("goal_id") != "loopx-manager" or session.get("channel_id") != selected["channel_id"]:
             raise ValueError("the verified steward source belongs to another Session")
-        from ..manager_context import register_ingress, normalize_source_context
+        from ..manager_context import register_ingress
+        from ...control_plane.collaboration.inbox import normalize_source_context
 
         try:
             normalize_source_context(row["message"])
