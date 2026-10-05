@@ -205,6 +205,7 @@ def test_canonical_periodic_successor_settles_original_open_validation_todo(
         "--agent-id", AGENT, "--turn-instance-id", "turn-original-periodic-review")
     assert guard["selected_todo"]["todo_id"] == original_todo
     assert guard["heartbeat_receipt"]["settlement_binding_owed"] is True
+    # Selection is display until the caller binds the existing Todo explicitly.
     guard = _bind_selected_replan_guard(
         registry,
         runtime,
