@@ -1233,10 +1233,19 @@ authority. Missing, changed, non-private or over-64-MiB files fail closed.
 After a handler may have committed, an unverifiable response stays ambiguous
 and requires exact receipt readback, never automatic mutation retry.
 
-This removes the immediate transport ceiling, not the cost of projecting a
-complete multi-megabyte basis. The next measured T3 cut should combine the
-canonical source read and checkpoint reduction inside one TypeScript call, then
-offer a versioned manifest with bounded pages for human/Agent inspection.
+Source read and read/check reduction now compose inside one TypeScript request.
+Both context reading and commit preflight use one checkpoint request instead of
+two; the complete authoritative facts no longer return to Python only to be sent
+back for reduction. The existing reducer, full-basis receipt, source locks and
+final provider-fenced commit remain the owners. Reduction follows release of
+the optimistic read fence; the final commit still rereads under its own fence.
+Python retains local source IO and receipt persistence. The unused source-only
+and standalone evaluation effects are retired with their adapter calls; commit
+and replay retain their existing single-request boundaries.
+
+This removes the intermediate full-fact round trip, not the cost of projecting
+and returning a complete multi-megabyte basis. The remaining measured T3 cut is
+a versioned manifest with bounded pages for human/Agent inspection.
 Every page must bind to the same source head and disclose omitted components;
 the receipt must still hash the complete relevant Todo/dependency, User Todo,
 Goal prose, acceptance and vision basis. A display limit must never become a

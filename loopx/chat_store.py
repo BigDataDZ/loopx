@@ -586,6 +586,12 @@ class ChatSessionStore(ChatIngressStore):
         agent_id: str,
         channel_id: str | None = None,
     ) -> dict[str, Any] | None:
+        """Return the newest resumable session row on one explicit channel.
+
+        Omitting ``channel_id`` pins the exact ``goal.<goal_id>`` channel:
+        a single namespace key, not a search over that goal's recorded
+        conversations. Use ``list_sessions`` for intentional discovery.
+        """
         candidates = self.resumable_session_candidates(
             goal_id=goal_id,
             agent_id=agent_id,
@@ -600,7 +606,12 @@ class ChatSessionStore(ChatIngressStore):
         agent_id: str,
         channel_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return matching storage facts without deciding Goal identity."""
+        """Return matching storage facts without deciding Goal identity.
+
+        Omitting ``channel_id`` pins the exact ``goal.<goal_id>`` channel:
+        a single namespace key, not a search over that goal's recorded
+        conversations. Use ``list_sessions`` for intentional discovery.
+        """
 
         return [
             candidate
@@ -619,7 +630,14 @@ class ChatSessionStore(ChatIngressStore):
         agent_id: str,
         channel_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Return matching Session records without lifecycle filtering."""
+        """Return matching Session records without lifecycle filtering.
+
+        Omitting ``channel_id`` pins the exact ``goal.<goal_id>`` channel:
+        a single namespace key, not a search over that goal's recorded
+        conversations. Use ``list_sessions`` for intentional discovery.
+        Raises ``ValueError`` when ``channel_id`` and ``goal_id`` are both
+        omitted.
+        """
 
         if goal_id is None and channel_id is None:
             raise ValueError("channel_id is required when goal_id is omitted")
