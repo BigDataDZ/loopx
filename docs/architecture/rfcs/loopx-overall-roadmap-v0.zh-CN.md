@@ -94,6 +94,8 @@ managed 与 attached 的工作对话都应能持续在 LoopX 中进行：沿用�
 
 [飞书个人事项跟进 profile](../../product/use-cases/office-operations/personal-follow-through.zh-CN.md) 是[管家 RFC](capable-manager-semantic-handoff-v0.zh-CN.md)在 S1/S5/S6/S8/S9 的有界应用。通用授权、持续跟进和返回沿用管家既有验收；场景文档保留来源理解与评测。原独立提案已归并，安装版私有桌面流程仍待验收，不关闭已有门槛。
 
+S6/S8 的有界来源读取切片提供[现有 Ego Page 的只读 MCP adapter](../../integrations/ego-source-reader.md)。它只返回受限 origin 与确切 URL 下的渲染文本，不创建会话、材料 authority 或浏览器服务。原生 Bot 调用和渠道回复须与模拟传输测试分开验收；验证墙、截断、图片及引用原帖的未核验状态保留，不以文本提取关闭整个材料工作流。
+
 ## 3. 组合里程碑、资源次序与完成定义
 
 S 工作流表示长期责任，G 里程碑表示一次可验收的产品组合，R 卡表示当前主线实现切片。三者互相引用，不新增运行状态机。未列日期表示按证据晋级；可用资源和业务优先级改变时更新 canonical Todo，而不是假定全部同期开工。
