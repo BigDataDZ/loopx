@@ -155,6 +155,43 @@ def test_existing_consumer_dispatches_private_admission_without_waiting_for_mode
     assert admitted == [("notes-app", event)]
 
 
+@pytest.mark.parametrize("answer,display", [
+    ("Author @source_account; primary post unverified.", "Author ＠source_account; primary post unverified."),
+    (r"Result\nNext step", "Result\nNext step"),
+    ('Untrusted <at id="unknown">label</at>', 'Untrusted ‹at id="unknown">label‹/at>'),
+])
+def test_private_answer_repairs_presentation_and_recovers_exact_receipt(ordinary, answer, display):  # noqa: F811
+    store, runtime, provider, transport = connect(ordinary)
+    fake, capture = ordinary[-2], ordinary[-3]
+    fake.write_text(fake.read_text().replace('"Runtime response."', json.dumps(answer)))
+    try:
+        event = provider.event("notes-app", "quoted-source", "Read the source.")
+        assert transport.admit("notes-app", event)["status"] == "durably_accepted"
+        native = transport.core.pending()[0]
+        turn = runtime.wait_for_turn(session_id=native["session_id"], turn_id=native["turn_id"], timeout_sec=10)
+        assert turn["response"]["message"] == answer
+        provider.verify_replies = False
+        assert transport.reconcile() == 0
+        assert provider.writes[-1] == ("notes-app", display)
+        before = list(provider.writes)
+        saved = json.loads(next(transport.root.glob("*.json")).read_text())
+        assert saved["deliveries"]["terminal"]["text"] == display
+        assert saved["deliveries"]["terminal"]["attempt"]
+        # Restart only the transport facade: read back the original attempt,
+        # without another provider send, model Turn or rewritten Core response.
+        recovered = LarkPrivateConversations(controller=runtime, runtime_root=transport.runtime_root,
+                                             runner=provider, cli_bin="lark-cli")
+        provider.verify_replies = True
+        assert recovered.reconcile() == 1
+        assert recovered.reconcile() == 0
+        assert provider.writes == before
+        assert store.load_turn(native["session_id"], native["turn_id"])["response"]["message"] == answer
+        calls = [json.loads(line) for line in capture.read_text().splitlines()]
+        assert sum(row.get("method") == "turn/start" for row in calls) == 1
+    finally:
+        runtime.close()
+
+
 def test_new_session_replay_cannot_close_a_later_session(ordinary):  # noqa: F811
     store, runtime, provider, transport = connect(ordinary)
     try:

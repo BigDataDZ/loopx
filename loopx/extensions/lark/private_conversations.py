@@ -19,6 +19,7 @@ from .conversation_identity import identity_ref, lark_private_source
 from .event_inbox import acknowledge_lark_event_inbox, ingest_lark_event_inbox
 from .goal_channel_transport import call, json_payload, lark_args
 from .inbox_reply import _message, reply_lark_event_inbox, verify_lark_inbox_reply
+from .outbound import LarkOutboundTextError, normalize_lark_outbound_text, safe_lark_plain_text_fallback
 
 
 class LarkPrivateConversations:
@@ -197,6 +198,12 @@ class LarkPrivateConversations:
     def _deliver(self, path: Path, record: dict[str, Any], phase: str, text: str) -> bool:
         if not text:
             return False
+        # Repair presentation before recording the exact provider intent. Core's
+        # answer stays unchanged; structured mentions retain identity checks.
+        try:
+            text = normalize_lark_outbound_text(text, limit=None, preserve_format=True)
+        except LarkOutboundTextError:
+            text = safe_lark_plain_text_fallback(text)
         phase_state = record["deliveries"].get(phase, {})
         if phase_state.get("verified"):
             return True
