@@ -5090,7 +5090,7 @@ def test_pending_action_selection_does_not_commit_after_new_user_gate(
     assert all(not event["details"].get("settlement_effect_id") for event in events)
 
 
-def test_todoless_autonomous_replan_settles_quota_refresh_spend_chain(
+def test_todoless_replan_settles_once_and_rearms_missing_vision(
     tmp_path: Path,
 ) -> None:
     project, runtime, registry_path = _write_fixture(tmp_path)
@@ -5283,11 +5283,17 @@ def test_todoless_autonomous_replan_settles_quota_refresh_spend_chain(
     )
 
     assert fresh_rc == 0, fresh
-    assert fresh["decision"] == "skip", fresh
-    assert fresh["effective_action"] == "monitor_quiet_skip"
-    assert fresh["execution_obligation"]["must_attempt_work"] is False
-    assert fresh.get("autonomous_replan_obligation") is None
-    assert fresh.get("replan_action_packet") is None
+    # The original Turn is settled, but its material write did not establish
+    # a per-agent Vision baseline. The next Turn must address that independent
+    # gap without replaying the previous obligation or spending a second slot.
+    assert fresh["decision"] == "autonomous_replan_required", fresh
+    assert fresh["execution_obligation"]["must_attempt_work"] is True
+    assert fresh["autonomous_replan_obligation"]["rearmed_after_obligation_id"] == obligation_id
+    assert fresh["autonomous_replan_obligation"]["obligation_id"] != obligation_id
+    assert any(
+        gap["kind"] == "vision_checkpoint_missing" and gap["missing_baseline"]
+        for gap in fresh["goal_frontier_projection"]["acceptance_gaps"]
+    )
     assert fresh["heartbeat_receipt"]["turn_instance_id"] == fresh_turn_id
     assert _spend_run_count(runtime) == 1
 
