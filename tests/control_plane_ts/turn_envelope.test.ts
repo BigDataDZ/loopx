@@ -73,6 +73,29 @@ const protocolActionFields = {
   agent_action: "advance one bounded segment",
 };
 
+test("capability facts retain exact current and historical source fields", () => {
+  for (const fields of [
+    {required: ["network", "filesystem_write"], missing: ["network"]},
+    {required: ["network"], missing: []},
+    {required_capabilities: ["network"], missing_capabilities: ["network"]},
+  ]) {
+    const source = payload();
+    source.capability_gate = {action: "repair_bridge", reason: "Unavailable capability",
+      ...fields, runnable_candidates: [{private_detail: "not in compact context"}], available: ["shell"]};
+    const before = structuredClone(source);
+    const envelope = buildTurnEnvelope({payload: source, protocol_action_fields: protocolActionFields,
+      scheduler_execution_args: ""});
+    assert.deepEqual((envelope.boundary as JsonObject).capability_gate,
+      {action: "repair_bridge", reason: "Unavailable capability", ...fields});
+    assert.deepEqual(source, before);
+    assert.deepEqual(quotaActionSignatureDocument(source, protocolActionFields),
+      turnEnvelopeActionSignatureDocument(envelope));
+    const changed = structuredClone(envelope);
+    ((changed.boundary as JsonObject).capability_gate as JsonObject)[Object.keys(fields)[1]] = ["different"];
+    assert.notDeepEqual(turnEnvelopeActionSignatureDocument(changed), turnEnvelopeActionSignatureDocument(envelope));
+  }
+});
+
 test("optional memory participation is compact, verified and signed", () => {
   const plain = payload();
   const build = (source: JsonObject) => buildTurnEnvelope({payload: source,

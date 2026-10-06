@@ -332,6 +332,27 @@ final packet, including diagnostics. The historical `source_json_bytes` and
 `envelope_json_bytes` fields still count Unicode code points for v0 compatibility;
 do not use them as wire-byte measurements.
 
+### Capability refusal facts
+
+`boundary.capability_gate` carries the existing quota gate's `required` and
+`missing` arrays intact, including an empty `missing` array after admission.
+Earlier compact projection used only `required_capabilities` and
+`missing_capabilities`, which could report matching projection signatures while
+omitting the current refusal facts. Historical names are still carried when
+present in the supplied source; they are not synthesized or rewritten.
+
+These facts participate in the existing boundary signature. Newly built
+projections over current sources therefore have different hashes; saved
+signatures are not rewritten and this is not a cross-version hash-equivalence
+promise. Full quota output, admission, optional capability activation, claim,
+lease and mutation checks are unchanged. No capability is granted by reading
+these arrays. The default full heartbeat packet remains the source decision;
+compact/Turn hosts retain its reason for refusal without recomputing readiness.
+
+中文：短包原样保留现有能力门禁的 required/missing（包括合法空数组），历史字段
+只在源中存在时保留。新投影签名覆盖这些事实，不改写历史签名；完整包、准入、
+可选能力开关和 claim/lease 权限不变。读取缺失项不授予能力。
+
 ### Optional memory participation
 
 The compact boundary retains the verified Goal/Agent Reward Memory automation
