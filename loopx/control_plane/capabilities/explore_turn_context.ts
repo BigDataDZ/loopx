@@ -135,6 +135,8 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
       result_writeback_inline_option: writeback.inline_option,
       result_writeback_inline_field: writeback.inline_field,
       result_attachment_schema: writeback.attachment_schema,
+      path_delta_attachment_schema: writeback.path_delta_attachment_schema,
+      path_delta_attachment_template: writeback.path_delta_attachment_template,
       result_writeback_guidance: writeback.guidance,
       result_attachment_template: writeback.attachment_template,
       record_node_template: command("node", "--title", "<hypothesis or experiment>", "--status", "exploring"),

@@ -24,8 +24,10 @@ from .result_log import (
 )
 
 
-def normalize_result_attachment(attachment, *, other_attachment=...):
+def normalize_result_attachment(attachment, *, other_attachment=..., vision_packet=None):
     params = {"attachment": attachment}
+    if vision_packet is not None:
+        params["vision_packet"] = vision_packet
     if other_attachment is not ...:
         params["other_attachment"] = other_attachment
     return effect_runtime_result("explore.result.normalize", params)
