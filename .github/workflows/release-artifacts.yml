@@ -26,7 +26,7 @@ on:
         required: true
         type: string
       browser_fixture_commit:
-        description: "Optional full merged commit for browser-only fixture corrections"
+        description: "Optional full merged commit supplying corrected browser fixtures"
         required: false
         type: string
 
@@ -241,10 +241,11 @@ jobs:
           allowed = {
               "examples/personal-workspace-browser/fixture.mjs",
               "examples/personal-workspace-browser/typed-actions.mjs",
+              "examples/personal-workspace-browser/goal-work-map.mjs",
           }
-          changed = set(git("diff", "--name-only", product, fixture).splitlines())
-          if not changed <= allowed:
-              raise SystemExit("browser correction contains changes outside the two fixture owners")
+          changed = set(git("diff", "--name-only", product, fixture, "--", *sorted(allowed)).splitlines())
+          if fixture != product and not changed:
+              raise SystemExit("browser fixture commit contains no correction in the fixture owners")
           if fixture != product:
               subprocess.run(["git", "merge-base", "--is-ancestor", fixture, "origin/main"], check=True)
               for path in sorted(changed):
@@ -362,7 +363,7 @@ jobs:
 
       - name: Restore browser fixtures and bind verified package checksums
         run: |
-          git restore -- examples/personal-workspace-browser/fixture.mjs examples/personal-workspace-browser/typed-actions.mjs
+          git restore -- examples/personal-workspace-browser/fixture.mjs examples/personal-workspace-browser/typed-actions.mjs examples/personal-workspace-browser/goal-work-map.mjs
           python scripts/release_artifacts.py verify-checksums --dist-dir dist/packages --checksum-file dist/SHA256SUMS
           python - <<'PY'
           import hashlib

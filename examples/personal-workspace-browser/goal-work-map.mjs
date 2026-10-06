@@ -39,9 +39,13 @@ export const goalWorkMapScenario = {
   async run({ browser, collectCoverage, url }) {
     let limits = {};
     const reads = [];
-    const routeReview = (_api, page) => page.route("**/api/chat/delivery-review?*", route => {
+    const routeReview = (api, page) => page.route("**/api/chat/delivery-review?*", route => {
       const goalId = new URL(route.request().url()).searchParams.get("goal_id");
       reads.push(goalId);
+      // Map-only synthetic tasks still need an exact authoritative detail read.
+      for (const item of goalMap(goalId, limits).nodes.filter(item => item.kind === "deliverable")) {
+        api.todoRequestTexts.set(JSON.stringify([goalId, item.refs.todo_ids[0]]), item.title);
+      }
       return route.fulfill({ json: { ok: true, goal_id: goalId, observed_at: new Date().toISOString(), graph: null, goal_map: goalMap(goalId, limits), acceptance: null } });
     });
     const desktop = await openWorkspacePage(browser, url, { collectCoverage, beforeGoto: routeReview });
