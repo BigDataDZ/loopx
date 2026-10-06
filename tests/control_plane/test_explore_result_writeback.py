@@ -621,3 +621,63 @@ def test_selected_route_retains_scope_after_unrelated_newer_results(tmp_path, pl
     assert ATTACHMENT["interpretation"] in results[0]["summary"]
     assert results[0]["evidence_refs"] == ATTACHMENT["evidence_refs"]
     assert all(p.read_bytes() == content for p, content in before.items())
+
+
+@pytest.mark.parametrize("planning", [True, False])
+def test_linked_refutation_keeps_scope_after_later_positive_observations(tmp_path, planning):
+    from loopx.configure_goal import configure_goal
+    from loopx.capabilities.explore.result_log import (
+        append_explore_result_event, build_explore_finding_event,
+    )
+
+    args = fixture(tmp_path)
+    configure_goal(
+        registry_path=args["registry_path"], goal_id="research", execute=True,
+        explore_mode="planning" if planning else "evidence",
+    )
+    first = deliver_result_attachment(payload=payload(), **args)
+    assert first["ok"]
+    log = explore_result_log_path(args["runtime_root"], "research")
+    # Successful checks on a narrower input do not supersede the counterexample.
+    # Enough later results also cross the upstream audit detail cap.
+    for index in range(25):
+        append_explore_result_event(log, build_explore_finding_event(
+            goal_id="research", node_id=ATTACHMENT["node_id"],
+            finding_id=f"positive-{index}", title="Bound holds for this finite input",
+            summary="Applicability: finite input only. No conclusion about an infinite tail.",
+            status="confirmed", tags=["writeback-result"],
+            recorded_at=f"2026-01-02T00:{index:02d}:00Z",
+        ))
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    context = explore_turn_context(**{
+        key: args[key] for key in ("registry_path", "runtime_root", "goal_id", "agent_id")
+    })
+    results = context["graph"]["writeback_results"]
+    assert len(results) == 3
+    if planning:
+        counter = next(row for row in results if row["finding_id"] == first["finding_id"])
+        assert ATTACHMENT["applicability"] in counter["summary"]
+        assert ATTACHMENT["interpretation"] in counter["summary"]
+        assert any(row["status"] == "confirmed" for row in results)
+        audit = context["harness"]["selected_branches"][0]["typed_evidence_audit"]
+        assert "linked_finding_refuted" in audit["hazards"]
+        assert audit["omitted_audit_findings"] == 23
+        assert audit["score_delta"] == 0
+    else:
+        assert [row["finding_id"] for row in results] == ["positive-24", "positive-23", "positive-22"]
+    assert all(p.read_bytes() == content for p, content in before.items())
+    if planning:
+        # An explicit correction of the same finding supersedes its old status;
+        # an unrelated newer positive finding above did not.
+        append_explore_result_event(log, build_explore_finding_event(
+            goal_id="research", node_id=ATTACHMENT["node_id"],
+            finding_id=first["finding_id"], title="Counterexample corrected",
+            summary="The recorded counterexample used an invalid input.",
+            status="confirmed", tags=["writeback-result"],
+            recorded_at="2026-01-03T00:00:00Z",
+        ))
+        corrected = explore_turn_context(**{
+            key: args[key] for key in ("registry_path", "runtime_root", "goal_id", "agent_id")
+        })
+        assert all(row["status"] == "confirmed" for row in corrected["graph"]["writeback_results"])
+        assert "linked_finding_refuted" not in corrected["harness"]["selected_branches"][0]["typed_evidence_audit"]["hazards"]

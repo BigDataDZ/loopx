@@ -64,8 +64,16 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
   const attachedResults = findings.filter(row => Array.isArray(row.tags) && row.tags.includes("writeback-result"));
   // Keep the same detail budget, but do not let unrelated newer results evict
   // the applicability of evidence linked to the next selected work item.
+  const linkedResults = attachedResults.filter(row => selectedRefs.has(String(row.node_id ?? "")));
+  // Reserve one detail slot for the latest linked refutation. A newer positive
+  // observation may apply to different inputs; recency alone cannot supersede
+  // that counterexample. Keep remaining slots for recent supporting evidence.
+  // Projection already resolves revisions of the same finding; no history or
+  // scheduler state is changed here.
+  const counterexample = linkedResults.find(row => row.status === "refuted");
   const writebackResults = [
-    ...attachedResults.filter(row => selectedRefs.has(String(row.node_id ?? ""))),
+    ...(counterexample ? [counterexample] : []),
+    ...linkedResults.filter(row => row !== counterexample),
     ...attachedResults.filter(row => !selectedRefs.has(String(row.node_id ?? ""))),
   ];
   const command = (...args: string[]) => [...route, "explore", ...args, "--goal-id", goal];

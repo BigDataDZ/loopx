@@ -150,8 +150,13 @@ Read back with `loopx explore turn-context --goal-id <id> --agent-id <agent>`
 and `loopx explore summary --goal-id <id>`. The bounded next-turn view retains
 up to three attached result summaries, including their applicability and input
 revision. In planning mode, results linked to the selected work take precedence
-over unrelated recent results within that same detail budget. Evidence-only mode
-retains recency order. Relevant Todo links continue through the existing branch planner.
+over unrelated recent results within that same detail budget. One slot retains
+the latest linked refutation; remaining slots retain recent linked results, so
+new positive observations do not silently erase a counterexample’s scope. An
+explicit revision of the same finding replaces its earlier status. This does not
+change candidate scores or eligibility; read the full summary for additional
+evidence beyond the budget. Evidence-only mode retains recency order. Relevant
+Todo links continue through the existing branch planner.
 Reading evidence does not prove adoption: the next work decision should explain
 which result supports a changed route, continued work, or a justified replication.
 
