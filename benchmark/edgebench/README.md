@@ -58,8 +58,18 @@ Trial timeouts use **explicit `--timeout` → [task defaults](task-defaults.json
 → 64,800 seconds (18 hours)**. Portfolio Risk Calibration defaults to
 **43,200 seconds (12 hours)** for all worker and feedback profiles; other tasks
 retain the 18-hour fallback. These are total trial budgets, including planning,
-not per-turn limits. Auto-evaluation is every 300 seconds, and the submission
-cooldown is 120 seconds. `--timeout`,
+not per-turn limits.
+
+Auto-evaluation uses **explicit `--eval-interval` → task defaults → 300 seconds**.
+Portfolio defaults to **300 seconds (5 minutes)**; Lean Analysis Proofs defaults
+to **1,800 seconds (30 minutes)** to space out expensive compilation. Other tasks
+retain the 5-minute fallback. Defaults apply equally to every worker and feedback
+profile. Explicit `--eval-interval 0` disables periodic auto-evaluation. The resolved
+interval is passed to SForge and recorded in each attempt's runtime receipt.
+These defaults affect new launches; editing the file does not change a running
+sampler or create historical snapshots. Sampling cadence does not set evaluator
+concurrency or replace the submission cooldown, which remains 120 seconds.
+`--timeout`,
 `--eval-interval`, and `--submission-cooldown` support explicitly recorded
 qualification runs. The shared Harbor defaults are unchanged. Native task
 internet policy is retained. Each attempt requires a new output directory.

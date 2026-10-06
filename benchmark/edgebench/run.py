@@ -68,14 +68,14 @@ def _write_native_final_result(trial, result, *, status, agent, task, run_id, mo
     pending.replace(trial / "final_result.json")
 
 
-def _task_timeout(task_id: str, explicit: int | None) -> int:
-    """Resolve EdgeBench-only budgets; shared worker defaults stay unchanged."""
+def _task_default(task_id: str, key: str, explicit: int | None, fallback: int) -> int:
+    """Resolve EdgeBench task settings; explicit values retain runtime semantics."""
     if explicit is not None:
         return explicit
     defaults = json.loads(Path(__file__).with_name("task-defaults.json").read_text())
-    value = defaults.get(task_id, {}).get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+    value = defaults.get(task_id, {}).get(key, fallback)
     if type(value) is not int or value <= 0:
-        raise ValueError(f"Invalid EdgeBench timeout default for {task_id}: {value!r}")
+        raise ValueError(f"Invalid EdgeBench {key} default for {task_id}: {value!r}")
     return value
 
 
@@ -96,12 +96,14 @@ def main(argv=None):
     parser.add_argument("--task-entry", choices=TASK_ENTRIES, default="seeded-todo")
     parser.add_argument("--replan-after-turns", type=int, choices=range(1, 6),
                         help="Opt in to settled work Turn cadence for heartbeat profiles")
-    parser.add_argument("--eval-interval", type=int, default=300)
+    parser.add_argument("--eval-interval", type=int,
+                        help="Auto-evaluation seconds; task-defaults.json overrides the 300s fallback; 0 disables")
     parser.add_argument("--submission-cooldown", type=int, default=120)
     parser.add_argument("--judge-url", required=True)
     parser.add_argument("--api-proxy-url", help="Operator-owned, OpenAI-only CONNECT proxy")
     args = parser.parse_args(argv)
-    args.timeout = _task_timeout(args.task, args.timeout)
+    args.timeout = _task_default(args.task, "timeout_seconds", args.timeout, DEFAULT_TIMEOUT_SECONDS)
+    args.eval_interval = _task_default(args.task, "eval_interval_seconds", args.eval_interval, 300)
     if args.task_entry != "seeded-todo" and not args.worker.startswith("heartbeat-"):
         parser.error("--task-entry loopx-planned requires a heartbeat worker")
     if args.turn_envelope and args.worker not in {"heartbeat-resume", "heartbeat-explore"}:
