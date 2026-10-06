@@ -35,7 +35,8 @@ Submit this file with `--agent-vision-json vision.json` on the Todo-bound
 `refresh-state` command projected by `quota should-run`. The typed Goal owner
 validates `path_delta`; the Explore owner copies `observed_reality`, renders
 its outcome and every retained/changed/stopped item as the interpretation, and
-copies its evidence identifiers. It normalizes the result to the existing
+copies its evidence identifiers unless the caller explicitly selects a subset.
+It normalizes the result to the existing
 `explore_result_attachment_v0` before the usual hook commits and links it.
 No finding status is inferred from the route outcome. The caller must choose
 `tentative`, `confirmed` or `refuted` from the evidence, within the declared scope.
@@ -46,6 +47,14 @@ revision. Evidence identifiers stay opaque; keep raw logs local. Neither capture
 nor a successful transport proves model adoption, task completion or causal
 utility.
 
+When the delta includes local file pointers alongside opaque identifiers, add
+optional `evidence_refs` to `explore_result`, for example
+`["validation:counterexample-1"]`. Every selected identifier must occur in this
+same delta and pass the existing opaque-reference validator. The selection must
+be nonempty; unrelated refs and local file pointers are rejected. Without this
+field, all delta refs are reused and must satisfy that validator. This explicit
+selection neither removes refs from the ordinary vision nor invents provenance.
+
 The complete `explore_result_attachment_v0` form remains supported inline or
 through `--explore-result-json result.json`. It additionally supplies
 `observation`, `interpretation` and `evidence_refs`. It is appropriate when the
@@ -54,9 +63,13 @@ to identical results; a conflict fails before primary commit.
 
 A path-delta reference requires this same vision packet's top-level delta;
 a previous stored vision, a nested delta or a separate result file alone cannot
-supply it. The full form's observation and interpretation limits remain 300
-characters each. If reuse exceeds them, provide a scoped compact full form;
-no condition or route item is silently truncated. Malformed or disabled capture
+supply it. Observation allows 320 characters and interpretation 1200, matching
+the Goal observation budget and retaining every legal route item as plain list
+text without JSON escaping expansion. The combined finding, including its input
+revision and applicability, fits within the 2000-character stored and next-turn
+summary budget. This replaces the previous 300/300 attachment and 1200 summary
+limits; the default three-result page and progressive reads are unchanged. No
+condition or route item is silently truncated. Malformed or disabled capture
 fails before primary commit. Correct the input and retry. A partial post-commit
 link failure uses the existing exact-writeback replay recovery; replay does not
 duplicate graph events.
