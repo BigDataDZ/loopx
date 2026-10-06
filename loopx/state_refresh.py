@@ -92,6 +92,7 @@ from .feedback import validate_local_control_text, validate_public_safe_text
 from .file_lock import exclusive_file_lock
 from .global_registry import sync_project_registry_to_global
 from .history import (
+    append_run_index_record,
     load_index,
     load_registry,
     reserve_unique_run_paths,
@@ -1455,8 +1456,7 @@ def refresh_state_run(
                         encoding="utf-8",
                     )
                     markdown_path.write_text(render_state_refresh_markdown(payload) + "\n", encoding="utf-8")
-                    with index_path.open("a", encoding="utf-8") as f:
-                        f.write(json.dumps(index_record, ensure_ascii=False, allow_nan=False) + "\n")
+                    append_run_index_record(index_path, index_record, allow_nan=False)
         if sync_global and route_status in {"missing", "ambiguous"}:
             payload["ok"] = False
             payload["partial_write"] = not dry_run
