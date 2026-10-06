@@ -87,9 +87,13 @@ validator protection remains the environment owner's responsibility.
   Follow-up phases update that Todo while it remains live and owned by this
   agent; completed or deferred work gets a new Todo. Updates preserve blocked
   state. The agent can still plan and replan during execution. The seed asks the
-  worker to read, implement and validate the task. It leaves task decomposition
-  to the worker and the existing task protocol. This removes the previous
-  unconditional successor instruction for newly seeded or updated phases.
+  worker to read, implement and validate the task against the referenced task's
+  full requirements and acceptance criteria, keeping unmet requirements explicit.
+  It leaves task decomposition to the worker and the existing task protocol, and
+  removes the previous unconditional successor instruction for newly seeded or
+  updated phases; existing trials are unchanged. This is task-scoping guidance,
+  not a new completion gate, forced successor, or instruction to consume the
+  whole budget.
 - `loopx-planned` (the default for LoopX modes) runs the installed `$loopx` skill against the public
   `loopx todo plan` checkpoint before execution. The checkpoint shares the
   product's planner and continuation-aware Todo delta; it creates no planning
