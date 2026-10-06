@@ -1,7 +1,10 @@
 """Report portability must not invent qualification or silently swap settings."""
 
 import copy
+import csv
 import json
+import subprocess
+import sys
 
 import pytest
 
@@ -199,3 +202,133 @@ def test_required_file_must_be_in_inventory(trial):
     write(out / "index.json", index)
     with pytest.raises(ValueError, match="required"):
         verify(out)
+
+
+def reseal(out, name):
+    """Model a coherently rehashed file, without changing its semantic authority."""
+    index = json.loads((out / "index.json").read_text())
+    sha = digest(out / name)
+    index["files_sha256"][name] = sha
+    if name == "settings/run.json":
+        index["runs"][0]["settings_sha256"] = sha
+    write(out / "index.json", index)
+
+
+def replace_csv(out, name, key, value, position=0):
+    path = out / name
+    with path.open() as stream:
+        rows = list(csv.DictReader(stream))
+    rows[position][key] = value
+    with path.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+    reseal(out, name)
+
+
+@pytest.mark.parametrize("best_round", ["absent", "auto-2"])
+def test_export_requires_native_best_round_score_witness(trial, best_round):
+    path = trial[3] / "final_result.json"
+    final = json.loads(path.read_text())
+    final["best_round"] = best_round
+    write(path, final)
+    with pytest.raises(ValueError, match="Best round"):
+        build(trial)
+    assert not trial[2].exists()
+
+
+def test_native_tie_choice_and_missing_sample_times_are_preserved(trial):
+    path = trial[3] / "run_history.json"
+    history = json.loads(path.read_text())
+    history["entries"][1]["score"] = 2
+    write(path, history)
+    path = trial[3] / "final_result.json"
+    final = json.loads(path.read_text())
+    final["best_round"] = "auto-2"
+    write(path, final)
+    out = build(trial)
+    with (out / "scores.csv").open() as stream:
+        assert next(csv.DictReader(stream))["best_round"] == "auto-2"
+    with (out / "samples.csv").open() as stream:
+        assert all(row["elapsed_seconds"] == "" for row in csv.DictReader(stream))
+    assert verify(out)["verified"] is True
+
+
+@pytest.mark.parametrize(
+    "key,value,message",
+    [
+        ("arm_id", "other", "identity mismatch"),
+        ("benchmark_id", "other", "identity mismatch"),
+        ("score_countable", "True", "countability"),
+        ("score_countable", "maybe", "boolean"),
+        ("budget_seconds", "1", "budget"),
+        ("runtime_seconds", "-500", "duration"),
+        ("runtime_seconds", "799", "duration"),
+        ("agent_submissions", "1", "Submission counts"),
+        ("resume_count", "-1", "summary count"),
+        ("best_round", "absent", "Best round"),
+        ("best_round", "auto-2", "Best round"),
+    ],
+)
+def test_rehashed_score_contradictions_fail(trial, key, value, message):
+    out = build(trial)
+    replace_csv(out, "scores.csv", key, value)
+    with pytest.raises(ValueError, match=message):
+        verify(out)
+
+
+@pytest.mark.parametrize("key", ["source_study_id", "source_benchmark_id"])
+def test_rehashed_settings_source_identity_fails(trial, key):
+    out = build(trial)
+    path = out / "settings/run.json"
+    config = json.loads(path.read_text())
+    config[key] = "other"
+    write(path, config)
+    reseal(out, "settings/run.json")
+    with pytest.raises(ValueError, match="Settings identity mismatch"):
+        verify(out)
+
+
+@pytest.mark.parametrize("elapsed", ["-1", "nan", "inf"])
+def test_rehashed_invalid_sample_time_fails(trial, elapsed):
+    out = build(trial)
+    replace_csv(out, "samples.csv", "elapsed_seconds", elapsed)
+    with pytest.raises(ValueError):
+        verify(out)
+
+
+@pytest.mark.parametrize("operation", ["export", "verify"])
+def test_cli_rejects_inconsistent_reports(trial, operation):
+    if operation == "verify":
+        out = build(trial)
+        replace_csv(out, "scores.csv", "benchmark_id", "other")
+        args = ["--verify", str(out)]
+        message = "Score summary identity mismatch"
+    else:
+        path = trial[3] / "final_result.json"
+        final = json.loads(path.read_text())
+        final["best_round"] = "absent"
+        write(path, final)
+        selection = trial[0].parent / "selection.json"
+        write(selection, trial[1])
+        args = [
+            "--runs-root",
+            str(trial[0]),
+            "--selection",
+            str(selection),
+            "--output",
+            str(trial[2]),
+            "--observed-at",
+            "2026-01-02T00:00:00+00:00",
+        ]
+        message = "Best round does not substantiate best score"
+    result = subprocess.run(
+        [sys.executable, "-m", "benchmark.edgebench.export_report", *args],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert message in result.stderr
+    assert '"verified": true' not in result.stdout
+    if operation == "export":
+        assert not trial[2].exists()
