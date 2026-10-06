@@ -947,7 +947,7 @@ def interaction_next_cli_actions(
             (
             f"{command_prefix} todo update --goal-id {goal_id} --todo-id {todo_id}"
             f"{lifecycle_actor_args} --status open --clear-resume-when "
-            "--note '<public-safe successor replan reason>'"
+            "--reason '<public-safe successor replan reason>'"
             ),
             f"{command_prefix} refresh-state --goal-id {goal_id} --classification successor_replan_recorded --delivery-batch-scale single_surface --delivery-outcome outcome_progress{settlement_args}{scoped_cli_args}",
             quota_spend_action,

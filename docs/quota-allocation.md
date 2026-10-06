@@ -723,6 +723,12 @@ ordinary delivery work. Only when no ready current-agent/unclaimed deferred
 resume exists should agent-scoped quota fall through to `agent_scope_wait`,
 `reassignment_required`, or `scope_exhausted`.
 
+The generated reopen command uses `--status open --clear-resume-when --reason`
+to consume the existing narrow lifecycle transition. Under canonical hard
+leases this resumes unchanged work without granting execution authority; the
+worker must then acquire a fresh lease. Bundling `--note`, evidence or other
+execution edits into that command remains subject to the normal lease fence.
+
 Priority remains authoritative across the resume boundary. When a ready
 current-agent or unclaimed deferred successor has strictly higher priority than
 the selected open advancement todo, quota also returns
