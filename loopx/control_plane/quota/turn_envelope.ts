@@ -375,7 +375,9 @@ function boundary(payload: JsonObject): JsonObject {
   const capabilityGate = object(payload.capability_gate);
   if (Object.keys(capabilityGate).length > 0) {
     result.capability_gate = Object.fromEntries(
-      ["action", "reason", "required_capabilities", "missing_capabilities", "owner_action"]
+      // Current gate facts use required/missing; keep historical field names
+      // only when supplied by a stored source. Never rebuild the gate here.
+      ["action", "reason", "required", "missing", "required_capabilities", "missing_capabilities", "owner_action"]
         .filter((field) => capabilityGate[field] !== null && capabilityGate[field] !== undefined)
         .map((field) => [field, capabilityGate[field]]),
     );

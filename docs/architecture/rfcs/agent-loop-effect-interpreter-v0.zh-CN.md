@@ -320,6 +320,24 @@ R5 短包投影也完整保留已有 CLI 结算计划，包括 effect identity�
 envelope 投影，Codex CLI 保持关闭隔离；这不代表安装态 heartbeat/App 或模型收益
 已验收。
 
+第一批收敛的当前源码路径核对：
+
+| 执行事实 | 既有 owner／投影 | 保留的边界 |
+|---|---|---|
+| Goal/Agent/Todo 身份 | quota 选择及回执；envelope actor、selected Todo 和签名结算身份 | 捕获身份与写入时校验仍必要；展示身份不授予执行权 |
+| 完整要求 | interaction 必读及原样保留的短包命令 | 完整 Goal/Todo 共用读取在 #5794 提案中；摘要或源 hash 不证明宿主已读 |
+| 能力拒绝 | 既有 capability_gate_v0；短包保留原样 required/missing 与源中历史字段 | 修复事实遗漏，不改变就绪策略或能力开启 |
+| 选择／claim／lease | selected Todo、action portfolio 及当前所属事务 | 短包归属不是新鲜 lease；保留捕获源并在所属写入入口复核 |
+| replan／Goal 收尾 | replan action packet、contract capsule 和 vision audit | 完整证据仍走有权限的详情；Todo 完成不证明 Goal 完成 |
+| 结算／scheduler | 完整 typed 结算计划及显式宿主调度投影 | 调度详情、实际宿主读回与一次恢复仍待宿主采用验收 |
+| 可选 memory | 核验后的 boundary 参与事实及新鲜宿主绑定 | 关闭／recall／ingest／失效／provider 失败隔离持续保留；传输等价不是模型收益 |
+
+能力事实修复归既有 TS read-model owner。真实捕获的 File/SQLite 决策覆盖拒绝及
+准入，包含关闭、仅 recall、仅 ingest 与配置失效。新投影签名覆盖这些保留事实，
+不重写历史签名、不增覆盖版本、准入规则或 Python 策略。宿主 provider 失败和
+结算另有覆盖，仍不证明安装态 App 收敛或模型成本。以下三项继续按各自验收保持
+未完成；这份核对不授权批量删除剩余 Python IO adapter。
+
 后续实施 Todo 按依赖顺序推进：
 
 | Todo | 可观察结果与决定性验收 |
