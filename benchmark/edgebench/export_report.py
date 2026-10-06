@@ -46,9 +46,112 @@ def number(value):
 
 def csv_write(path, records):
     with path.open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(records[0]), lineterminator="\n")
+        writer = csv.DictWriter(
+            stream, fieldnames=list(records[0]), lineterminator="\n"
+        )
         writer.writeheader()
         writer.writerows(records)
+
+
+def _csv_summary(record):
+    summary = dict(record)
+    for key in (
+        "best_score",
+        "last_observed_score",
+        "runtime_seconds",
+        "budget_seconds",
+    ):
+        summary[key] = number(float(record[key]))
+    for key in (
+        "total_rounds",
+        "agent_submissions",
+        "auto_submissions",
+        "resume_count",
+    ):
+        summary[key] = int(record[key])
+    for key in ("timed_out", "score_countable"):
+        if record[key] not in {"True", "False"}:
+            raise ValueError(f"Invalid summary boolean: {key}")
+        summary[key] = record[key] == "True"
+    return summary
+
+
+def _validate_run_data(row, config, summary, points):
+    """Check known same-run projections; do not certify private source truth."""
+    for key, row_key in (
+        ("run_id", "run_id"),
+        ("case_id", "case_id"),
+        ("arm_id", "arm_id"),
+        ("attempt", "attempt"),
+        ("source_study_id", "study_id"),
+        ("source_benchmark_id", "benchmark_id"),
+    ):
+        if config[key] != row[row_key]:
+            raise ValueError(f"Settings identity mismatch: {key}")
+    runner, profile = config["runner"], config["worker_profile"]
+    if (
+        runner["runner_commit"] != row["runner_revision"]
+        or runner["model"] != row["model_id"]
+    ):
+        raise ValueError("Settings source/model mismatch")
+    for key, profile_key in (
+        ("worker", "profile"),
+        ("model", "model"),
+        ("effort", "reasoning_effort"),
+        ("timeout_seconds", "timeout_seconds"),
+        ("feedback", "feedback"),
+    ):
+        if runner[key] != profile[profile_key]:
+            raise ValueError(f"Settings profile disagrees with runtime: {key}")
+    for key in ("run_id", "arm_id", "benchmark_id"):
+        if summary[key] != row[key]:
+            raise ValueError(f"Score summary identity mismatch: {key}")
+    if (
+        type(summary["score_countable"]) is not bool
+        or summary["score_countable"] != row["countability"]["score_countable"]
+    ):
+        raise ValueError("Score summary countability mismatch")
+    if (
+        number(summary["budget_seconds"]) <= 0
+        or summary["budget_seconds"] != runner["timeout_seconds"]
+    ):
+        raise ValueError("Score summary budget disagrees with settings")
+    duration = number(summary["runtime_seconds"])
+    if duration < 0 or round(duration * 1000) != row["effort"]["duration_ms"]:
+        raise ValueError("Score summary duration disagrees with canonical row")
+    for key in (
+        "total_rounds",
+        "agent_submissions",
+        "auto_submissions",
+        "resume_count",
+    ):
+        if type(summary[key]) is not int or summary[key] < 0:
+            raise ValueError(f"Invalid summary count: {key}")
+    if not points or len(points) != summary["total_rounds"]:
+        raise ValueError("Sample count disagrees with summary")
+    if summary["agent_submissions"] + summary["auto_submissions"] != len(points):
+        raise ValueError("Submission counts disagree with sample count")
+    if summary["best_score"] != row["metrics"]["best_score"]["value"]:
+        raise ValueError("Score summary disagrees with canonical row")
+    values = [number(float(p["score"])) for p in points]
+    if (
+        max(values) != summary["best_score"]
+        or values[-1] != summary["last_observed_score"]
+    ):
+        raise ValueError("Sample scores disagree with summary")
+    if len({p["round"] for p in points}) != len(points):
+        raise ValueError("Duplicate sample identities")
+    if [int(p["sequence"]) for p in points] != list(range(1, len(points) + 1)):
+        raise ValueError("Sample order is incomplete")
+    best = [p for p in points if p["round"] == summary["best_round"]]
+    if len(best) != 1 or number(float(best[0]["score"])) != summary["best_score"]:
+        raise ValueError("Best round does not substantiate best score")
+    for p in points:
+        if (
+            p["elapsed_seconds"] not in (None, "")
+            and number(float(p["elapsed_seconds"])) < 0
+        ):
+            raise ValueError("Sample predates run")
 
 
 def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
@@ -110,13 +213,8 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
             and e.get("status") == "completed"
             and e.get("score") is not None
         ]
-        if (
-            not score_entries
-            or max(number(e["score"]) for e in score_entries) != final["best_score"]
-        ):
+        if not score_entries:
             raise ValueError("History does not substantiate best score")
-        if len(score_entries) != final["total_rounds"]:
-            raise ValueError("Incomplete score history")
         config = copy.deepcopy(selected["settings"])
         # Settings are supplied separately only for facts absent from receipts.
         config.update(
@@ -182,6 +280,7 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
         }
         bindings.append({"run_id": run, "source_sha256": source_hashes})
         start = float((trial / "started_at").read_text().splitlines()[1])
+        run_samples = []
         for index, entry in enumerate(score_entries):
             label = entry["round"]
             if (
@@ -199,7 +298,7 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
                     elapsed = round(number(submitted) - start, 6)
                     if elapsed < 0:
                         raise ValueError("Sample predates run")
-            samples.append(
+            run_samples.append(
                 {
                     "run_id": run,
                     "sequence": index + 1,
@@ -209,24 +308,25 @@ def export(runs_root: Path, selection: list, output: Path, *, observed_at: str):
                     "valid": entry.get("valid"),
                 }
             )
-        summaries.append(
-            {
-                "run_id": run,
-                "arm_id": row["arm_id"],
-                "benchmark_id": row["benchmark_id"],
-                "best_score": final["best_score"],
-                "best_round": final["best_round"],
-                "runtime_seconds": final["runtime_seconds"],
-                "budget_seconds": receipt["timeout_seconds"],
-                "total_rounds": final["total_rounds"],
-                "agent_submissions": final["agent_submissions"],
-                "auto_submissions": final["auto_submissions"],
-                "resume_count": final.get("resume_count", 0),
-                "timed_out": final["timed_out"],
-                "last_observed_score": score_entries[-1]["score"],
-                "score_countable": row["countability"]["score_countable"],
-            }
-        )
+        summary = {
+            "run_id": run,
+            "arm_id": row["arm_id"],
+            "benchmark_id": row["benchmark_id"],
+            "best_score": final["best_score"],
+            "best_round": final["best_round"],
+            "runtime_seconds": final["runtime_seconds"],
+            "budget_seconds": receipt["timeout_seconds"],
+            "total_rounds": final["total_rounds"],
+            "agent_submissions": final["agent_submissions"],
+            "auto_submissions": final["auto_submissions"],
+            "resume_count": final.get("resume_count", 0),
+            "timed_out": final["timed_out"],
+            "last_observed_score": score_entries[-1]["score"],
+            "score_countable": row["countability"]["score_countable"],
+        }
+        _validate_run_data(row, config, summary, run_samples)
+        samples.extend(run_samples)
+        summaries.append(summary)
     if not seen:
         raise ValueError("Empty selection")
     output.mkdir(parents=True)
@@ -274,45 +374,24 @@ def verify(directory: Path):
         or {b["run_id"] for b in bindings} != set(by_run)
     ):
         raise ValueError("Every run needs exactly one settings binding")
+    configs = {}
     for b in bindings:
         if index["files_sha256"].get(b["settings_file"]) != b["settings_sha256"]:
             raise ValueError("Settings digest not bound to file inventory")
-        config, row = read(directory / b["settings_file"]), by_run[b["run_id"]]
-        for key in ("run_id", "case_id", "arm_id", "attempt"):
-            if config[key] != row[key]:
-                raise ValueError(f"Settings identity mismatch: {key}")
-        if (
-            config["runner"]["runner_commit"] != row["runner_revision"]
-            or config["runner"]["model"] != row["model_id"]
-        ):
-            raise ValueError("Settings source/model mismatch")
+        configs[b["run_id"]] = read(directory / b["settings_file"])
     with (directory / "scores.csv").open() as stream:
-        scores = list(csv.DictReader(stream))
+        scores = [_csv_summary(s) for s in csv.DictReader(stream)]
     if len(scores) != len(rows) or {s["run_id"] for s in scores} != set(by_run):
         raise ValueError("Score rows differ from run selection")
-    for s in scores:
-        if (
-            float(s["best_score"])
-            != by_run[s["run_id"]]["metrics"]["best_score"]["value"]
-        ):
-            raise ValueError("Score summary disagrees with canonical row")
     with (directory / "samples.csv").open() as stream:
         samples = list(csv.DictReader(stream))
     if {s["run_id"] for s in samples} != set(by_run):
         raise ValueError("Sample rows differ from run selection")
     for score in scores:
         points = [s for s in samples if s["run_id"] == score["run_id"]]
-        if len(points) != int(score["total_rounds"]):
-            raise ValueError("Sample count disagrees with summary")
-        values = [number(float(p["score"])) for p in points]
-        if max(values) != float(score["best_score"]) or values[-1] != float(
-            score["last_observed_score"]
-        ):
-            raise ValueError("Sample scores disagree with summary")
-        if len({p["round"] for p in points}) != len(points):
-            raise ValueError("Duplicate sample identities")
-        if [int(p["sequence"]) for p in points] != list(range(1, len(points) + 1)):
-            raise ValueError("Sample order is incomplete")
+        _validate_run_data(
+            by_run[score["run_id"]], configs[score["run_id"]], score, points
+        )
     return {"runs": len(rows), "files": len(index["files_sha256"]), "verified": True}
 
 
