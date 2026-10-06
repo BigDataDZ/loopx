@@ -305,7 +305,8 @@ def test_native_failed_run_does_not_publish_completed_result(tmp_path, status):
 
 @pytest.mark.parametrize('profile', ['heartbeat-resume', 'heartbeat-explore'])
 @pytest.mark.parametrize('enabled', [False, True])
-def test_envelope_treatment_reaches_shared_worker_and_receipts(tmp_path, monkeypatch, profile, enabled):
+@pytest.mark.parametrize('cadence', [None, 2])
+def test_envelope_treatment_reaches_shared_worker_and_receipts(tmp_path, monkeypatch, profile, enabled, cadence):
     pytest.importorskip('sforge')
     pytest.importorskip('harbor')
     from sforge.harness.config import SForgeConfig
@@ -315,11 +316,13 @@ def test_envelope_treatment_reaches_shared_worker_and_receipts(tmp_path, monkeyp
         pass  # Transport only; the real renderer/guard test runs without a solver.
     monkeypatch.setattr(BenchmarkCodex, 'install', installed)
     worker = SForgeWorker(SForgeConfig(agent_model='fixture', agent_effort='xhigh'),
-                          profile=profile, cwd='/task', turn_envelope=enabled)
+                          profile=profile, cwd='/task', turn_envelope=enabled,
+                          replan_after_turns=cadence)
     worker.install_stop_hook(None, None, tmp_path, None)
     env = worker.runtime._worker_env(cwd='/task')
     assert env.get('LOOPX_TURN_ENVELOPE') == ('1' if enabled else None)
     assert worker.runtime.execution.turn_envelope is enabled
+    assert worker.runtime.replan_after_turns == cadence
     receipt = json.loads((tmp_path / 'worker-profile.json').read_text())
     assert receipt.get('turn_envelope') is (True if enabled else None)
     if not enabled:

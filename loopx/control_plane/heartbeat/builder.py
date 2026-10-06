@@ -38,6 +38,7 @@ from .budget import (
     build_interface_budget,
 )
 from .host import (
+    resolve_heartbeat_capture_root,
     resolve_exact_heartbeat_turn_identity,
     uses_ark_managed_agent_goal_host,
     uses_native_goal_host_loop,
@@ -170,6 +171,7 @@ def _heartbeat_prompt_commands(
     agent_args: str,
     capability_args: str,
     turn_identity_arg: str,
+    decision_output_root: Path | None,
 ) -> dict[str, str | None]:
     quota_guard_command = render_quota_guard_command(
         goal_id,
@@ -239,7 +241,7 @@ def _heartbeat_prompt_commands(
         and "external_evidence_poll" in normalized_available_capabilities
         else None
     )
-    return {
+    commands = {
         "quota_guard_command": quota_guard_command,
         "quota_spend_command": quota_spend_command,
         "task_body_quota_guard_command": task_body_quota_guard_command,
@@ -262,6 +264,12 @@ def _heartbeat_prompt_commands(
         "brief_prompt_command": brief_prompt_command,
         "thin_prompt_command": thin_prompt_command,
     }
+    if decision_output_root is not None:
+        capture_arg = " --decision-output-root " + shlex.quote(str(decision_output_root))
+        for key in ("quota_guard_command", "task_body_quota_guard_command"):
+            commands[key] = str(commands[key]) + " --turn-envelope" + capture_arg
+        commands["thin_prompt_command"] = str(commands["thin_prompt_command"]) + capture_arg
+    return commands
 
 
 def build_heartbeat_prompt(
@@ -347,12 +355,12 @@ def build_heartbeat_prompt(
         runtime_profile=runtime_profile,
         scheduler_execution_context=scheduler_execution_context,
     )
-    if decision_output_root is not None:
-        if not thin or full or compact or brief or native_goal_host or not normalized_turn_instance_id:
-            raise ValueError("--decision-output-root requires thin mode and an explicit host-owned Turn ID")
-        decision_output_root = Path(decision_output_root).expanduser().absolute()
-        if decision_output_root.is_symlink() or not decision_output_root.is_dir():
-            raise ValueError("--decision-output-root must be an existing directory, not a symlink")
+    decision_output_root = resolve_heartbeat_capture_root(
+        decision_output_root,
+        thin=thin, full=full, compact=compact, brief=brief,
+        native_goal_host=native_goal_host,
+        turn_instance_id=normalized_turn_instance_id,
+    )
     explicit_agent_scopes = normalize_agent_scopes(agent_scopes)
     if explicit_agent_scopes:
         normalized_agent_scopes = explicit_agent_scopes
@@ -437,14 +445,8 @@ def build_heartbeat_prompt(
         agent_args=agent_args,
         capability_args=capability_args,
         turn_identity_arg=turn_identity_arg,
+        decision_output_root=decision_output_root,
     )
-    if decision_output_root is not None:
-        transport_args = " --turn-envelope --decision-output-root " + shlex.quote(str(decision_output_root))
-        for key in ("quota_guard_command", "task_body_quota_guard_command"):
-            commands[key] = str(commands[key]) + transport_args
-        commands["thin_prompt_command"] = str(commands["thin_prompt_command"]) + (
-            " --decision-output-root " + shlex.quote(str(decision_output_root))
-        )
     cli_preflight = render_cli_preflight(cli_bin=cli_bin)
     task_body_renderer = _select_task_body_renderer(
         traex_visible_goal=traex_visible_goal,
