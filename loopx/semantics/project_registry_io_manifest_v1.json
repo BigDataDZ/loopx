@@ -1087,7 +1087,7 @@
     },
     {
       "site": "loopx/control_plane/coordination/local_authority_shadow_adapter.py::<module>.local_authority_shadow_status::codec_read:load_registry#1",
-      "line": 315,
+      "line": 301,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
