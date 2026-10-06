@@ -81,6 +81,7 @@ def test_monitor_effect_replay_and_generation_are_locked_public_writer_semantics
     "2030-01-01T12:34:56.123456+08:00", "20300101T123456,123456+0800",
     "1970-01-01T01:00:00+00:59:59.999999", "1970-01-01T00.1",
     "1970-02-30", "2021-W53", "1970-01-01T24:00:00", "1970-01-01T01:00+24:00",
+    "9999-12-31T24:00:00", "9999-12-31T24:00:00Z", "9999-12-31T24:00:00.000000",
     "1970-01-01T00:0000", "1970-01-01T0000:00", "tomorrow", "2030",
 ])
 def test_monitor_timestamp_input_matches_retained_python_iso_codec(value):
