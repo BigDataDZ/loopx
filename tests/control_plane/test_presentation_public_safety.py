@@ -24,6 +24,8 @@ def test_presentation_path_rules_are_owned_by_public_safe_text() -> None:
     [
         r"C:\Users\alice\goal.md",
         r"\\fileserver\share\goal.md",
+        r"path:C:\Users\alice\goal.md",
+        r"path:\\fileserver\share\goal.md",
     ],
 )
 def test_windows_local_paths_are_redacted_and_rejected(path: str) -> None:
@@ -36,6 +38,23 @@ def test_windows_local_paths_are_redacted_and_rejected(path: str) -> None:
     assert public_safety.scan_public_boundary_text(path) == {
         "ok": False,
         "warnings": ["absolute local path"],
+    }
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://example.com/a",
+        "12:30/45",
+        "3:4/5",
+        "relative/path.md",
+    ],
+)
+def test_colon_and_slash_text_without_windows_paths_stays_public(text: str) -> None:
+    assert public_safety.redact_public_text(text, limit=200) == text
+    assert public_safety.scan_public_boundary_text(text) == {
+        "ok": True,
+        "warnings": [],
     }
 
 

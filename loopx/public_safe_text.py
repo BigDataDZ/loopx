@@ -232,9 +232,16 @@ PUBLIC_SAFE_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
 # drive-letter and UNC path detector. Keeping both definitions here means the
 # presentation layer chooses the redaction policy without owning another path
 # vocabulary (Refs #5136, direction 3).
+PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN = re.compile(
+    r"(?<=:)(?:"
+    r"[A-Za-z]:[\\/][^\s`|,)]+|"
+    r"\\\\[A-Za-z0-9_.-]+\\[^\s`|,)]+"
+    r")"
+)
 PRESENTATION_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"/(?:Users|home|private|tmp|var)/[^\s`|,)]+"),
     LOCAL_PATH_SURFACE_PATTERN,
+    PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN,
 )
 PRESENTATION_PUBLIC_BOUNDARY_PATTERNS: tuple[
     tuple[str, re.Pattern[str]], ...
@@ -245,7 +252,8 @@ PRESENTATION_PUBLIC_BOUNDARY_PATTERNS: tuple[
             r"/(?:Users|home|private|tmp|var)/[^\s`\"'<>]+|"
             + "(?:"
             + LOCAL_PATH_SURFACE_PATTERN.pattern
-            + ")"
+            + ")|"
+            + PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN.pattern
         ),
     ),
     (
