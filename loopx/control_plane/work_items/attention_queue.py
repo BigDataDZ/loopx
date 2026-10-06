@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import AbstractSet, Any, Callable, Optional
 
-from ...capabilities.todo_replan_cadence.context import effective_turn_cadence_context
+from .replan_history_codec import effective_turn_cadence_context
 
 from ..goals.legacy_event_source import RetiredTodoEventSourceError
 

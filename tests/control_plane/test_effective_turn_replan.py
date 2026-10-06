@@ -15,7 +15,7 @@ from tests.control_plane.test_quota_settlement_cli import (
     _configure_selectable_alternative,
     ALTERNATIVE_TODO_ID,
 )
-from loopx.capabilities.todo_replan_cadence.context import (
+from loopx.control_plane.work_items.replan_history_codec import (
     effective_turn_cadence_context,
 )
 from loopx.control_plane.work_items.replan_history_codec import project_replan_history

@@ -6,7 +6,7 @@ from collections.abc import Callable, Sequence
 from operator import itemgetter
 from pathlib import Path
 
-from ..capabilities.todo_replan_cadence.context import effective_turn_cadence_context
+from ..control_plane.work_items.replan_history_codec import effective_turn_cadence_context
 from ..control_plane.coordination.local_authority import (
     local_authority_is_promoted,
     read_canonical_todo_fields_if_promoted,
