@@ -47,4 +47,3 @@ def enable_live_memory(registry: Path, *, recall: bool = True, ingest: bool = Tr
     }}
     registry.write_text(json.dumps(payload), encoding="utf-8")
     return path
-
