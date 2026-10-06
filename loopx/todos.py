@@ -69,12 +69,6 @@ from .control_plane.todos.completion_transaction import (
     user_todo_completion_metadata_updates,
 )
 from .control_plane.todos import completion_validation as completion_validation_module
-from .control_plane.todos.line_update import (
-    apply_todo_update_to_lines,
-    link_generated_successor_todo_ids,
-    link_superseding_todo_id,
-    upsert_todo_metadata,
-)
 from .control_plane.todos.next_action_runtime import apply_added_todo_next_action, settle_completed_todo_next_action
 from .control_plane.todos.list_projection import (
     compact_agent_lane_todo_summary as compact_agent_lane_todo_summary,
@@ -150,6 +144,21 @@ from .control_plane.work_items.task_lease import (
 ARCHIVE_COMPLETED_DEFAULT_MAX_ACTIVE_DONE = max(0, MAX_ACTIVE_DONE_TODOS_BEFORE_ARCHIVE - 2)
 
 
+def __getattr__(name: str) -> Any:
+    # Preserve explicit historic imports without loading the source writer for
+    # canonical CLI registration or provider-first lifecycle operations.
+    if name in (
+        "apply_todo_update_to_lines",
+        "link_generated_successor_todo_ids",
+        "link_superseding_todo_id",
+        "upsert_todo_metadata",
+    ):
+        from .control_plane.todos import line_update
+
+        return getattr(line_update, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def add_todo_to_lines(
     lines: list[str],
     *,
@@ -186,6 +195,8 @@ def add_todo_to_lines(
     evidence: str | None = None,
     updated_at: str | None = None,
 ) -> dict[str, Any]:
+    from .control_plane.todos.line_update import upsert_todo_metadata
+
     if validation_command and validation_command_json:
         raise ValueError(
             "--validation-command and --validation-command-json are mutually "
@@ -1024,6 +1035,8 @@ def update_goal_todo(
         task_lease_idempotency_key is not None or task_lease_expected_version is not None
     ) and not (monitor_intent["observation"] is not None and status is None)):
         raise ValueError("update operation id and lease proof require a supported promoted update; no legacy write attempted")
+    from .control_plane.todos.line_update import apply_todo_update_to_lines
+
     resolved_project, resolved_state_file = resolve_todo_state_path(
         registry_path=registry_path,
         goal_id=goal_id,
@@ -1324,6 +1337,11 @@ def complete_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    from .control_plane.todos.line_update import (
+        apply_todo_update_to_lines,
+        link_generated_successor_todo_ids,
+    )
+
     shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if next_task_repository and not next_agent_todo:
         raise ValueError("--next-task-repository requires --next-agent-todo")
@@ -1646,6 +1664,11 @@ def supersede_goal_todo(
     state_file: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    from .control_plane.todos.line_update import (
+        apply_todo_update_to_lines,
+        link_superseding_todo_id,
+    )
+
     if successor_todo_ids:
         raise ValueError("Existing-successor supersede requires promoted canonical Todo authority; migrate the Goal before retrying")
     shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)

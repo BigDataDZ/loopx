@@ -294,11 +294,30 @@ new operation family; existing complete/supersede receipt identities remain vali
 
 ## Migration boundary
 
-Unpromoted Goals retain their existing Python Markdown/event adapters. The
+Unpromoted Goals retain their existing Python Markdown adapters. The
 shared host validation executor and failure projection replace duplicated
 transport plumbing; the TS edit decoder/materializer is no longer owned only
 by the ordinary update transaction. Permanent rendering and private command
 execution still have real Python callers and are not retirement candidates.
+
+Canonical Todo creation, update, completion, supersession and archive do not
+import the Markdown line writer during CLI registration. The source adapter
+loads it only when an unpromoted operation needs it. Explicit historic imports
+from `loopx.todos` still resolve to the same functions in
+`control_plane.todos.line_update`; they do not create another decision owner.
+Provider failure still rejects the canonical operation without a source write.
+
+The absence regression runs real File/SQLite lifecycle commands with the line
+writer physically removed from a disposable package. It qualifies that caller
+boundary, not deletion of the supported Markdown writer, backup readers or
+receipt recovery. Those paths retain their own last-caller migration exits.
+
+canonical Todo 创建、更新、完成、替代和归档不再在 CLI 注册时导入 Markdown
+行写入器；未迁移操作实际需要它时才加载。`loopx.todos` 的历史显式导入仍指向
+同一实现，不新增决策 owner。provider 失效仍拒绝 canonical 写入，不回退到旧源。
+缺失模块回归在一次性包中物理移除行写入器，并运行真实 File/SQLite 生命周期。
+这验证调用方隔离；仍受支持的 Markdown writer、备份读取和原回执恢复保留各自的
+迁移与最后调用方退役条件。
 
 This closes the User completion-update caller within TS T1/T2 and local-default
 L2. It does not close every Monitor/event caller, executor-held effect fencing,
