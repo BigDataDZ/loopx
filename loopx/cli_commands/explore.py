@@ -19,7 +19,7 @@ from ..capabilities.explore.result_log import (
     build_explore_node_event,
     build_explore_result_projection,
     explore_result_log_path,
-    load_explore_result_events,
+    load_explore_result_events_strict,
 )
 from ..capabilities.explore.research_evidence import append_research_observation
 from ..capabilities.explore.harness_gate import GATE_STATE_DISABLED
@@ -251,7 +251,7 @@ def _projection_for(
     finding_limit_override: int | None = None,
 ) -> dict[str, object]:
     log_path = explore_result_log_path(runtime_root, args.goal_id)
-    events = load_explore_result_events(log_path, goal_id=args.goal_id)
+    events = load_explore_result_events_strict(log_path, goal_id=args.goal_id)
     finding_limit = (
         int(args.finding_limit)
         if finding_limit_override is None

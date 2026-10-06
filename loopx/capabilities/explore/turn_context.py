@@ -15,7 +15,7 @@ from ...todos import list_goal_todos
 from .result_log import (
     build_explore_result_projection,
     explore_result_log_path,
-    load_explore_result_events,
+    load_explore_result_events_strict,
 )
 from .todo_branch_plan import (
     build_explore_todo_branch_plan,
@@ -44,7 +44,7 @@ def explore_turn_context(
     )
     projection, plan = {}, {}
     if graph or gate["enabled"]:
-        events = load_explore_result_events(
+        events = load_explore_result_events_strict(
             explore_result_log_path(runtime_root, goal_id), goal_id=goal_id
         )
         projection = build_explore_result_projection(

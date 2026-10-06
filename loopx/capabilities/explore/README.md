@@ -160,6 +160,13 @@ Todo links continue through the existing branch planner.
 Reading evidence does not prove adoption: the next work decision should explain
 which result supports a changed route, continued work, or a justified replication.
 
+Decision reads (`turn-context`, summary, branch planners and graph export) validate
+the complete evidence log. Malformed, foreign-Goal or invalid-state records return
+an error instead of silently presenting partial evidence as an empty or clean
+route. A missing log still means no recorded evidence; disabled turn hooks do not
+read it. Repair the source log before retrying. A failed graph export leaves any
+previous output file intact.
+
 A graph/link delivery failure leaves the primary writeback committed and returns
 `explore_result_delivery.retryable=true`. Replay the **same** refresh command to
 complete delivery; conflicting attachment changes cannot rewrite the original
