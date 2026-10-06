@@ -75,9 +75,9 @@ def test_scheduler_modes_do_not_add_an_outer_loop_to_native_goal():
 
 @pytest.mark.parametrize("profile,resumes", [
     ("official", True), ("single", False), ("native-goal", False),
-    ("heartbeat-resume", True), ("heartbeat-explore", True),
+    ("heartbeat-resume", False), ("heartbeat-explore", False),
 ])
-def test_worker_completion_authority(profile, resumes, monkeypatch):
+def test_only_official_delegates_continuation_to_sforge(profile, resumes, monkeypatch):
     pytest.importorskip("sforge")
     pytest.importorskip("harbor")
     from sforge.harness.config import SForgeConfig
@@ -359,6 +359,7 @@ def test_envelope_treatment_reaches_shared_worker_and_receipts(tmp_path, monkeyp
     assert worker.runtime.execution.turn_envelope is enabled
     assert worker.runtime.replan_after_turns == cadence
     receipt = json.loads((tmp_path / 'worker-profile.json').read_text())
+    assert receipt['outer_resume'] is False
     assert receipt.get('turn_envelope') is (True if enabled else None)
     if not enabled:
         assert 'turn_envelope' not in receipt
@@ -420,6 +421,10 @@ def test_edgebench_receipt_records_resolved_entry_and_enabled_treatment(tmp_path
     monkeypatch.setenv("CODEX_AUTH_JSON_PATH", "/synthetic-credential")
     monkeypatch.setattr(run, "RecordingDockerBackend", lambda **k: SimpleNamespace(image_exists=lambda image: True))
     def stop_before_solver(**kwargs):
+        # Exercise the real adapter at the CLI handoff, including both context
+        # modes. SForge must not resume an exited LoopX scheduler.
+        assert kwargs["disable_auto_resume"] is True
+        assert kwargs["agent"].resume_cmd is None
         assert kwargs["timeout"] == kwargs["config"].agent_timeout == expected
         assert kwargs["eval_interval"] == interval
         raise RuntimeError("synthetic launch failure")
