@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from typing import Any
 
 
@@ -46,12 +47,13 @@ def prompt_budget_text(
     text: str, *, goal_id: str, active_state: str,
     registry_path: str | None = None,
 ) -> str:
-    normalized = text.replace(goal_id, "<GOAL_ID>").replace(active_state, "<ACTIVE_STATE>")
+    normalized = text
     # Compare authored guidance independently of the host's selected path length.
     # char_count below still reports the actual transport/body size.
     if registry_path:
+        normalized = normalized.replace(shlex.quote(registry_path), "<REGISTRY_PATH>")
         normalized = normalized.replace(registry_path, "<REGISTRY_PATH>")
-    return normalized
+    return normalized.replace(goal_id, "<GOAL_ID>").replace(active_state, "<ACTIVE_STATE>")
 
 
 def build_interface_budget(

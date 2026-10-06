@@ -13,6 +13,7 @@ import test_quota_settlement_cli as cli
 import test_quota_authority_settlement_journey as journey
 
 from loopx.heartbeat_prompt import build_heartbeat_prompt, build_heartbeat_prompt_error_payload
+from loopx.control_plane.heartbeat.budget import build_interface_budget
 
 
 def _route(command: str, registry: Path, runtime: Path) -> None:
@@ -20,6 +21,19 @@ def _route(command: str, registry: Path, runtime: Path) -> None:
     assert argv.count("--registry") == 1
     assert argv[argv.index("--registry") + 1] == str(registry)
     assert argv[argv.index("--runtime-root") + 1] == str(runtime)
+
+
+def test_budget_normalizes_shell_quoted_registry_before_goal_substrings():
+    registry = "/fixture/route-fixture's authority/" + "long-directory/" * 300 + "registry.json"
+    body = "loopx --registry " + shlex.quote(registry) + " quota should-run --goal-id route-fixture"
+    budget = build_interface_budget(
+        task_body=body, goal_id="route-fixture", active_state="/fixture/state.md",
+        registry_path=registry, thin=True,
+    )
+    assert budget["char_count"] == len(body) > budget["max_chars"]
+    expected = "loopx --registry <REGISTRY_PATH> quota should-run --goal-id <GOAL_ID>"
+    assert budget["budget_char_count"] == len(expected)
+    assert budget["within_budget"] is True
 
 
 @pytest.mark.parametrize("mode", ["full", "compact", "brief", "thin"])
