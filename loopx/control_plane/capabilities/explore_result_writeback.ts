@@ -10,9 +10,11 @@ export function exploreResultWritebackAffordance(): JsonObject {
   return {
     capability_id: "explore",
     option: "--explore-result-json <result.json>",
+    inline_option: "--agent-vision-json <vision.json>",
+    inline_field: "explore_result",
     attachment_schema: EXPLORE_RESULT_ATTACHMENT_SCHEMA,
     required: false,
-    guidance: "After validation, capture a reusable constraint, counterexample, or result that changes or justifies the next route. Local notes and validation files do not enter Explore automatically. Fill the provided JSON template from the observed result, save it as result.json, and add the option to ordinary Todo/Turn refresh-state. Reuse a question id only with its existing question and applicability. Record the tested input revision and opaque evidence refs; keep raw logs local. Use tentative for inconclusive or prerequisite failures; a score alone does not establish refutation. No attachment is required for routine work without new evidence; do not invent findings to fill the graph.",
+    guidance: "After validation, capture a reusable constraint, counterexample, or result that changes or justifies the next route. Fill the template with observed facts and put it in the top-level explore_result field of the vision JSON already submitted with --agent-vision-json; no separate result file is needed. Alternatively use --explore-result-json. If both are supplied, their normalized contents must agree. Local notes and ordinary vision fields do not enter Explore automatically. Keep the question id and applicability stable, record the tested input revision and opaque evidence refs, and keep raw logs local. Use tentative for inconclusive or prerequisite failures; a score alone does not establish refutation. Routine work without new evidence needs no attachment; do not invent findings to fill the graph.",
     // Blank evidence fields deliberately fail validation until the caller
     // supplies observed facts. Goal/Agent/Todo/Turn bind in ordinary writeback;
     // a source-code revision here would not establish the tested input revision.
@@ -32,8 +34,8 @@ function text(value: unknown, field: string, limit: number): string {
   }
   return value.trim();
 }
-export function normalizeExploreResultAttachment(params: JsonObject): JsonObject {
-  const row = requireJsonObject(params.attachment, "Explore result attachment");
+function normalizeAttachment(value: unknown): JsonObject {
+  const row = requireJsonObject(value, "Explore result attachment");
   if (Object.keys(row).some(key => !FIELDS.includes(key))) {
     throw new EffectRuntimeRequestError("Explore result attachment contains unknown fields");
   }
@@ -60,6 +62,19 @@ export function normalizeExploreResultAttachment(params: JsonObject): JsonObject
     interpretation: text(row.interpretation, "interpretation", 300),
     status: requireStringLiteral(row.status, ["tentative", "confirmed", "refuted"], "finding status"),
     evidence_refs: [...new Set(refs)]};
+}
+export function normalizeExploreResultAttachment(params: JsonObject): JsonObject {
+  const result = normalizeAttachment(params.attachment);
+  if (Object.hasOwn(params, "other_attachment")) {
+    const other = normalizeAttachment(params.other_attachment);
+    // Evidence identifiers form a set; source order must not create conflict.
+    const comparable = (row: JsonObject) => JSON.stringify({...row,
+      evidence_refs: [...row.evidence_refs as string[]].sort()});
+    if (comparable(result) !== comparable(other)) {
+      throw new EffectRuntimeRequestError("Explore result sources conflict; supply one result or matching contents");
+    }
+  }
+  return result;
 }
 export function produceExploreResultIntent(params: JsonObject): JsonObject {
   const projection = requireJsonObject(params.projection, "writeback projection");

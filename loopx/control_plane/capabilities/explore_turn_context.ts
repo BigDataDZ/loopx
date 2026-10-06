@@ -132,6 +132,8 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
       omitted_nodes: Math.max(0, nodes.length - 3),
       summary_command: command("summary"),
       result_writeback_option: writeback.option,
+      result_writeback_inline_option: writeback.inline_option,
+      result_writeback_inline_field: writeback.inline_field,
       result_attachment_schema: writeback.attachment_schema,
       result_writeback_guidance: writeback.guidance,
       result_attachment_template: writeback.attachment_template,
