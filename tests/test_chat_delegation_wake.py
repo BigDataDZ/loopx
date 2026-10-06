@@ -182,6 +182,75 @@ def test_client_id_owned_by_another_turn_is_not_claimed(mode):  # noqa: F811
     assert _wake(path)["reason"] == "wake_identity_conflict" and calls == []
 
 
+def test_inconsistent_wake_replay_state_is_refused_instead_of_retried(
+    mode, monkeypatch,  # noqa: F811
+):  # noqa: F811
+    service, sid, repo, _transport = _native(mode, monkeypatch)
+    operation = {
+        "operation": "wake",
+        "settings": mode[3],
+        "wake": {
+            "intent_id": INTENT_ID,
+            "operation_id": OPERATION_ID,
+            "request_id": "request-1",
+        },
+    }
+    service.store.accept_managed_turn(
+        sid,
+        client_turn_id="wake-" + INTENT_ID[:32],
+        message="An unrelated instruction stored under the wake identity.",
+        loopx_execution=True,
+        loopx_request=operation,
+        display_message="成员结果已验收，继续推进 LoopX 模式。",
+    )
+    path = _write_record(service, session_id=sid)
+
+    receipts = _pump(service, repo)
+
+    assert not _transport.dispatches, _transport.dispatches
+    assert _wake(path)["state"] == "refused"
+    assert _wake(path)["reason"] == "wake_identity_conflict"
+    assert _wake(path) in receipts
+    assert not _transport.dispatches
+    assert _pump(service, repo) == []
+
+
+def test_durable_wake_replay_conflict_is_refused_instead_of_retried(
+    mode, monkeypatch,  # noqa: F811
+):  # noqa: F811
+    service, sid, repo, transport = _native(mode, monkeypatch)
+    operation = {
+        "operation": "wake",
+        "settings": mode[3],
+        "wake": {
+            "intent_id": INTENT_ID,
+            "operation_id": OPERATION_ID,
+            "request_id": "request-1",
+        },
+    }
+    service.store.accept_managed_turn(
+        sid,
+        client_turn_id="wake-" + INTENT_ID[:32],
+        message=f"/goal resume --tokens {mode[3]['token_budget']}",
+        loopx_execution=True,
+        loopx_request=operation,
+        display_message="成员结果已验收，继续推进 LoopX 模式。",
+    )
+    service.store.update_session(
+        sid, active_turn_id=None,
+        native_goal={"status": "paused", "tokensUsed": 0},
+    )
+    path = _write_record(service, session_id=sid)
+
+    receipts = _pump(service, repo)
+
+    assert _wake(path)["state"] == "refused"
+    assert _wake(path)["reason"] == "wake_identity_conflict"
+    assert _wake(path) in receipts
+    assert not transport.dispatches
+    assert _pump(service, repo) == []
+
+
 def test_active_lead_turn_keeps_the_intent_pending_without_churn(mode):  # noqa: F811
     service, sid, _, settings, calls = mode
     repo = mode[2]
