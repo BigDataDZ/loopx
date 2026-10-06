@@ -116,6 +116,28 @@ def test_saved_packet_cannot_weaken_the_live_architecture_gate():
     assert f"{KEY}:blocking_decision" in check_review_result(packet, result)["approval_blockers"]
 
 
+@pytest.mark.parametrize("field", ["reason", "current_pr_boundary"])
+@pytest.mark.parametrize("text", ["[](https://example.com/empty)", "![](https://example.com/empty)", "` _ `", "**__**", " \n\t "])
+def test_empty_visible_architecture_text_cannot_count_as_publication(field, text):
+    packet, result = _architecture_review()
+    assessment = result["evidence"]["change_proportionality"]["architecture_assessment"]
+    result["review_body"] = result["review_body"].replace(assessment[field], "")
+    assessment[field] = text
+    checked = check_review_result(packet, result)
+    assert f"review_body:architecture_not_text:{field}" in checked["errors"]
+    assert not checked["approval_consistent"]
+
+
+@pytest.mark.parametrize("field", ["reason", "current_pr_boundary"])
+def test_visible_formatted_architecture_text_remains_accepted(field):
+    packet, result = _architecture_review()
+    assessment = result["evidence"]["change_proportionality"]["architecture_assessment"]
+    original = assessment[field]
+    assessment[field] = f"**{original}**"
+    result["review_body"] = result["review_body"].replace(original, f"[{original}](https://example.com/basis)")
+    assert check_review_result(packet, result)["approval_consistent"]
+
+
 def test_real_cli_checks_the_same_gate_and_preserves_publication(tmp_path, capsys):
     packet, result = _architecture_review("simplify_now")
     packet_path, result_path = tmp_path / "packet.json", tmp_path / "result.json"
@@ -128,6 +150,29 @@ def test_real_cli_checks_the_same_gate_and_preserves_publication(tmp_path, capsy
     result = copy.deepcopy(result)
     result["verdict"] = "REQUEST_CHANGES"
     result["review_body"] = result["review_body"].replace("English verdict: APPROVE", "English verdict: REQUEST_CHANGES")
+    result_path.write_text(json.dumps(result))
+    main(args)
+    assert json.loads(capsys.readouterr().out)["ok"]
+
+
+@pytest.mark.parametrize("field,text", [
+    ("reason", "[](https://example.com/empty)"),
+    ("current_pr_boundary", "` _ `"),
+])
+def test_real_cli_rejects_empty_publication_and_recovers_with_visible_text(tmp_path, capsys, field, text):
+    packet, result = _architecture_review()
+    assessment = result["evidence"]["change_proportionality"]["architecture_assessment"]
+    original = assessment[field]
+    assessment[field] = text
+    packet_path, result_path = tmp_path / "packet.json", tmp_path / "result.json"
+    packet_path.write_text(json.dumps(packet))
+    result_path.write_text(json.dumps(result))
+    args = ["--format", "json", "pr-review", "--check-result", str(result_path), "--packet", str(packet_path)]
+    main(args)
+    checked = json.loads(capsys.readouterr().out)
+    assert f"review_body:architecture_not_text:{field}" in checked["errors"]
+    assert not checked["approval_consistent"]
+    assessment[field] = f"**{original}**"
     result_path.write_text(json.dumps(result))
     main(args)
     assert json.loads(capsys.readouterr().out)["ok"]

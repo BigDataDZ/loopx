@@ -112,12 +112,16 @@ the architecture or overall-evaluation section: name the useful current outcome,
 smallest repair and safely deferred owner/acceptance. A cohesive prerequisite can
 be approved without delivering its parent roadmap; an empty registry/schema
 cannot claim that outcome. Tightly coupled stages should be combined.
+Both published fields must contain visible text after ordinary Markdown
+normalization; empty link labels and formatting alone do not count. Formatted
+visible wording remains accepted without imposing a new prose style.
 
 架构判断进入既有比例评估：逐项说明核心保证、可选策略、provider IO 和投影的
 owner、默认范围及失败恢复，再决定当前 PR 交付边界。关闭态兼容通过不代表
 默认策略合理，最新 bug 修好也不消除已声明的必要架构收敛。必须现在修复或仍有
 关键未知时不能批准；未经接受的偏好保留为非阻塞建议。公开正文须带出决定性理由
 和本阶段结果，允许可独立验证的前置阶段，不要求补完全部父级 roadmap。
+两个公开字段归一化后须有可见文字；空链接或格式符号不能代替说明，正常格式文字仍可通过。
 
 The checker validates typed declarations, verdict consistency and publication;
 it cannot discover architectural insight or prove the review's truth. Paired

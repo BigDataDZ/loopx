@@ -100,8 +100,9 @@ def architecture_publication_errors(value: object, body: str) -> list[str]:
     errors = []
     for field in publication["fields"]:
         text = value.get(field)
-        if isinstance(text, str) and text.strip() and not any(
-            normalized_review_prose(text) in section for section in sections
-        ):
+        normalized = normalized_review_prose(text) if isinstance(text, str) else ""
+        if not normalized:
+            errors.append(f"review_body:architecture_not_text:{field}")
+        elif not any(normalized in section for section in sections):
             errors.append(f"review_body:architecture_not_published:{field}")
     return errors
