@@ -483,3 +483,17 @@ def test_turn_context_audit_count_compatibility(counts, omitted):
     result = packet["harness"]["selected_branches"][0]["typed_evidence_audit"]
     assert result["omitted_audit_findings"] == omitted
     assert len(result["findings"]) == 3
+
+
+@pytest.mark.parametrize("kind", ["findings", "edges"])
+def test_turn_context_rejects_negative_evidence_count(kind):
+    with pytest.raises(EffectRuntimeRejected, match=f"Explore {kind} count must be nonnegative") as rejected:
+        effect_runtime_result("explore.turn_context", {
+            "goal_id": "research", "agent_id": "worker", "route": ["loopx"],
+            "harness_gate": {"enabled": True}, "graph_enabled": False,
+            "projection": {}, "plan": {"selected_branches": [{
+                "typed_evidence_audit": {"status_counts": {kind: {"unknown": -1}}},
+            }]},
+        })
+    assert rejected.value.error_kind == "request_rejected"
+    assert rejected.value.diagnostic_code == "invalid_request"

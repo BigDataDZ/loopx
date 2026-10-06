@@ -1,5 +1,6 @@
 /** Compact Explore read model. Existing Graph/Harness owners retain all gates. */
 import type {JsonObject} from "../effect_program.ts";
+import {EffectRuntimeRequestError} from "../effect_runtime_errors.ts";
 import {requireInteger, requireJsonObject, requireNonEmptyString, requireStringArray} from "../runtime_decode.ts";
 
 function rows(value: unknown): JsonObject[] {
@@ -17,7 +18,7 @@ function evidenceCount(audit: JsonObject, kind: string, detailCount: number): nu
   let total = 0;
   for (const value of Object.values(statuses)) {
     const count = requireInteger(value, `Explore ${kind} count`);
-    if (count < 0) throw new Error(`Explore ${kind} count must be nonnegative`);
+    if (count < 0) throw new EffectRuntimeRequestError(`Explore ${kind} count must be nonnegative`);
     total += count;
   }
   return Math.max(detailCount, total);
