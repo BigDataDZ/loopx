@@ -26,6 +26,11 @@ def test_presentation_path_rules_are_owned_by_public_safe_text() -> None:
         r"\\fileserver\share\goal.md",
         r"path:C:\Users\alice\goal.md",
         r"path:\\fileserver\share\goal.md",
+        r"\\?\UNC\fileserver\share\goal.md",
+        r"path:\\?\UNC\fileserver\share\goal.md",
+        r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\Users\alice\goal.md",
+        r"path:\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\Users\alice\goal.md",
+        r"\\?\volume{01234567-89ab-cdef-0123-456789abcdef}\Users\alice\goal.md",
     ],
 )
 def test_windows_local_paths_are_redacted_and_rejected(path: str) -> None:
