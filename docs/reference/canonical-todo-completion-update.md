@@ -314,6 +314,9 @@ missing and device defaults change; an unavailable selected provider requires
 restoration rather than rebuilding source authority. It qualifies that caller
 boundary, not deletion of the supported Markdown writer, backup readers or
 receipt recovery. Those paths retain their own last-caller migration exits.
+The same absence check covers admitted hard-lease work through material vision
+writeback, one quota settlement and exact retry. Missing leases and provider
+outages still reject; rebuilding the display does not make it fallback authority.
 
 canonical Todo 创建、更新、完成、替代和归档不再在 CLI 注册时导入 Markdown
 行写入器；未迁移操作实际需要它时才加载。`loopx.todos` 的历史显式导入仍指向
@@ -321,6 +324,8 @@ canonical Todo 创建、更新、完成、替代和归档不再在 CLI 注册时
 缺失模块回归在一次性包中物理移除行写入器，并运行真实 File/SQLite 新 Goal 创建与
 Todo 生命周期。显示源缺失且设备默认值改变后，原创建操作恢复仍保留后续工作；所选
 provider 不可用时要求恢复，不重建旧源权威。
+相同缺失模块检查覆盖 hard-lease 工作的准入、实质 vision 写回、一次额度结算与原
+Turn 重试；缺租约和 provider 失效仍拒绝，重建显示不会使它成为回退权威。
 这验证调用方隔离；仍受支持的 Markdown writer、备份读取和原回执恢复保留各自的
 迁移与最后调用方退役条件。
 

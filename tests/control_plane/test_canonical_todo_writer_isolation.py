@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,8 @@ import sys
 import pytest
 
 from canonical_authority_fixture import isolate_sqlite_runtime, promoted_create_fixture
+from test_quota_authority_settlement_journey import _source
+import test_quota_settlement_cli as settlement
 
 
 @pytest.fixture
@@ -138,6 +141,97 @@ def test_new_goal_and_original_creation_recovery_without_source_line_writer(tmp_
     restored = cli("todo", "list", "--goal-id", "new-goal")
     assert restored["todos"] == before["todos"]
     assert restored["authority_read"]["provider_revision"] == before["authority_read"]["provider_revision"]
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_leased_delivery_settlement_and_recovery_without_source_line_writer(tmp_path, provider, without_source_line_writer):
+    project, runtime, registry, display, _ = _source(
+        tmp_path, provider=provider, handoff_mode="hard_lease",
+        extra=f"claimed_by={settlement.AGENT_ID}",
+    )
+    display.unlink()
+
+    def run(*args, succeeds=True):
+        result = subprocess.run(
+            [sys.executable, "-m", "loopx.cli", "--format", "json",
+             "--registry", str(registry), "--runtime-root", str(runtime), *args],
+            cwd=project, capture_output=True, text=True, timeout=45,
+        )
+        assert (result.returncode == 0) is succeeds, result.stdout + result.stderr
+        return json.loads(result.stdout)
+
+    identity = ["--goal-id", settlement.GOAL_ID, "--agent-id", settlement.AGENT_ID,
+                "--todo-id", settlement.TODO_ID]
+
+    def guard(turn):
+        return run("quota", "should-run", *identity, "--codex-app", "--turn-instance-id", turn)
+
+    selected = guard(settlement.TURN_ID)
+    assert selected["decision"] == "run"
+    original = selected["heartbeat_receipt"]["settlement_identity"]
+    assert original["todo_id"] == settlement.TODO_ID
+    update = ["todo", "update", *identity, "--note", "Canonical delivery retained"]
+    rejected = run(*update, succeeds=False)
+    assert rejected["error_code"] == "handoff_mode_requires_lease"
+    acquired = run("task-lease", "acquire", "--goal-id", settlement.GOAL_ID,
+                   "--todo-id", settlement.TODO_ID, "--owner", settlement.AGENT_ID,
+                   "--idempotency-key", "delivery", "--expected-version", "0",
+                   "--ttl-seconds", "3600", "--write-scope", "tests/**")
+    assert acquired["acquired"] is True
+    proof = ["--task-lease-idempotency-key", "delivery",
+             "--task-lease-expected-version", str(acquired["lease"]["version"])]
+    assert run(*update, *proof)["ok"] is True
+    before = run("todo", "list", *identity)["todo"]
+    assert before["note"] == "Canonical delivery retained"
+    projected_display = display.read_bytes()
+
+    # A committed update can rebuild its display. That display cannot become
+    # fallback authority or create a new admission when the provider fails.
+    backend = runtime / "authority" / f"{provider}-v0"
+    offline = backend.with_name(backend.name + "-offline")
+    backend.rename(offline)
+    try:
+        failed = run("quota", "should-run", *identity, "--codex-app",
+                     "--turn-instance-id", "provider-unavailable", succeeds=False)
+        assert not failed.get("selected_todo")
+        assert settlement._heartbeat_receipt_count(runtime, "provider-unavailable") == 0
+        assert settlement._spend_run_count(runtime) == 0
+        assert not backend.exists() and display.read_bytes() == projected_display
+    finally:
+        offline.rename(backend)
+
+    refreshed = run("refresh-state", *identity, "--turn-instance-id", settlement.TURN_ID,
+                    "--classification", "validated_progress", "--delivery-batch-scale", "implementation",
+                    "--delivery-outcome", "outcome_progress", "--no-global-sync", "--suppress-external-sinks",
+                    "--vision-state", "vision_on_track", "--vision-summary", "Continue canonical delivery.",
+                    "--vision-acceptance", "Keep current work and settle its admitted Turn once; subsequent work remains open.")
+    assert refreshed["vision_checkpoint"]["satisfied"] is True
+    command = shlex.split(refreshed["settlement_owed"]["command"])
+    assert command[0] == "loopx"
+    assert command[command.index("--registry") + 1] == str(registry)
+    assert command[command.index("--runtime-root") + 1] == str(runtime)
+    spent = run(*command[1:])
+    assert spent["appended"] is True and spent["settlement_progress"]["state"] == "settled"
+    replay = run(*command[1:])
+    assert replay["appended"] is False
+    assert settlement._spend_run_count(runtime) == 1
+    settled = guard(settlement.TURN_ID)
+    assert settled["effective_action"] == "heartbeat_settled_skip"
+    assert settled["heartbeat_receipt"]["settlement_identity"] == original
+    assert settled["interaction_contract"]["agent_channel"]["must_attempt"] is False
+    assert run("todo", "list", *identity)["todo"] == before
+    assert run("task-lease", "release", "--goal-id", settlement.GOAL_ID,
+               "--todo-id", settlement.TODO_ID, "--owner", settlement.AGENT_ID,
+               "--idempotency-key", "delivery", "--expected-version", proof[-1])["released"] is True
+    # Settling this Turn does not settle the vision. A fresh wake discovers
+    # current work or its required replan instead of reusing the old selection.
+    fresh = run("quota", "should-run", "--goal-id", settlement.GOAL_ID,
+                "--agent-id", settlement.AGENT_ID, "--codex-app", "--turn-instance-id", "next-delivery")
+    assert fresh["decision"] in {"run", "autonomous_replan_required"}
+    if fresh["decision"] == "autonomous_replan_required":
+        assert fresh["replan_action_packet"]["obligation_id"]
+    assert fresh["effective_action"] != "unsettled_host_turn_recovery"
+    assert settlement._spend_run_count(runtime) == 1
 
 
 def test_explicit_source_writer_import_preserves_the_existing_seam(tmp_path):
