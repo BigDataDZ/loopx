@@ -7,6 +7,7 @@ import {
   atomicWriteJson,
   withFileMutationLock,
 } from "../effect_runtime_io.ts";
+import { heartbeatReceiptStatus } from "../rollout_receipt_log.ts";
 import {
   requireBoolean as requiredBoolean,
   requireInteger as requiredInteger,
@@ -162,6 +163,10 @@ export interface SchedulerHeartbeatCommitResult extends JsonObject {
   failure_count?: number;
   stale_hint_accepted?: boolean;
   stale_hint_tolerance_minutes?: number;
+}
+
+export interface SchedulerHeartbeatCommitOptions {
+  readonly heartbeatReceiptTurnInstanceId?: string | null;
 }
 
 function stableValue(value: unknown): unknown {
@@ -812,8 +817,16 @@ function buildHostFailureState(
 
 export async function evaluateSchedulerHeartbeatCommit(
   value: unknown,
+  options: SchedulerHeartbeatCommitOptions = {},
 ): Promise<SchedulerHeartbeatCommitResult> {
   const request = requestObject(value);
+  const receiptTurnInstanceId = options.heartbeatReceiptTurnInstanceId === null ||
+      options.heartbeatReceiptTurnInstanceId === undefined
+    ? null
+    : requiredString(
+      options.heartbeatReceiptTurnInstanceId,
+      "heartbeatReceiptTurnInstanceId",
+    ).trim();
   const path = schedulerStatePath(request.runtime_root, request.scope);
   const fingerprint = requestDigest(request);
   // Execute mode migrates the legacy layout before taking the canonical lock.
@@ -831,6 +844,26 @@ export async function evaluateSchedulerHeartbeatCommit(
   return await withFileMutationLock(path, async () => {
     const canonical = await readStateUnderLock(path, request.scope);
     const existing = canonical ?? (!request.execute ? loaded.state : null);
+    if (receiptTurnInstanceId !== null) {
+      const status = await heartbeatReceiptStatus({
+        runtimeRoot: request.runtime_root,
+        goalId: request.scope.goalId,
+        agentId: request.scope.agentId,
+        turnInstanceId: receiptTurnInstanceId,
+      });
+      if (status !== "fresh") {
+        return result(
+          request,
+          path,
+          "conflict",
+          existing,
+          status === "missing"
+            ? "originating heartbeat receipt is missing at scheduler commit"
+            : "originating heartbeat receipt was superseded before scheduler commit",
+          { reason_code: `heartbeat_receipt_${status}` },
+        );
+      }
+    }
     const existingDigest = schedulerHeartbeatCommitStateDigest(existing);
     const metadata = commitMetadata(existing);
     if (metadata?.effect_id === request.effect_id) {
@@ -967,6 +1000,7 @@ export async function evaluateSchedulerHeartbeatCommit(
  */
 export async function evaluateSchedulerHeartbeatHostFacts(
   value: unknown,
+  options: SchedulerHeartbeatCommitOptions = {},
 ): Promise<SchedulerHeartbeatCommitResult> {
   const { request: facts, operation_id: externalOperationId } =
     hostFactsRequest(value);
@@ -984,11 +1018,14 @@ export async function evaluateSchedulerHeartbeatHostFacts(
     effect_id: externalOperationId ?? schedulerHeartbeatOperationId(facts),
     expected_state_digest: schedulerHeartbeatCommitStateDigest(loaded.state),
   };
-  return await evaluateSchedulerHeartbeatCommit({
-    ...request,
-    goal_id: request.scope.goalId,
-    agent_id: request.scope.agentId,
-    surface: request.scope.surface,
-    state_key: request.scope.stateKey,
-  });
+  return await evaluateSchedulerHeartbeatCommit(
+    {
+      ...request,
+      goal_id: request.scope.goalId,
+      agent_id: request.scope.agentId,
+      surface: request.scope.surface,
+      state_key: request.scope.stateKey,
+    },
+    options,
+  );
 }
