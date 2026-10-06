@@ -189,6 +189,11 @@ CLI 使用上面的完整 JSON 和 preview/apply/inspect/bootstrap 命令；App 
 审核计划；反向迁移须保留新增写入。受支持的旧备份、格式和原回执恢复能力保留。
 此路径不代表完整升级、D2 长期资格或发布默认已通过。
 
+Prose-only source maintenance compares the exact canonical JSON bytes of the
+existing stable partition view. Only the resume evaluation clock is excluded;
+boolean and integer facts remain distinct even where Python object equality
+would equate them. This uses the same encoding boundary as capture identity,
+without granting a prose writer any Todo mutation or provider fallback.
 ## Retirement boundaries before changing the release default
 
 SQLite adoption and Python retirement need separate evidence. A canonical Goal
