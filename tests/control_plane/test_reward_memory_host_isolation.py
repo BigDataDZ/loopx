@@ -162,8 +162,9 @@ result = {'schema_version': 'loopx_turn_result_v0', 'turn_key': request['turn_ke
  'next_action': 'Run the next bounded fixture', 'delivery_batch_scale': 'single_surface',
  'delivery_outcome': 'outcome_progress', 'vision_unchanged_reason': 'The original fixture remains open.',
  'path_delta_mode': 'unchanged', 'agent_vision_json': '', 'summary': 'Independent fixture validation passed.'}
-if 'reward_memory_reflection_json' in schema['properties']:
- result['reward_memory_reflection_json'] = ''
+# Simulate an older/custom host returning a memory field even when the current
+# result schema does not request it. The real adapter must isolate that input.
+result['reward_memory_reflection_json'] = '{"status":"no_evidence"}'
 pathlib.Path(args[args.index('--output-last-message') + 1]).write_text(json.dumps(result))
 print(json.dumps({'type': 'thread.started', 'thread_id': 'fixture-memory-session'}))
 ''', encoding="utf-8")
@@ -188,4 +189,4 @@ print(json.dumps({'type': 'thread.started', 'thread_id': 'fixture-memory-session
     assert result["post_settlement"]["external_writes_performed"] is False
     journals = list((runtime / "goals/loopx-turn-fixture/turns").glob("*.json"))
     assert len(journals) == 1
-    assert "reward_memory_reflection_json" not in json.loads(journals[0].read_text())["host_result"]
+    assert ("reward_memory_reflection_json" in json.loads(journals[0].read_text())["host_result"]) is ingest
