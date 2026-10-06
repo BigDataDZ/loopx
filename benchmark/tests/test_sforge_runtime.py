@@ -396,7 +396,10 @@ def test_edgebench_rejects_envelope_before_creating_trial(tmp_path):
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_edgebench_receipt_records_only_enabled_treatment(tmp_path, monkeypatch, enabled):
+@pytest.mark.parametrize("task,timeout_args,expected", [("fixture", [], 64800),
+    ("portfolio_risk_calibration", [], 43200),
+    ("portfolio_risk_calibration", ["--timeout", "1800"], 1800)])
+def test_edgebench_receipt_records_only_enabled_treatment(tmp_path, monkeypatch, enabled, task, timeout_args, expected):
     pytest.importorskip("sforge")
     pytest.importorskip("harbor")
     from types import SimpleNamespace
@@ -404,7 +407,7 @@ def test_edgebench_receipt_records_only_enabled_treatment(tmp_path, monkeypatch,
 
     monkeypatch.setenv("LOOPX_SRC_DIR", str(tmp_path))
     monkeypatch.setenv("LOOPX_EXPECTED_COMMIT", "fixture")
-    (tmp_path / "fixture.json").write_text("{}")
+    (tmp_path / f"{task}.json").write_text("{}")
     monkeypatch.setattr(run, "source_pins", lambda *a: ("fixture", "fixture"))
     monkeypatch.setattr(run, "load_benchmark", lambda *a: None)
     monkeypatch.setattr(run, "make_task_spec", lambda *a: SimpleNamespace(
@@ -412,14 +415,16 @@ def test_edgebench_receipt_records_only_enabled_treatment(tmp_path, monkeypatch,
     monkeypatch.setattr(run, "SForgeWorker", lambda *a, **k: SimpleNamespace(resume_cmd="resume"))
     monkeypatch.setattr(run, "RecordingDockerBackend", lambda **k: SimpleNamespace(image_exists=lambda image: True))
     def stop_before_solver(**kwargs):
+        assert kwargs["timeout"] == kwargs["config"].agent_timeout == expected
         raise RuntimeError("synthetic launch failure")
     monkeypatch.setattr(run, "run_agent", stop_before_solver)
-    args = ["--task", "fixture", "--tasks-dir", str(tmp_path), "--log-dir", str(tmp_path),
+    args = ["--task", task, "--tasks-dir", str(tmp_path), "--log-dir", str(tmp_path),
             "--run-id", "receipt", "--worker", "heartbeat-resume", "--model", "fixture",
             "--effort", "xhigh", "--judge-url", "http://127.0.0.1:9999"]
     with pytest.raises(RuntimeError, match="synthetic launch failure"):
-        run.main(args + (["--turn-envelope"] if enabled else []))
-    receipt = json.loads((tmp_path / "runs/receipt/fixture/runtime-receipt.json").read_text())
+        run.main(args + timeout_args + (["--turn-envelope"] if enabled else []))
+    receipt = json.loads((tmp_path / f"runs/receipt/{task}/runtime-receipt.json").read_text())
+    assert receipt["timeout_seconds"] == expected
     assert ("turn_envelope" in receipt) is enabled
     if enabled:
         assert receipt["turn_envelope"] is True
@@ -446,3 +451,18 @@ def test_effective_turn_cadence_rejects_ambiguous_units(tmp_path):
     with pytest.raises(ValueError, match="not both"):
         BenchmarkCodex(logs_dir=tmp_path, model_name="fixture",
                        replan_after_turns=3, replan_after_todos=3)
+
+
+@pytest.mark.parametrize("task,explicit,expected", [
+    ("portfolio_risk_calibration", None, 43200),
+    ("lean_analysis_proofs", None, 64800),
+    ("unknown-future-task", None, 64800),
+    ("portfolio_risk_calibration", 1800, 1800),
+    ("portfolio_risk_calibration", 64800, 64800),
+    ("portfolio_risk_calibration", 0, 0),
+])
+def test_edgebench_task_timeout_precedence(task, explicit, expected):
+    pytest.importorskip("sforge")
+    pytest.importorskip("harbor")
+    from benchmark.edgebench.run import _task_timeout
+    assert _task_timeout(task, explicit) == expected

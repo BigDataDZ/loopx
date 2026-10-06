@@ -68,6 +68,17 @@ def _write_native_final_result(trial, result, *, status, agent, task, run_id, mo
     pending.replace(trial / "final_result.json")
 
 
+def _task_timeout(task_id: str, explicit: int | None) -> int:
+    """Resolve EdgeBench-only budgets; shared worker defaults stay unchanged."""
+    if explicit is not None:
+        return explicit
+    defaults = json.loads(Path(__file__).with_name("task-defaults.json").read_text())
+    value = defaults.get(task_id, {}).get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"Invalid EdgeBench timeout default for {task_id}: {value!r}")
+    return value
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True)
@@ -80,7 +91,8 @@ def main(argv=None):
                         help="Opt-in short heartbeat context with same-invocation full captures")
     parser.add_argument("--model", required=True)
     parser.add_argument("--effort", choices=("low", "medium", "high", "xhigh"), required=True)
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--timeout", type=int,
+                        help="Total trial seconds; task-defaults.json overrides the 18h fallback")
     parser.add_argument("--task-entry", choices=TASK_ENTRIES, default="seeded-todo")
     parser.add_argument("--replan-after-turns", type=int, choices=range(1, 6),
                         help="Opt in to settled work Turn cadence for heartbeat profiles")
@@ -89,6 +101,7 @@ def main(argv=None):
     parser.add_argument("--judge-url", required=True)
     parser.add_argument("--api-proxy-url", help="Operator-owned, OpenAI-only CONNECT proxy")
     args = parser.parse_args(argv)
+    args.timeout = _task_timeout(args.task, args.timeout)
     if args.task_entry != "seeded-todo" and not args.worker.startswith("heartbeat-"):
         parser.error("--task-entry loopx-planned requires a heartbeat worker")
     if args.turn_envelope and args.worker not in {"heartbeat-resume", "heartbeat-explore"}:
