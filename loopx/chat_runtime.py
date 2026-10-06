@@ -614,9 +614,6 @@ class ChatRuntimeController:
             if channel_id is not None and channel_id != selected["channel_id"]:
                 raise ValueError("project conversation channel mismatch")
             project_context = selected["context"]
-            self._validate_project_executor_scope(
-                agent_id, project_context, capability=capability
-            )
             selected_channel = selected["channel_id"]
             context = self.project_contexts.session_context({
                 "goal_id": None, "channel_id": selected_channel, "project_context": project_context,
@@ -624,6 +621,10 @@ class ChatRuntimeController:
             work_dir, objective = context["project"], context["objective"]
         elif goal_id is None:
             raise ValueError("goal_id or an authorized project_ref is required")
+        if project_context is not None:
+            self._validate_project_executor_scope(
+                agent_id, project_context, capability=capability
+            )
         manager_runtime = (
             self.manager_runtime_profile(selected_channel)
             if is_manager_channel(selected_channel)
