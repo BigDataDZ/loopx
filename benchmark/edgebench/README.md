@@ -105,3 +105,14 @@ keeping objective guidance, task/scorer version, model and budgets matched.
 Omit the flag on the next run to disable it. No active experiment is changed by
 installing this code. Inspect wake receipts and the saved decisions before
 claiming adoption; score countability still requires the usual integrity review.
+
+## Sharing terminal results
+
+The [Portfolio ten-arm retrospective report](studies/portfolio-ten-arm-20261006/README.md)
+contains recorded scores and per-arm runner settings, with explicit evaluator
+cohorts and qualification limits. Use `python -m benchmark.edgebench.export_report`
+to reduce an explicitly selected terminal collection or verify its settings/data
+hash bindings. The adapter does not launch jobs, qualify integrity, read sessions,
+or upload to a network service. Supplemental settings need publication review;
+missing provenance must remain explicit. Canonical experiment-board rows continue
+to use benchmark-toolkit's upload-envelope and readback contracts.
