@@ -440,6 +440,28 @@ The existing R5 CLI captures full decisions before projection, with a private di
 
 ### What Is Missing
 
+#### Heartbeat and Turn Envelope convergence
+
+Under existing M7.4 and roadmap S2/S3/S6/S8, converge the **execution facts**
+used by heartbeat and Turn hosts, while keeping host effect ownership separate.
+Neither today's large quota packet nor the smaller TurnEnvelope is a target
+shape merely because of its size. Optional memory participation now has one
+compact, signed envelope projection; the Codex CLI adapter preserves default-off
+isolation. This does not qualify installed heartbeat/App adoption or model value.
+
+Remaining implementation Todos, in dependency order:
+
+| Todo | Observable outcome and decisive acceptance |
+|---|---|
+| Reconcile execution/context requirements across heartbeat and TurnEnvelope | Same captured authoritative decision preserves actor/Goal/Todo, required full reads, claim/lease, action selection, replan/closure, conditional settlement and scheduler ownership. Inventory omitted/duplicated facts before deleting render branches. Include optional capabilities off, recall-only, ingest-only, stale binding and provider failure; private detail is accessed only through authorized references. |
+| Adopt one typed projection in real host renderers | Heartbeat full/thin and Turn host consume the same execution facts and per-Turn capture/detail route. Keep host-specific notification and scheduler transport explicit. Real File/SQLite CLI plus packaged Codex App tests cover reentry, source loss, refusal before required reads, late results, backoff and exactly-once settlement; no second admission from a detail read. Retire the replaced projection only after its last caller moves. |
+| Qualify the context shape and migration default | Compare the same normal, replan, wait/recovery and optional-capability workloads against both current full and compact paths. Measure payload/model tokens, detail IO, latency, resource growth, omissions and decision/outcome quality. Keep data loss, duplicate effects, identity and settlement errors as hard constraints. Preserve supported saved prompts/receipts and reversible rollout; change budgets or defaults only with that evidence. |
+
+Do not add a generic executor or lower an acceptance threshold to make a short
+packet pass. Preserve unsatisfied requirements and distinguish transport parity,
+installed host adoption and useful model outcomes. See the
+[current envelope contract](../../reference/protocols/turn-envelope-v0.md#optional-memory-participation).
+
 - A generic shared executor is deliberately absent. The current adapters share
   plan/receipt algebra but have different execution ownership, so M7.3
   is closed with no follow-up rather than filled with a speculative framework.
