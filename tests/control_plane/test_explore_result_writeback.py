@@ -183,10 +183,64 @@ def test_partial_link_failure_replays_without_duplicate_or_primary_rollback(
     assert second["ok"] and second["graph"]["appended_event_count"] == 0
 
 
+@pytest.mark.parametrize("case", ["disabled", "null", "invalid", "conflict", "off-without-result"])
+def test_real_cli_inline_validation_precedes_primary_commit(tmp_path, case):
+    from tests.control_plane.test_quota_settlement_cli import (
+        _write_fixture, _run_cli, GOAL_ID, AGENT_ID, TODO_ID, TURN_ID,
+    )
+
+    project, runtime, path = _write_fixture(tmp_path)
+    config = json.loads(path.read_text())
+    config["goals"][0]["explore_graph"] = {"enabled": case not in {"disabled", "off-without-result"}}
+    path.write_text(json.dumps(config))
+    rc, claimed = _run_cli(path, runtime, "todo", "claim", "--goal-id", GOAL_ID,
+                          "--todo-id", TODO_ID, "--agent-id", AGENT_ID,
+                          "--claimed-by", AGENT_ID, cwd=project)
+    assert rc == 0, claimed
+    binding = ("--goal-id", GOAL_ID, "--agent-id", AGENT_ID, "--todo-id", TODO_ID,
+               "--turn-instance-id", TURN_ID)
+    rc, guard = _run_cli(path, runtime, "quota", "should-run", "--codex-app",
+                        *binding, "--scan-path", str(project), cwd=project)
+    assert rc == 0, guard
+    packet = {"schema_version": "goal_vision_replan_contract_v0",
+              "state": "vision_patch_proposed",
+              "vision_patch": {"acceptance_summary": "Require a uniform tail bound."}}
+    if case != "off-without-result":
+        packet["explore_result"] = deepcopy(ATTACHMENT)
+    if case == "null":
+        packet["explore_result"] = None
+    if case == "invalid":
+        packet["explore_result"]["evidence_refs"] = []
+    source = tmp_path / "vision.json"
+    source.write_text(json.dumps(packet))
+    extra = ()
+    if case == "conflict":
+        other = tmp_path / "other.json"
+        other.write_text(json.dumps({**ATTACHMENT, "interpretation": "Transfer without a uniform bound."}))
+        extra = ("--explore-result-json", str(other))
+    index = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
+    before = index.read_bytes() if index.exists() else b""
+    rc, result = _run_cli(path, runtime, "refresh-state", *binding,
+                         "--classification", "validated_change", "--delivery-batch-scale", "implementation",
+                         "--delivery-outcome", "outcome_progress", "--no-global-sync",
+                         "--suppress-external-sinks", "--agent-vision-json", str(source), *extra, cwd=project)
+    if case == "off-without-result":
+        assert rc == 0 and result["appended"], result
+        assert "explore_result_delivery" not in result
+        rc, context = _run_cli(path, runtime, "explore", "turn-context", "--goal-id", GOAL_ID,
+                              "--agent-id", AGENT_ID, cwd=project)
+        assert rc == 0 and context["graph"] is None and context["harness"] is None
+    else:
+        assert rc == 1 and not result["appended"], result
+        assert (index.read_bytes() if index.exists() else b"") == before
+    assert not explore_result_log_path(runtime, GOAL_ID).exists()
+
+
 @pytest.mark.parametrize("terminal", [False, True])
 @pytest.mark.parametrize("interrupted", [False, True])
+@pytest.mark.parametrize("source_mode", ["file", "vision", "both"])
 def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_retry(
-    tmp_path, terminal, interrupted, monkeypatch, capsys,
+    tmp_path, terminal, interrupted, source_mode, monkeypatch, capsys,
 ):
     from tests.control_plane.test_quota_settlement_cli import (
         _write_fixture,
@@ -289,6 +343,19 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
     assert set(template) == set(ATTACHMENT)
     template.update(ATTACHMENT)
     source.write_text(json.dumps(template))
+    vision = tmp_path / "vision.json"
+    packet = {
+        "schema_version": "goal_vision_replan_contract_v0",
+        "state": "vision_patch_proposed",
+        "vision_patch": {"acceptance_summary": "Require a uniform tail bound."},
+        "explore_result": template,
+    }
+    vision.write_text(json.dumps(packet))
+    attachment_args = ()
+    if source_mode in {"file", "both"}:
+        attachment_args += ("--explore-result-json", str(source))
+    if source_mode in {"vision", "both"}:
+        attachment_args += ("--agent-vision-json", str(vision))
     args = (
         "refresh-state",
         *binding,
@@ -300,8 +367,7 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         "outcome_progress",
         "--no-global-sync",
         "--suppress-external-sinks",
-        "--explore-result-json",
-        str(source),
+        *attachment_args,
     )
     if interrupted:
         from loopx.cli import main
@@ -351,9 +417,11 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
     assert ATTACHMENT["observation"] in finding["summary"]
     assert ATTACHMENT["applicability"] in finding["summary"]
     assert index.read_bytes() == before
-    source.write_text(
-        json.dumps({**ATTACHMENT, "interpretation": "A different conclusion."})
-    )
+    changed = {**ATTACHMENT, "interpretation": "A different conclusion."}
+    if source_mode == "vision":
+        vision.write_text(json.dumps({**packet, "explore_result": changed}))
+    else:
+        source.write_text(json.dumps(changed))
     rc, conflict = _run_cli(path, runtime, *args, cwd=project)
     assert rc == 1, conflict
     assert index.read_bytes() == before
