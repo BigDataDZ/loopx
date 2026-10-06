@@ -43,6 +43,10 @@ def apply_context_handoff(
     from .capabilities.manager_context.execution import handoff_response
     from .chat_manager_context import manager_authorization_scope_is_current
 
+    expected_scope_id = context.get("authorization_scope_id")
+    if scope["kind"] == "external_audience" and expected_scope_id is None:
+        current_session = controller.store.load_session(session["session_id"]) or {}
+        expected_scope_id = current_session.get("manager_authorization_scope_id")
     return handoff_response(
         controller.coordination_runtime_root,
         controller.registry_path,
@@ -54,7 +58,7 @@ def apply_context_handoff(
             controller.registry_path,
             controller.manager_scope_resolver,
             session,
-            context.get("authorization_scope_id"),
+            expected_scope_id,
             runtime_root=controller.coordination_runtime_root,
         ),
         execution_allowed=execution_allowed,
