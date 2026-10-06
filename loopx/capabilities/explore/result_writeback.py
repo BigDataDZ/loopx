@@ -19,7 +19,7 @@ from .result_log import (
     build_explore_node_event,
     build_explore_finding_event,
     explore_result_log_path,
-    load_explore_result_events,
+    load_explore_result_events_strict,
     build_explore_result_projection,
 )
 
@@ -135,7 +135,7 @@ def prepare_result_attachment(
         recorded_at="2000-01-01T00:00:00Z",
     )
     existing = build_explore_result_projection(
-        load_explore_result_events(
+        load_explore_result_events_strict(
             explore_result_log_path(runtime_root, goal_id), goal_id=goal_id
         ),
         goal_id=goal_id,
@@ -217,7 +217,7 @@ def deliver_result_attachment(
             raise ValueError("Explore result hook did not admit one ingestion intent")
         intent = intents[0]
         # Readback-only replay after success needs no new lease or Todo write.
-        existing_events = load_explore_result_events(
+        existing_events = load_explore_result_events_strict(
             explore_result_log_path(runtime_root, goal_id), goal_id=goal_id
         )
         expected = _events(

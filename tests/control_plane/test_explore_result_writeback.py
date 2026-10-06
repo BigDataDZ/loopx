@@ -175,9 +175,9 @@ def test_partial_link_failure_replays_without_duplicate_or_primary_rollback(
 
 
 @pytest.mark.parametrize("terminal", [False, True])
+@pytest.mark.parametrize("interrupted", [False, True])
 def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_retry(
-    tmp_path,
-    terminal,
+    tmp_path, terminal, interrupted, monkeypatch, capsys,
 ):
     from tests.control_plane.test_quota_settlement_cli import (
         _write_fixture,
@@ -290,14 +290,53 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         "--explore-result-json",
         str(source),
     )
-    rc, first = _run_cli(path, runtime, *args, cwd=project)
-    assert rc == 0, first
-    assert first["explore_result_delivery"]["ok"] and first["appended"], first
+    if interrupted:
+        from loopx.cli import main
+        import loopx.capabilities.explore.result_writeback as module
+        original = module.update_goal_todo
+        def interrupt_link(**kwargs):
+            if not kwargs.get("dry_run"):
+                raise OSError("simulated interruption after graph append")
+            return original(**kwargs)
+        # Exercise the real CLI/primary record and real owner, interrupting only
+        # the graph-to-Todo link. Recovery below runs in a fresh CLI process.
+        with monkeypatch.context() as patch:
+            patch.chdir(project)
+            patch.setattr(module, "update_goal_todo", interrupt_link)
+            rc = main(["--registry", str(path), "--runtime-root", str(runtime),
+                       "--format", "json", *args])
+            first = json.loads(capsys.readouterr().out)
+        assert rc == 1 and first["appended"], first
+        assert first["explore_result_delivery"]["primary_committed"], first
+        assert not first["explore_result_delivery"]["ok"], first
+        assert "replay this exact refresh" in first["error"]
+    else:
+        rc, first = _run_cli(path, runtime, *args, cwd=project)
+        assert rc == 0, first
+        assert first["explore_result_delivery"]["ok"] and first["appended"], first
     index = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
     before = index.read_bytes()
     rc, replay = _run_cli(path, runtime, *args, cwd=project)
     assert rc == 0 and replay["idempotent_replay"], replay
     assert replay["explore_result_delivery"]["ok"], replay
+    assert index.read_bytes() == before
+    # Follow the owning hook's required read in a new process. Presence in the
+    # receiver packet is transport evidence, not a claim of model adoption.
+    import shlex
+    import subprocess
+    import sys
+    from loopx.capabilities.explore.turn_context import extend_turn_start_dispatch
+    hook = extend_turn_start_dispatch(
+        {}, registry_path=path, runtime_root=runtime, goal_id=GOAL_ID, agent_id=AGENT_ID,
+    )
+    command = shlex.split(hook["required_reads"][0]["command"])
+    read = subprocess.run([sys.executable, "-m", "loopx.cli", *command[1:]],
+                          capture_output=True, text=True, check=True)
+    received = json.loads(read.stdout)
+    finding = received["graph"]["writeback_results"][0]
+    assert finding["finding_id"] == replay["explore_result_delivery"]["finding_id"]
+    assert ATTACHMENT["observation"] in finding["summary"]
+    assert ATTACHMENT["applicability"] in finding["summary"]
     assert index.read_bytes() == before
     source.write_text(
         json.dumps({**ATTACHMENT, "interpretation": "A different conclusion."})
@@ -681,3 +720,23 @@ def test_linked_refutation_keeps_scope_after_later_positive_observations(tmp_pat
         })
         assert all(row["status"] == "confirmed" for row in corrected["graph"]["writeback_results"])
         assert "linked_finding_refuted" not in corrected["harness"]["selected_branches"][0]["typed_evidence_audit"]["hazards"]
+
+
+def test_corrupt_graph_cannot_report_success_on_replay_and_recovers_after_repair(tmp_path):
+    args = fixture(tmp_path)
+    assert deliver_result_attachment(payload=payload(), **args)["ok"]
+    log = explore_result_log_path(args["runtime_root"], args["goal_id"])
+    valid = log.read_bytes()
+    before = list_goal_todos(registry_path=args["registry_path"], goal_id=args["goal_id"])
+    corrupt = valid + b'{incomplete-record\n'
+    log.write_bytes(corrupt)
+    with pytest.raises(ValueError, match="invalid Explore result JSON"):
+        prepare_result_attachment(ATTACHMENT, **args)
+    result = deliver_result_attachment(payload=payload(), **args)
+    assert not result["ok"], "A partial log must not become a successful delivery receipt"
+    assert result["primary_committed"] and result["retryable"]
+    assert log.read_bytes() == corrupt
+    assert list_goal_todos(registry_path=args["registry_path"], goal_id=args["goal_id"]) == before
+    log.write_bytes(valid)
+    assert deliver_result_attachment(payload=payload(), **args)["idempotent_replay"]
+    assert log.read_bytes() == valid
