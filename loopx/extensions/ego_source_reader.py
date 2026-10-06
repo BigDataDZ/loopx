@@ -51,7 +51,16 @@ def _url(value: str) -> tuple[str, str]:
         # origins require them. Normalize compression to match new URL().origin.
         if "%" in hostname:
             raise ValueError("scoped IPv6 source URLs are not supported")
-        hostname = f"[{ipaddress.IPv6Address(hostname).compressed}]"
+        address = ipaddress.IPv6Address(hostname)
+        mapped = address.ipv4_mapped
+        if mapped is not None:
+            packed = mapped.packed
+            high = int.from_bytes(packed[:2], "big")
+            low = int.from_bytes(packed[2:], "big")
+            compressed = f"::ffff:{high:x}:{low:x}"
+        else:
+            compressed = address.compressed
+        hostname = f"[{compressed}]"
     origin = "https://" + hostname
     canonical = origin + (parsed.path or "/")
     if parsed.query:

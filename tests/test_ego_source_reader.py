@@ -121,6 +121,29 @@ def test_ipv6_source_and_origin_use_browser_canonical_host(configured, monkeypat
     assert observation["domReads"] > 0
 
 
+@pytest.mark.parametrize("origin_host", ["::ffff:8.8.8.8", "::ffff:808:808"])
+@pytest.mark.parametrize("request_host", ["::ffff:8.8.8.8", "::ffff:808:808"])
+def test_ipv4_mapped_ipv6_round_trips_through_browser_url(
+    configured, monkeypatch, tmp_path, origin_host, request_host,
+):
+    monkeypatch.setenv("LOOPX_EGO_READ_ORIGINS", f"https://[{origin_host}]")
+    config = reader.ReaderConfig.from_environment()
+    url = f"https://[{request_host}]/article"
+
+    canonical, origin = reader._url(url)
+    result, observation = run_generated_script(
+        config, url, False, tmp_path / "unused.png",
+    )
+
+    expected = "https://[::ffff:808:808]/article"
+    assert result["ok"] is True
+    assert result["url"] == expected
+    assert observation["domReads"] > 0
+    assert canonical == expected
+    assert origin == "https://[::ffff:808:808]"
+    assert config.origins == frozenset({"https://[::ffff:808:808]"})
+
+
 @pytest.mark.parametrize("key,value", [
     ("LOOPX_EGO_READ_PAGE", "p1);process.exit()"),
     ("LOOPX_EGO_READ_TASK_SPACE", "0"),
