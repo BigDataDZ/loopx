@@ -48,7 +48,14 @@ export function GoalExploreResults({goalId, zh}: {goalId: string; zh: boolean}) 
         <p>{zh ? "记录状态" : "Recorded status"}: {selected.status}</p>
         <p>{zh ? "记录者" : "Recorded by"}: {selected.agent_id || "—"}</p>
         <p>{zh ? "来源引用" : "Source references"}: {selected.evidence_refs.length ? selected.evidence_refs.join(" · ") : "—"}</p>
-        <small>{selected.finding_id} · {selected.node_id}</small>
+        <h4>{zh ? "关联任务" : "Linked tasks"}</h4>
+        <p>{zh ? "来自当前及已完成任务的显式关联，不代表后续决策已采用此结论。" : "Explicit links from current and completed tasks; they do not establish adoption by later decisions."}</p>
+        {selected.linked_todos.length ? <ul>{selected.linked_todos.map(todo => <li key={todo.todo_id}>
+          <p>{todo.text}</p><small>{todo.status} · {todo.claimed_by || "—"}</small>
+        </li>)}</ul> : <p>{zh ? "当前及已完成任务中未找到关联。" : "No links found in current or completed tasks."}</p>}
+        <details><summary>{zh ? "记录标识" : "Record identifiers"}</summary>
+          <small>{selected.finding_id} · {selected.node_id}<br/>{selected.linked_todos.map(todo => todo.todo_id).join(" · ")}</small>
+        </details>
       </div> : null}
     </div> : null}
   </section>;

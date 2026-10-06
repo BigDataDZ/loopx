@@ -14,12 +14,14 @@ from loopx.capabilities.explore.result_log import (
 from loopx.chat_server import ChatHTTPServer, ChatRequestHandler
 
 
-def test_evidence_readback_pagination_scope_failure_and_recovery(tmp_path):
+@pytest.mark.parametrize("canonical", [False, True])
+def test_evidence_readback_pagination_scope_failure_and_recovery(tmp_path, monkeypatch, canonical):
     registry = tmp_path / "registry.json"
     runtime = tmp_path / "runtime"
     (tmp_path / "active.md").write_text("# Synthetic Goal\n")
     registry.write_text(json.dumps({"common_runtime_root": str(runtime), "goals": [
-        {"id": name, "repo": str(tmp_path), "state_file": "active.md"}
+        {"id": name, "repo": str(tmp_path), "state_file": "active.md",
+         "coordination": {"registered_agents": ["worker"]}}
         for name in ("evidence-goal", "other-goal")
     ]}))
     log = explore_result_log_path(runtime, "evidence-goal")
@@ -33,7 +35,41 @@ def test_evidence_readback_pagination_scope_failure_and_recovery(tmp_path):
             title=f"Observation {index}", status="refuted", summary="Counterexample at input revision A",
             evidence_refs=["artifact:counterexample"], agent_id="worker",
         ))
+    from loopx.todos import add_goal_todo, list_goal_todos
+    from loopx.control_plane.todos.contract import encode_metadata_value
+    state = tmp_path / "active.md"
+    state.write_text("# Synthetic Goal\n\n## Agent Todo\n")
+    linked = add_goal_todo(
+        registry_path=registry, goal_id="evidence-goal", role="agent",
+        text="Test a uniform bound", agent_id="worker", claimed_by="worker",
+        explore_result_node_refs=["question"],
+    )["todo_id"]
+    add_goal_todo(
+        registry_path=registry, goal_id="evidence-goal", role="agent",
+        text="Unrelated task", agent_id="worker", claimed_by="worker",
+        explore_result_node_refs=["elsewhere"],
+    )
+    state.write_text(state.read_text() + (
+        "\n## Completed Work Archive\n- [x] Retain the counterexample\n"
+        "  <!-- loopx:todo todo_id=todo_archived role=agent status=done "
+        "claimed_by=worker explore_result_node_refs=" + encode_metadata_value("question") + " -->\n"
+    ))
+    if canonical:
+        from pathlib import Path
+        monkeypatch.syspath_prepend(str(Path(__file__).parent / "control_plane"))
+        from canonical_authority_fixture import initialize_canonical_authority, isolate_sqlite_runtime
+        from loopx.control_plane.coordination.runtime_shadow import build_todo_runtime_shadow_projection
+        isolate_sqlite_runtime(tmp_path, monkeypatch)
+        rows = list_goal_todos(registry_path=registry, goal_id="evidence-goal")["todos"]
+        rows += list_goal_todos(registry_path=registry, goal_id="evidence-goal", role="agent",
+                               status="done", read_scope="completed_history")["todos"]
+        initialize_canonical_authority(runtime, "evidence-goal",
+            build_todo_runtime_shadow_projection(goal_id="evidence-goal", todos=rows, handoff_mode="soft_claim"),
+            state_path=state, provider="sqlite")
+        # The reader must prefer canonical association over stale presentation.
+        state.write_text("# Synthetic Goal\n")
     before = log.read_bytes()
+    state_before = state.read_bytes()
     server = ChatHTTPServer(("127.0.0.1", 0), ChatRequestHandler)
     server.registry_path = registry
     server.runtime_root_override = None
@@ -52,6 +88,10 @@ def test_evidence_readback_pagination_scope_failure_and_recovery(tmp_path):
         assert item["status"] == "refuted"
         assert item["evidence_refs"] == ["artifact:counterexample"]
         assert item["agent_id"] == "worker"
+        assert {todo["todo_id"] for todo in item["linked_todos"]} == {linked, "todo_archived"}
+        assert {todo["status"] for todo in item["linked_todos"]} == {"open", "done"}
+        assert all(set(todo) == {"todo_id", "text", "status", "claimed_by"} for todo in item["linked_todos"])
+        assert state.read_bytes() == state_before
         cursor = quote(page["next_cursor"])
         assert len(read(base + "evidence-goal&cursor=" + cursor)["items"]) == 1
         with pytest.raises(HTTPError) as denied:
@@ -69,6 +109,16 @@ def test_evidence_readback_pagination_scope_failure_and_recovery(tmp_path):
         assert str(tmp_path).encode() not in corrupt.value.read()
         log.write_bytes(before)
         assert read(base + "evidence-goal")["total"] == 41
+        if not canonical:
+            # Missing Todo authority must not masquerade as an unlinked finding.
+            state.unlink()
+            with pytest.raises(HTTPError) as missing:
+                read(base + "evidence-goal")
+            assert missing.value.code == 409
+            state.write_bytes(state_before)
+            assert len(read(base + "evidence-goal")["items"][0]["linked_todos"]) == 2
+            state.write_text("# Synthetic Goal\n")
+            assert read(base + "evidence-goal")["items"][0]["linked_todos"] == []
     finally:
         server.shutdown()
         server.server_close()

@@ -2,6 +2,8 @@
 
 from urllib.parse import parse_qs, urlparse
 
+from .todos import list_goal_todos
+
 from .capabilities.explore.result_log import (
     build_explore_result_projection,
     explore_result_log_path,
@@ -9,7 +11,7 @@ from .capabilities.explore.result_log import (
 )
 
 
-def _result_rows(runtime_root, goal_id):
+def _result_rows(runtime_root, goal_id, registry_path):
     events = load_explore_result_events_strict(
         explore_result_log_path(runtime_root, goal_id), goal_id=goal_id,
     )
@@ -17,8 +19,24 @@ def _result_rows(runtime_root, goal_id):
         events, goal_id=goal_id, finding_limit=len(events),
     )
     nodes = {node["node_id"]: node for node in projection["nodes"]}
+    # Reuse canonical active/history readback; an association is not adoption.
+    todos = {}
+    for view in ({}, {"status": "done", "read_scope": "completed_history"}):
+        for todo in list_goal_todos(
+            registry_path=registry_path, runtime_root_arg=str(runtime_root),
+            goal_id=goal_id, role="agent", **view,
+        )["todos"]:
+            todos[todo["todo_id"]] = todo
+    links = {}
+    for todo in todos.values():
+        for node_id in todo.get("explore_result_node_refs") or []:
+            links.setdefault(node_id, []).append({
+                "todo_id": todo["todo_id"], "text": todo["text"],
+                "status": todo["status"], "claimed_by": todo.get("claimed_by") or "",
+            })
     return [
-        {**finding, "question": nodes.get(finding["node_id"], {}).get("title", ""),
+        {**finding, "linked_todos": links.get(finding["node_id"], []),
+         "question": nodes.get(finding["node_id"], {}).get("title", ""),
          "scope": nodes.get(finding["node_id"], {}).get("summary", "")}
         for finding in projection["findings"]
     ]
@@ -35,7 +53,7 @@ class ExploreResultsRequestMixin:
             page = self.server.completed_todo_pages.page(
                 scope=("explore_results", goal_id),
                 cursor=query.get("cursor", [""])[0],
-                load=lambda: _result_rows(runtime_root, goal_id),
+                load=lambda: _result_rows(runtime_root, goal_id, self.server.registry_path),
             )
             self._send_json({**page, "goal_id": goal_id})
         except ValueError as exc:

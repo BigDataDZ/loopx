@@ -2436,6 +2436,9 @@ const exploreResultPageSchema = z.object({
     finding_id: z.string(), finding: z.string(), summary: z.string(), status: z.string(),
     node_id: z.string(), question: z.string(), scope: z.string(), agent_id: z.string(),
     evidence_refs: z.array(z.string()), last_updated_at: z.string(),
+    linked_todos: z.array(z.object({
+      todo_id: z.string(), text: z.string(), status: z.string(), claimed_by: z.string(),
+    })),
   })),
 });
 export type ExploreResultPage = z.infer<typeof exploreResultPageSchema>;
