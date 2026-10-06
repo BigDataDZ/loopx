@@ -112,6 +112,66 @@ Events are sanitized at record time: compact text limits, credential-like
 markers rejected, and evidence refs must be public relative refs or opaque ids
 (for example `ov:doc:lustre-survey`), never local absolute paths.
 
+## Results From Ordinary Work Writeback
+
+An enabled evidence or planning mode accepts an explicit
+`explore_result_attachment_v0` on a Todo/Turn-bound `refresh-state`:
+
+```json
+{
+  "schema_version": "explore_result_attachment_v0",
+  "node_id": "bounded-prefix-question",
+  "question": "Does the tested prefix establish the tail bound?",
+  "applicability": "Finite prefix only; no uniform tail estimate.",
+  "input_revision": "fixture-v1",
+  "observation": "A divergent tail shares the tested prefix.",
+  "interpretation": "Require a uniform bound before transferring the result.",
+  "status": "refuted",
+  "evidence_refs": ["validation:counterexample-1"]
+}
+```
+
+Add `--explore-result-json result.json` to the ordinary admitted work
+writeback, retaining its Goal, Agent, Todo, Turn and delivery fields. The
+attachment is validated before primary commit and stored with that writeback.
+The effect-free capability hook emits an ingestion intent; the consumer creates
+the question only if absent, appends a finding, and adds the reference through
+the existing Todo owner. This opt-in append may attach evidence to a completed
+Todo while retaining its terminal status and completion metadata; claim and
+lease checks still apply. Other completed-Todo edits remain rejected. It never acquires a claim, renews a lease, changes a
+question's existing status, or launches another worker. An existing question id
+must keep the same question and applicability; use a distinct id for a changed
+scope. `input_revision` is the caller's recorded revision, not a claim that the
+runtime independently verified the underlying artifact.
+
+Read back with `loopx explore turn-context --goal-id <id> --agent-id <agent>`
+and `loopx explore summary --goal-id <id>`. The bounded next-turn view retains
+up to three attached result summaries, including their applicability and input
+revision. Relevant Todo links continue through the existing branch planner.
+Reading evidence does not prove adoption: the next work decision should explain
+which result supports a changed route, continued work, or a justified replication.
+
+A graph/link delivery failure leaves the primary writeback committed and returns
+`explore_result_delivery.retryable=true`. Replay the **same** refresh command to
+complete delivery; conflicting attachment changes cannot rewrite the original
+Turn. Graph events are idempotent and Todo references merge against the owner's
+locked snapshot. Capacity remains eight references per Todo; it is never silently
+truncated. Successful replay needs no second graph event or Todo mutation.
+
+Use `tentative` for inconclusive observations or prerequisite failures. Neither
+compilation failure nor a score alone supplies a scientific interpretation.
+Routine work without reusable evidence needs no attachment. Omitting the option
+preserves ordinary writeback behavior; disabled Explore rejects an attachment
+before committing it. Disable further ingestion through the existing
+`configure-goal --explore-mode off --execute`; existing evidence remains readable.
+No attachment authorizes external publication or changes quota/settlement rules.
+
+This is a worker writeback integration slice. CLI result ingestion and existing
+graph projections are covered; a packaged frontend attachment authoring/retry
+journey is not delivered by this slice. Existing capability configuration remains
+the mode owner, and Lark publication remains separately authorized. Full research
+adoption and score benefit require a subsequent matched worker experiment.
+
 ## Projection And Topology
 
 `loopx explore summary` folds the log into

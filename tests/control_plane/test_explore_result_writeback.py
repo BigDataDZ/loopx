@@ -1,0 +1,475 @@
+from copy import deepcopy
+import json
+
+import pytest
+
+from tests.capabilities.test_explore_turn_context import registry
+from loopx.control_plane.effect_runtime import EffectRuntimeRejected
+from loopx.todos import add_goal_todo, update_goal_todo, list_goal_todos
+from loopx.capabilities.explore.result_writeback import (
+    prepare_result_attachment,
+    deliver_result_attachment,
+)
+from loopx.capabilities.explore.turn_context import explore_turn_context
+from loopx.capabilities.explore.result_log import (
+    explore_result_log_path,
+    load_explore_result_events,
+)
+
+ATTACHMENT = dict(
+    schema_version="explore_result_attachment_v0",
+    node_id="prefix-bound",
+    question="Does a finite prefix establish the tail bound?",
+    applicability="Finite prefix only; no uniform tail estimate.",
+    input_revision="fixture-v1",
+    observation="A divergent tail shares the tested prefix.",
+    interpretation="Use a uniform bound before transferring the result.",
+    status="refuted",
+    evidence_refs=["validation:counterexample-1"],
+)
+
+
+def fixture(tmp_path, enabled=True):
+    path = registry(tmp_path, graph=enabled, planning=enabled)
+    todo = add_goal_todo(
+        registry_path=path,
+        goal_id="research",
+        text="Establish the tail bound",
+        role="agent",
+        claimed_by="worker",
+        agent_id="worker",
+    )
+    return dict(
+        registry_path=path,
+        runtime_root=tmp_path / "runtime",
+        goal_id="research",
+        agent_id="worker",
+        todo_id=todo["todo_id"],
+        turn_instance_id="turn-one",
+    )
+
+
+def payload():
+    return dict(
+        explore_result=deepcopy(ATTACHMENT),
+        generated_at="2026-01-01T00:00:00Z",
+        appended=True,
+        dry_run=False,
+        settlement_identity={"effect_id": "research:worker:turn-one"},
+    )
+
+
+def test_real_result_link_read_and_replay(tmp_path):
+    args = fixture(tmp_path)
+    prepare_result_attachment(ATTACHMENT, **args)
+    assert not explore_result_log_path(args["runtime_root"], "research").exists()
+    first = deliver_result_attachment(payload=payload(), **args)
+    assert first["ok"], first
+    second = deliver_result_attachment(payload=payload(), **args)
+    assert second["ok"] and second["idempotent_replay"], second
+    events = load_explore_result_events(
+        explore_result_log_path(args["runtime_root"], "research")
+    )
+    assert len(events) == 2
+    supplement = payload()
+    supplement["explore_result_recorded_at"] = supplement["generated_at"]
+    supplement["generated_at"] = "2026-01-02T00:00:00Z"
+    assert deliver_result_attachment(payload=supplement, **args)["idempotent_replay"]
+    assert (
+        len(
+            load_explore_result_events(
+                explore_result_log_path(args["runtime_root"], "research")
+            )
+        )
+        == 2
+    )
+    context = explore_turn_context(
+        **{
+            key: args[key]
+            for key in ("registry_path", "runtime_root", "goal_id", "agent_id")
+        }
+    )
+    assert context["graph"]["writeback_results"][0]["finding_id"] == first["finding_id"]
+    assert (
+        ATTACHMENT["interpretation"]
+        in context["graph"]["writeback_results"][0]["summary"]
+    )
+    audit = context["harness"]["selected_branches"][0]["typed_evidence_audit"]
+    assert ATTACHMENT["node_id"] in audit["requested_node_refs"]
+    assert audit["findings"][0]["status"] == "refuted"
+
+
+def test_todo_additive_owner_preserves_other_links_and_rejects_overflow(tmp_path):
+    args = fixture(tmp_path)
+    keys = {
+        key: args[key] for key in ("registry_path", "goal_id", "todo_id", "agent_id")
+    }
+    update_goal_todo(**keys, explore_result_node_refs=["prior"])
+    for _ in range(2):
+        update_goal_todo(**keys, append_explore_result_node_refs=["prefix-bound"])
+    rows = list_goal_todos(registry_path=args["registry_path"], goal_id="research")[
+        "todos"
+    ]
+    assert rows[0]["explore_result_node_refs"] == ["prior", "prefix-bound"]
+    with pytest.raises(ValueError):
+        update_goal_todo(
+            **keys, append_explore_result_node_refs=[f"node{i}" for i in range(8)]
+        )
+    with pytest.raises(ValueError):
+        update_goal_todo(
+            **keys,
+            explore_result_node_refs=[],
+            append_explore_result_node_refs=["other"],
+        )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "disabled",
+        "foreign-agent",
+        "unknown-todo",
+        "missing-turn",
+        "invalid-evidence",
+        "unknown-field",
+    ],
+)
+def test_invalid_attachment_never_writes_graph(tmp_path, mutation):
+    args = fixture(tmp_path, enabled=mutation != "disabled")
+    attachment = deepcopy(ATTACHMENT)
+    if mutation == "foreign-agent":
+        args["agent_id"] = "other"
+    if mutation == "unknown-todo":
+        args["todo_id"] = "todo_missing"
+    if mutation == "missing-turn":
+        args["turn_instance_id"] = ""
+    if mutation == "invalid-evidence":
+        attachment["evidence_refs"] = ["/private/raw.log"]
+    if mutation == "unknown-field":
+        attachment["score"] = 1
+    with pytest.raises((ValueError, EffectRuntimeRejected)):
+        prepare_result_attachment(attachment, **args)
+    assert not explore_result_log_path(args["runtime_root"], "research").exists()
+
+
+def test_partial_link_failure_replays_without_duplicate_or_primary_rollback(
+    tmp_path, monkeypatch
+):
+    args = fixture(tmp_path)
+    import loopx.capabilities.explore.result_writeback as module
+
+    original = module.update_goal_todo
+
+    def interrupt(**kwargs):
+        if not kwargs.get("dry_run"):
+            raise OSError("simulated interruption after graph append")
+        return original(**kwargs)
+
+    monkeypatch.setattr(module, "update_goal_todo", interrupt)
+    first = deliver_result_attachment(payload=payload(), **args)
+    assert not first["ok"] and first["primary_committed"] and first["retryable"]
+    assert first["graph"]["appended_event_count"] == 2
+    monkeypatch.setattr(module, "update_goal_todo", original)
+    second = deliver_result_attachment(payload=payload(), **args)
+    assert second["ok"] and second["graph"]["appended_event_count"] == 0
+
+
+def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_retry(
+    tmp_path,
+):
+    from tests.control_plane.test_quota_settlement_cli import (
+        _write_fixture,
+        _run_cli,
+        GOAL_ID,
+        AGENT_ID,
+        TODO_ID,
+        TURN_ID,
+    )
+
+    project, runtime, path = _write_fixture(tmp_path)
+    config = json.loads(path.read_text())
+    config["goals"][0]["explore_graph"] = {"enabled": True}
+    config["goals"][0]["spawn_policy"] = {
+        "allowed": False,
+        "explore_harness": {"enabled": True},
+    }
+    path.write_text(json.dumps(config))
+    rc, claimed = _run_cli(
+        path,
+        runtime,
+        "todo",
+        "claim",
+        "--goal-id",
+        GOAL_ID,
+        "--todo-id",
+        TODO_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--claimed-by",
+        AGENT_ID,
+        cwd=project,
+    )
+    assert rc == 0, claimed
+    binding = (
+        "--goal-id",
+        GOAL_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--todo-id",
+        TODO_ID,
+        "--turn-instance-id",
+        TURN_ID,
+    )
+    rc, guard = _run_cli(
+        path,
+        runtime,
+        "quota",
+        "should-run",
+        "--codex-app",
+        *binding,
+        "--scan-path",
+        str(project),
+        cwd=project,
+    )
+    assert rc == 0, guard
+    source = tmp_path / "result.json"
+    source.write_text(json.dumps(ATTACHMENT))
+    args = (
+        "refresh-state",
+        *binding,
+        "--classification",
+        "validated_change",
+        "--delivery-batch-scale",
+        "implementation",
+        "--delivery-outcome",
+        "outcome_progress",
+        "--no-global-sync",
+        "--suppress-external-sinks",
+        "--explore-result-json",
+        str(source),
+    )
+    rc, first = _run_cli(path, runtime, *args, cwd=project)
+    assert rc == 0, first
+    assert first["explore_result_delivery"]["ok"] and first["appended"], first
+    index = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
+    before = index.read_bytes()
+    rc, replay = _run_cli(path, runtime, *args, cwd=project)
+    assert rc == 0 and replay["idempotent_replay"], replay
+    assert replay["explore_result_delivery"]["ok"], replay
+    assert index.read_bytes() == before
+    source.write_text(
+        json.dumps({**ATTACHMENT, "interpretation": "A different conclusion."})
+    )
+    rc, conflict = _run_cli(path, runtime, *args, cwd=project)
+    assert rc == 1, conflict
+    assert index.read_bytes() == before
+    assert (
+        len(load_explore_result_events(explore_result_log_path(runtime, GOAL_ID))) == 2
+    )
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_canonical_delivery_keeps_existing_refs_and_receiver_reads_scoped_result(
+    tmp_path, provider
+):
+    from tests.control_plane.test_native_todo_planning_update import (
+        fixture as canonical_fixture,
+        records,
+    )
+
+    path, _state = canonical_fixture(tmp_path, True, provider)
+    config = json.loads(path.read_text())
+    config["goals"][0]["explore_graph"] = {"enabled": True}
+    config["goals"][0]["spawn_policy"] = {
+        "allowed": False,
+        "explore_harness": {"enabled": True},
+    }
+    path.write_text(json.dumps(config))
+    args = dict(
+        registry_path=path,
+        runtime_root=tmp_path / "runtime",
+        goal_id="goal-a",
+        agent_id="agent-a",
+        todo_id="todo_target",
+        turn_instance_id="turn-one",
+    )
+    update_goal_todo(
+        registry_path=path,
+        goal_id="goal-a",
+        agent_id="agent-a",
+        todo_id="todo_target",
+        explore_result_node_refs=["prior-question"],
+    )
+    before = records(path)["todo_other"]
+    result = deliver_result_attachment(payload=payload(), **args)
+    assert result["ok"], result.get("error", result)
+    assert records(path)["todo_target"]["explore_result_node_refs"] == [
+        "prior-question",
+        "prefix-bound",
+    ]
+    assert records(path)["todo_other"] == before
+    assert deliver_result_attachment(payload=payload(), **args)["idempotent_replay"]
+
+
+def test_later_observation_preserves_question_state_and_scoped_history(tmp_path):
+    from loopx.capabilities.explore.result_log import (
+        append_explore_result_event,
+        build_explore_node_event,
+    )
+
+    args = fixture(tmp_path)
+    first = deliver_result_attachment(payload=payload(), **args)
+    assert first["ok"]
+    log = explore_result_log_path(args["runtime_root"], "research")
+    append_explore_result_event(
+        log,
+        build_explore_node_event(
+            goal_id="research",
+            node_id="prefix-bound",
+            node_kind="question",
+            title=ATTACHMENT["question"],
+            summary=ATTACHMENT["applicability"],
+            status="resolved",
+        ),
+    )
+    second = payload()
+    second["generated_at"] = "2026-01-02T00:00:00Z"
+    second["settlement_identity"]["effect_id"] = "research:worker:turn-two"
+    second["explore_result"].update(
+        status="tentative",
+        input_revision="fixture-v2",
+        observation="The prerequisite did not build.",
+        interpretation="No conclusion about the bound.",
+    )
+    result = deliver_result_attachment(
+        payload=second, **{**args, "turn_instance_id": "turn-two"}
+    )
+    assert result["ok"], result.get("error", result)
+    context = explore_turn_context(
+        **{
+            key: args[key]
+            for key in ("registry_path", "runtime_root", "goal_id", "agent_id")
+        }
+    )
+    assert context["graph"]["recent_nodes"][0]["status"] == "resolved"
+    assert {row["status"] for row in context["graph"]["writeback_results"]} == {
+        "tentative",
+        "refuted",
+    }
+    bad = {**ATTACHMENT, "applicability": "Different question scope"}
+    with pytest.raises(ValueError, match="scope"):
+        prepare_result_attachment(bad, **args)
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_completed_work_can_attach_evidence_without_reopening_or_changing_completion(
+    tmp_path, provider
+):
+    from tests.control_plane.test_native_todo_planning_update import (
+        fixture as canonical_fixture,
+        records,
+    )
+    from canonical_authority_fixture import initialize_canonical_authority
+    from loopx.control_plane.coordination.runtime_shadow import (
+        build_todo_runtime_shadow_projection,
+    )
+
+    path, state = canonical_fixture(tmp_path, False, provider)
+    state.write_text(
+        state.read_text()
+        .replace("- [ ] Synthetic task", "- [x] Synthetic task")
+        .replace("todo_id=todo_target status=open", "todo_id=todo_target status=done")
+    )
+    todos = list_goal_todos(registry_path=path, goal_id="goal-a")["todos"]
+    projection = build_todo_runtime_shadow_projection(
+        goal_id="goal-a", todos=todos, handoff_mode="soft_claim"
+    )
+    initialize_canonical_authority(
+        tmp_path / "runtime", "goal-a", projection, state_path=state, provider=provider
+    )
+    before = records(path)["todo_target"]
+    assert before["status"] == "done"
+    update_goal_todo(
+        registry_path=path,
+        goal_id="goal-a",
+        agent_id="agent-a",
+        todo_id="todo_target",
+        append_explore_result_node_refs=["question"],
+    )
+    after = records(path)["todo_target"]
+    assert after["status"] == "done" and after["claimed_by"] == "agent-a"
+    assert after.get("completion_continuation") == before.get("completion_continuation")
+    assert after["explore_result_node_refs"] == ["question"]
+    with pytest.raises((ValueError, RuntimeError)):
+        update_goal_todo(
+            registry_path=path,
+            goal_id="goal-a",
+            agent_id="agent-b",
+            todo_id="todo_target",
+            append_explore_result_node_refs=["foreign"],
+        )
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_hard_lease_is_required_for_new_delivery_but_not_successful_readback(
+    tmp_path, provider
+):
+    from tests.control_plane.test_native_todo_planning_update import (
+        fixture as canonical_fixture,
+    )
+    from canonical_authority_fixture import initialize_canonical_authority
+    from loopx.control_plane.coordination.runtime_shadow import (
+        build_todo_runtime_shadow_projection,
+    )
+    from loopx.control_plane.work_items.task_lease import (
+        acquire_task_lease,
+        release_task_lease,
+    )
+
+    path, state = canonical_fixture(tmp_path, False, provider)
+    config = json.loads(path.read_text())
+    config["goals"][0]["explore_graph"] = {"enabled": True}
+    path.write_text(json.dumps(config))
+    runtime = tmp_path / "runtime"
+    todos = list_goal_todos(registry_path=path, goal_id="goal-a")["todos"]
+    projection = build_todo_runtime_shadow_projection(
+        goal_id="goal-a", todos=todos, handoff_mode="hard_lease"
+    )
+    initialize_canonical_authority(
+        runtime, "goal-a", projection, state_path=state, provider=provider
+    )
+    args = dict(
+        registry_path=path,
+        runtime_root=runtime,
+        goal_id="goal-a",
+        agent_id="agent-a",
+        todo_id="todo_target",
+        turn_instance_id="turn-one",
+    )
+    failed = deliver_result_attachment(payload=payload(), **args)
+    assert not failed["ok"] and "lease" in failed["error"]
+    assert not explore_result_log_path(runtime, "goal-a").exists()
+    lease_args = dict(
+        registry_path=path,
+        runtime_root=runtime,
+        goal_id="goal-a",
+        todo_id="todo_target",
+        owner="agent-a",
+        idempotency_key="result-test",
+    )
+    lease = acquire_task_lease(**lease_args)
+    result = deliver_result_attachment(payload=payload(), **args)
+    assert result["ok"], result.get("error", result)
+    release_task_lease(**lease_args, expected_version=lease["lease"]["version"])
+    replay = deliver_result_attachment(payload=payload(), **args)
+    assert replay["ok"] and replay["idempotent_replay"]
+    later = payload()
+    later["generated_at"] = "2026-01-02T00:00:00Z"
+    later["settlement_identity"]["effect_id"] = "second-result"
+    rejected = deliver_result_attachment(
+        payload=later, **{**args, "turn_instance_id": "turn-two"}
+    )
+    assert not rejected["ok"] and "lease" in rejected["error"]
+    assert (
+        len(load_explore_result_events(explore_result_log_path(runtime, "goal-a"))) == 2
+    )

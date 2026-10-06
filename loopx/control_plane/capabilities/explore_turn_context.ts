@@ -50,8 +50,17 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
       recent_nodes: nodes.slice(0, 3).map(row => compact(row, ["node_id", "title", "status", "blocked_reason"])),
       // The canonical evidence projection calls the finding's title `finding`.
       recent_findings: findings.slice(0, 3).map(row => compact({...row, title: row.finding}, ["finding_id", "node_id", "title", "status"])),
+      // Full scoped summaries for at most three explicit result attachments.
+      // These retain the observation AND applicability; clipping away conditions
+      // could turn a bounded refutation into a blanket route ban.
+      writeback_results: findings.filter(row => Array.isArray(row.tags) && row.tags.includes("writeback-result"))
+        .slice(0, 3).map(row => ({...compact(row, ["finding_id", "node_id", "finding", "status", "evidence_refs"]),
+          summary: String(row.summary ?? "").slice(0, 1200)})),
       omitted_nodes: Math.max(0, nodes.length - 3),
       summary_command: command("summary"),
+      result_writeback_option: "--explore-result-json <result.json>",
+      result_attachment_schema: "explore_result_attachment_v0",
+      result_writeback_guidance: "When work yields reusable evidence, attach node_id, question, applicability, input_revision, observation, interpretation, status and evidence_refs to ordinary Todo/Turn refresh-state. This creates the question if absent, preserves existing node state, and links the result to this Todo. Use tentative for inconclusive or prerequisite failures; a score alone does not establish refutation. No attachment is required for routine work without new evidence.",
       record_node_template: command("node", "--title", "<hypothesis or experiment>", "--status", "exploring"),
       record_finding_template: command("finding", "--node", "<node-id>", "--title", "<evidence-backed result>", "--status", "<tentative|confirmed|refuted>"),
       guidance: "Use existing evidence before repeating a route. Record meaningful hypotheses and supported or refuted results with stable node ids. Fill templates from actual evidence; do not create ceremonial nodes or infer findings from a score alone.",

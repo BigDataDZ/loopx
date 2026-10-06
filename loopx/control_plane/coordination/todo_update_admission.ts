@@ -1,6 +1,7 @@
 /** Admission for Todo edits; terminal completion retains its own lease proof.
  * Grants may cross a claim owner;
  * exclusions, bindings and execution lineage remain independent restrictions. */
+import {isExploreReferenceAppend} from "../todos/field_update.ts";
 import {acceptanceRestoration} from "./todo_acceptance_restoration.ts";
 import {monitorMutationRejection} from "./todo_monitor_cycle.ts";
 import type {JsonObject} from "../effect_program.ts";
@@ -33,7 +34,9 @@ export function todoUpdateAdmissionRejection(
       proof: decodeTaskLeaseProof(input.lease_idempotency_key == null && input.lease_expected_version == null ? null :
         {idempotency_key: input.lease_idempotency_key, expected_version: input.lease_expected_version}), now: input.now});
   }
-  if (todo.status === "done" && kind === "planning") {
+  const evidenceOnly = isExploreReferenceAppend(input.planning_intent ?? {})
+    && Object.keys(input.patch).length === 0 && input.clear_fields.length === 0;
+  if (todo.status === "done" && kind === "planning" && !evidenceOnly) {
     return reject("unsupported_todo_update_target",
       "native metadata update cannot complete a Todo; use the terminal lifecycle command");
   }
