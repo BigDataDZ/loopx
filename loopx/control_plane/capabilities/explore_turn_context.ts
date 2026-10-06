@@ -42,6 +42,18 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
   const findings = rows(projection.findings);
   const branches = rows(plan.selected_branches);
   const frontier = rows(projection.frontier);
+  const selectedRefs = new Set(harness ? branches.slice(0, 3).flatMap(branch => {
+    if (branch.typed_evidence_audit == null) return [];
+    const audit = requireJsonObject(branch.typed_evidence_audit, "Explore evidence audit");
+    return requireStringArray(audit.requested_node_refs ?? [], "Explore node refs");
+  }) : []);
+  const attachedResults = findings.filter(row => Array.isArray(row.tags) && row.tags.includes("writeback-result"));
+  // Keep the same detail budget, but do not let unrelated newer results evict
+  // the applicability of evidence linked to the next selected work item.
+  const writebackResults = [
+    ...attachedResults.filter(row => selectedRefs.has(String(row.node_id ?? ""))),
+    ...attachedResults.filter(row => !selectedRefs.has(String(row.node_id ?? ""))),
+  ];
   const command = (...args: string[]) => [...route, "explore", ...args, "--goal-id", goal];
   return {
     ok: true, goal_id: goal, agent_id: agent, graph_enabled: graph, harness_enabled: harness,
@@ -53,7 +65,7 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
       // Full scoped summaries for at most three explicit result attachments.
       // These retain the observation AND applicability; clipping away conditions
       // could turn a bounded refutation into a blanket route ban.
-      writeback_results: findings.filter(row => Array.isArray(row.tags) && row.tags.includes("writeback-result"))
+      writeback_results: writebackResults
         .slice(0, 3).map(row => ({...compact(row, ["finding_id", "node_id", "finding", "status", "evidence_refs"]),
           summary: String(row.summary ?? "").slice(0, 1200)})),
       omitted_nodes: Math.max(0, nodes.length - 3),

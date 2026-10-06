@@ -149,7 +149,9 @@ runtime independently verified the underlying artifact.
 Read back with `loopx explore turn-context --goal-id <id> --agent-id <agent>`
 and `loopx explore summary --goal-id <id>`. The bounded next-turn view retains
 up to three attached result summaries, including their applicability and input
-revision. Relevant Todo links continue through the existing branch planner.
+revision. In planning mode, results linked to the selected work take precedence
+over unrelated recent results within that same detail budget. Evidence-only mode
+retains recency order. Relevant Todo links continue through the existing branch planner.
 Reading evidence does not prove adoption: the next work decision should explain
 which result supports a changed route, continued work, or a justified replication.
 

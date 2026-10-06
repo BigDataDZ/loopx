@@ -586,3 +586,38 @@ def test_hard_lease_is_required_for_new_delivery_but_not_successful_readback(
     assert (
         len(load_explore_result_events(explore_result_log_path(runtime, "goal-a"))) == 2
     )
+
+
+@pytest.mark.parametrize("planning", [True, False])
+def test_selected_route_retains_scope_after_unrelated_newer_results(tmp_path, planning):
+    from loopx.configure_goal import configure_goal
+
+    args = fixture(tmp_path)
+    configure_goal(
+        registry_path=args["registry_path"], goal_id="research", execute=True,
+        explore_mode="planning" if planning else "evidence",
+    )
+    for index in range(4):
+        record = payload()
+        record["generated_at"] = f"2026-01-01T00:0{index}:00Z"
+        record["explore_result"]["node_id"] = f"question-{index}"
+        turn = dict(args, turn_instance_id=f"result-{index}")
+        record["settlement_identity"]["effect_id"] = f"research:worker:result-{index}"
+        assert deliver_result_attachment(payload=record, **turn)["ok"]
+    # Only the older question is relevant to the next selected work item.
+    update_goal_todo(
+        registry_path=args["registry_path"], goal_id="research",
+        todo_id=args["todo_id"], agent_id="worker",
+        explore_result_node_refs=["question-0"],
+    )
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    context = explore_turn_context(**{
+        key: args[key] for key in ("registry_path", "runtime_root", "goal_id", "agent_id")
+    })
+    results = context["graph"]["writeback_results"]
+    assert len(results) == 3
+    assert results[0]["node_id"] == ("question-0" if planning else "question-3")
+    assert ATTACHMENT["applicability"] in results[0]["summary"]
+    assert ATTACHMENT["interpretation"] in results[0]["summary"]
+    assert results[0]["evidence_refs"] == ATTACHMENT["evidence_refs"]
+    assert all(p.read_bytes() == content for p, content in before.items())
