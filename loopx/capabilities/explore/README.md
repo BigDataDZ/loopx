@@ -151,8 +151,20 @@ identify the tested data. Keep raw logs local and reference bounded evidence.
 These prompts guide optional capture, not a finding-per-turn requirement;
 successful ingestion and later use must be measured separately.
 
-Add `--explore-result-json result.json` to the ordinary admitted work
-writeback, retaining its Goal, Agent, Todo, Turn and delivery fields. The
+Place the filled template in the top-level `explore_result` field of the vision
+JSON already passed to `--agent-vision-json`. This explicit field saves a separate
+result file; ordinary vision or `path_delta` text is never interpreted as a finding.
+The CLI separates the attachment from the generic vision packet and sends it
+through the same Explore validator and post-writeback hook.
+
+Alternatively, add `--explore-result-json result.json` to the ordinary admitted work
+writeback, retaining its Goal, Agent, Todo, Turn and delivery fields. When both
+sources are supplied, their normalized contents must agree; equivalent sources
+produce one result and conflicting or malformed sources fail before primary commit.
+Omit both sources for ordinary work without new evidence. Off mode rejects an
+explicit attachment before committing, while attachment-free work is unchanged.
+Removing the field or file option disables capture for that writeback; it does
+not erase existing evidence or change the Goal's Explore configuration. The
 attachment is validated before primary commit and stored with that writeback.
 The effect-free capability hook emits an ingestion intent; the consumer creates
 the question only if absent, appends a finding, and adds the reference through
