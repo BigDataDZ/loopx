@@ -492,6 +492,51 @@ def test_prose_guard_ignores_resume_evaluation_clock(
     )
 
 
+
+@pytest.mark.parametrize("original_value,planned_value", [(True, 1), (False, 0)])
+def test_prose_guard_preserves_json_scalar_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    original_value: bool, planned_value: int,
+) -> None:
+    """A full source projection must retain JSON types even if Python equates them."""
+    from loopx.control_plane.coordination import local_authority_shadow_adapter as adapter
+    from loopx.control_plane.coordination.local_authority_shadow_projection import (
+        todo_partition_projection,
+    )
+    from loopx.control_plane.coordination.runtime_shadow_writer_adapter import (
+        ActiveStateAuthorityMutationError, require_prose_state_write_allowed,
+    )
+
+    registry, state, root = fixture(tmp_path)
+    add_goal_todo(registry_path=registry, goal_id=GOAL, role="agent", text="Retain result facts.")
+    original = state.read_text(encoding="utf-8")
+    planned = original + "\nA narrative observation.\n"
+    real_projector = adapter.todo_partition_projector
+
+    def source_projector(*args, **kwargs):
+        project = real_projector(*args, **kwargs)
+
+        def project_result(text):
+            projection = project(text)
+            # Exercise the complete-record adapter contract through the real TS
+            # assembler. This injected result fact models an adapter output,
+            # not an assertion that the current Markdown codec emits this shape.
+            projection["todos"][0]["completion_result"] = {
+                "facts": [{"value": original_value if text == original else planned_value}],
+            }
+            return todo_partition_projection(**projection)
+
+        return project_result
+
+    monkeypatch.setattr(adapter, "todo_partition_projector", source_projector)
+    with pytest.raises(ActiveStateAuthorityMutationError, match="would change canonical"):
+        require_prose_state_write_allowed(
+            registry_path=registry, runtime_root=root, goal_id=GOAL,
+            state_path=state, original_text=original, planned_text=planned,
+        )
+    assert state.read_text(encoding="utf-8") == original
+
+
 def test_prose_only_reward_holds_before_index_append_during_maintenance(tmp_path: Path) -> None:
     from loopx.feedback import append_human_reward
     from loopx.control_plane.coordination.shadow_management import ShadowManagementError, shadow_management_state_path

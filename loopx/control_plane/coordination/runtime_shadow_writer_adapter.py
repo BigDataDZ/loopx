@@ -37,7 +37,7 @@ def require_prose_state_write_allowed(
     from ...rollout_event_log import load_rollout_events, rollout_event_log_path
     from ..todos.todo_index import MAX_TODO_INDEX_ROLLOUT_EVENTS_PER_GOAL
     from .local_authority_shadow_adapter import todo_partition_projector
-    from .local_authority_shadow_projection import partition_comparison_view
+    from .local_authority_shadow_projection import canonical_bytes, partition_comparison_view
 
     try:
         goal = find_registry_goal(load_registry(registry_path), goal_id)
@@ -54,7 +54,9 @@ def require_prose_state_write_allowed(
         # two projections were evaluated milliseconds apart.
         original_projection = partition_comparison_view(projector(original_text))
         planned_projection = partition_comparison_view(projector(planned_text))
-        if original_projection != planned_projection:
+        # Python structural equality aliases JSON booleans with integers.
+        # Use the existing exact-byte identity contract before authorizing IO.
+        if canonical_bytes(original_projection) != canonical_bytes(planned_projection):
             raise ActiveStateAuthorityMutationError(
                 "prose update would change canonical Todo or handoff state"
             )
