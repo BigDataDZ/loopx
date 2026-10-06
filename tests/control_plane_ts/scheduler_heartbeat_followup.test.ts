@@ -1,5 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -185,8 +192,29 @@ test("missing or superseded heartbeat receipt rejects before scheduler mutation"
   await assert.rejects(readFile(path, "utf8"), { code: "ENOENT" });
 
   await appendReceipt(runtimeRoot, "turn-followup-1");
+  const seeded = await evaluateSchedulerHeartbeatFollowup(request(runtimeRoot));
+  assert.equal(seeded.ok, true);
+  const legacyPath = join(
+    runtimeRoot,
+    "goals",
+    scope.goal_id,
+    "scheduler-state",
+    scope.agent_id,
+    scope.surface,
+    "8a41f410c67e7c0e.json",
+  );
+  await mkdir(dirname(legacyPath), { recursive: true });
+  await rename(path, legacyPath);
+  const held = await acquireFileMutationLock(path);
+  let released = false;
+  t.after(async () => {
+    if (!released) await releaseFileMutationLock(held.targetPath, held.token);
+  });
+  const inFlight = evaluateSchedulerHeartbeatFollowup(request(runtimeRoot));
+  await delay(250);
   await appendReceipt(runtimeRoot, "turn-followup-2");
-  const stale = await evaluateSchedulerHeartbeatFollowup(request(runtimeRoot));
+  released = await releaseFileMutationLock(held.targetPath, held.token);
+  const stale = await inFlight;
   assert.equal(stale.ok, false);
   assert.equal(stale.status, "heartbeat_receipt_stale");
   assert.equal(
@@ -194,6 +222,7 @@ test("missing or superseded heartbeat receipt rejects before scheduler mutation"
     "SCHEDULER_FOLLOWUP_HEARTBEAT_RECEIPT_STALE",
   );
   await assert.rejects(readFile(path, "utf8"), { code: "ENOENT" });
+  assert.equal(JSON.parse(await readFile(legacyPath, "utf8")).goal_id, scope.goal_id);
 });
 
 test("receipt-bound ACK rechecks freshness after waiting for the scheduler lock", async (t) => {

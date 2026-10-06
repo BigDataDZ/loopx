@@ -7,7 +7,10 @@ import {
   atomicWriteJson,
   withFileMutationLock,
 } from "../effect_runtime_io.ts";
-import { heartbeatReceiptStatus } from "../rollout_receipt_log.ts";
+import {
+  goalRolloutEventLogPath,
+  heartbeatReceiptStatus,
+} from "../rollout_receipt_log.ts";
 import {
   requireBoolean as requiredBoolean,
   requireInteger as requiredInteger,
@@ -19,16 +22,17 @@ import {
   buildSchedulerState,
   CODEX_APP_STATEFUL_BACKOFF_STATE_KEY,
   CODEX_APP_SURFACE,
+  loadSchedulerState,
   mergeSchedulerHostUpdateFailure,
+  migrateLegacySchedulerStateUnderLock,
   normalizeSchedulerHostUpdateFailures,
+  normalizeSchedulerHostUpdateFailure,
   normalizeSchedulerRrule,
   normalizeSchedulerState,
   retainedSchedulerHostUpdateFailures,
   rruleForMinutes,
   schedulerRruleIntervalMinutes,
   schedulerStatePath,
-  loadSchedulerState,
-  normalizeSchedulerHostUpdateFailure,
   SCHEDULER_STATE_STORE_REQUEST_SCHEMA,
   type SchedulerScope,
 } from "./state_store.ts";
@@ -829,9 +833,8 @@ export async function evaluateSchedulerHeartbeatCommit(
     ).trim();
   const path = schedulerStatePath(request.runtime_root, request.scope);
   const fingerprint = requestDigest(request);
-  // Execute mode migrates the legacy layout before taking the canonical lock.
-  // Preview mode asks the state store for a read-only legacy fallback so a
-  // dry-run cannot create or delete the canonical/legacy files.
+  // Legacy state stays read-only until the commit holds every applicable
+  // authority fence.
   const loaded = await loadSchedulerState({
     schema_version: SCHEDULER_STATE_STORE_REQUEST_SCHEMA,
     runtime_root: request.runtime_root,
@@ -839,11 +842,11 @@ export async function evaluateSchedulerHeartbeatCommit(
     agent_id: request.scope.agentId,
     surface: request.scope.surface,
     state_key: request.scope.stateKey,
-    migrate_legacy: request.execute,
+    migrate_legacy: false,
   });
-  return await withFileMutationLock(path, async () => {
+  const commit = async (): Promise<SchedulerHeartbeatCommitResult> => {
     const canonical = await readStateUnderLock(path, request.scope);
-    const existing = canonical ?? (!request.execute ? loaded.state : null);
+    let existing = canonical ?? loaded.state;
     if (receiptTurnInstanceId !== null) {
       const status = await heartbeatReceiptStatus({
         runtimeRoot: request.runtime_root,
@@ -863,6 +866,12 @@ export async function evaluateSchedulerHeartbeatCommit(
           { reason_code: `heartbeat_receipt_${status}` },
         );
       }
+    }
+    if (request.execute && canonical === null) {
+      existing = await migrateLegacySchedulerStateUnderLock(
+        request.runtime_root,
+        request.scope,
+      );
     }
     const existingDigest = schedulerHeartbeatCommitStateDigest(existing);
     const metadata = commitMetadata(existing);
@@ -989,6 +998,16 @@ export async function evaluateSchedulerHeartbeatCommit(
       "scheduler heartbeat commit written",
       built.extra,
     );
+  };
+  return await withFileMutationLock(path, async () => {
+    if (receiptTurnInstanceId === null) return await commit();
+    // Keep the established state-first order: a follow-up waiting for state
+    // does not block a newer receipt from landing. Once both locks are held,
+    // freshness and the final state rename are one cross-runtime operation.
+    return await withFileMutationLock(
+      goalRolloutEventLogPath(request.runtime_root, request.scope.goalId),
+      commit,
+    );
   });
 }
 
@@ -1011,7 +1030,7 @@ export async function evaluateSchedulerHeartbeatHostFacts(
     agent_id: facts.scope.agentId,
     surface: facts.scope.surface,
     state_key: facts.scope.stateKey,
-    migrate_legacy: facts.execute,
+    migrate_legacy: false,
   });
   const request: SchedulerHeartbeatCommitRequest = {
     ...facts,
