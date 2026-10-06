@@ -190,8 +190,6 @@ LOCAL_PATH_SURFACE_PATTERN = re.compile(
     r"/(?:Users|home|Volumes|private|tmp|var|etc|opt|srv|mnt|root|data|workspace|workspaces)/"
     r"[^\s`'\"<>]+|"
     r"[A-Za-z]:[\\/][^\s`'\"<>]+|"
-    r"\\\\\?\\(?:(?i:UNC)\\[A-Za-z0-9_.-]+\\|(?i:Volume)\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}\\)[^\s`'\"<>]+|"
-    r"\\\\\?\\(?i:GLOBALROOT\\Device\\)[^\s`'\"<>]+|"
     r"\\\\[A-Za-z0-9_.-]+\\[^\s`'\"<>]+"
     r")",
     re.IGNORECASE,
@@ -230,10 +228,11 @@ PUBLIC_SAFE_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
     LOCAL_PATH_BOUNDARY_REFERENCE_PATTERN,
 )
 # Presentation redaction keeps its historical Unix-root boundary behavior (it
-# catches paths even after a colon), and also consumes the canonical absolute,
-# drive-letter and UNC path detector. Keeping both definitions here means the
-# presentation layer chooses the redaction policy without owning another path
-# vocabulary (Refs #5136, direction 3).
+# catches paths even after a colon), consumes the shared absolute, drive-letter
+# and UNC detector, and recognizes extended Windows device paths for display
+# only. Those extended forms remain outside the shared state-owner contract.
+# Keeping these definitions here lets presentation choose its own redaction
+# policy without changing other callers (Refs #5136, direction 3).
 PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN = re.compile(
     r"(?<=:)(?:"
     r"[A-Za-z]:[\\/][^\s`|,)]+|"
@@ -242,9 +241,16 @@ PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN = re.compile(
     r"\\\\[A-Za-z0-9_.-]+\\[^\s`|,)]+"
     r")"
 )
+PRESENTATION_EXTENDED_WINDOWS_PATH_PATTERN = re.compile(
+    r"\\\\\?\\(?:(?i:UNC)\\[A-Za-z0-9_.-]+\\|"
+    r"(?i:Volume)\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}\\|"
+    r"(?i:GLOBALROOT\\Device\\))[^\s`|,)]+",
+    re.IGNORECASE,
+)
 PRESENTATION_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"/(?:Users|home|private|tmp|var)/[^\s`|,)]+"),
     LOCAL_PATH_SURFACE_PATTERN,
+    PRESENTATION_EXTENDED_WINDOWS_PATH_PATTERN,
     PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN,
 )
 PRESENTATION_PUBLIC_BOUNDARY_PATTERNS: tuple[
@@ -256,6 +262,8 @@ PRESENTATION_PUBLIC_BOUNDARY_PATTERNS: tuple[
             r"/(?:Users|home|private|tmp|var)/[^\s`\"'<>]+|"
             + "(?:"
             + LOCAL_PATH_SURFACE_PATTERN.pattern
+            + "|"
+            + PRESENTATION_EXTENDED_WINDOWS_PATH_PATTERN.pattern
             + ")|"
             + PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN.pattern
         ),
