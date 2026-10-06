@@ -199,6 +199,20 @@ attestation separately binds those bytes to the repository, workflow, commit,
 and build event; neither mechanism claims that the package is vulnerability
 free.
 
+Before a recovery dispatch, inspect the existing `pypi` environment's allowed
+branch/tag refs as well as the Trusted Publisher and enabled variable:
+
+```bash
+gh api repos/loopx-project/loopx/environments/pypi/deployment-branch-policies
+gh api repos/loopx-project/loopx/actions/variables/PYPI_PUBLISH_ENABLED
+```
+
+The workflow ref must satisfy that existing deployment policy. For a tag-only
+policy, use an explicitly labelled release-tooling tag pinned to the reviewed
+workflow commit, separately from the immutable product tag passed as `tag`.
+Retain the tooling ref for provenance verification; do not move the product tag,
+relax the environment policy, or replace Trusted Publishing with a token.
+
 For a browser-fixture error discovered after an immutable tag was published,
 maintainers may dispatch the release workflow from reviewed tooling with
 `tag` set to that existing release and `browser_fixture_commit` set to a full,
@@ -231,9 +245,11 @@ release workflow publishes only when maintainers have configured all of these:
   Publisher configuration;
 - the repository variable `PYPI_PUBLISH_ENABLED=true`.
 
-Do not add a long-lived PyPI token. Without every condition above, GitHub
-Release packages and their verification material are still produced, while
-the PyPI job remains skipped.
+Do not add a long-lived PyPI token. Without the enabled variable, the PyPI
+job is skipped. With publication enabled, a disallowed workflow ref or invalid
+Trusted Publisher configuration fails closed; it does not become a successful
+or skipped publication. GitHub packages and PyPI publication retain separate
+readbacks.
 
 ## Public Release Timeline
 
