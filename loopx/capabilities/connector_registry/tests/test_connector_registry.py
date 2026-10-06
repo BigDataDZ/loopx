@@ -155,17 +155,17 @@ def test_concurrent_cli_mutations_preserve_both_updates(
     arrivals = 0
 
     def synchronized_load(registry_path=None):
+        state = real_load(registry_path)
         nonlocal arrivals
         with arrivals_lock:
             arrivals += 1
             if arrivals == 2:
                 release_loads.set()
-        # If mutations are serialized, the first caller times out here while
-        # holding the lock; the second then loads the first caller's saved state.
-        # Without a mutation lock, both callers reach this point and read the
-        # same pre-update state, deterministically exposing the lost update.
+        # Load before waiting: without a mutation lock, both callers now hold
+        # the same pre-update state. With the lock, the second caller cannot
+        # load until the first caller has saved its update.
         release_loads.wait(timeout=0.2)
-        return real_load(registry_path)
+        return state
 
     monkeypatch.setattr(connector_cli, "load_connector_registry", synchronized_load)
 
