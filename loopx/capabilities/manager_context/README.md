@@ -390,7 +390,7 @@ override. Scoped MCP workers use `link_work` to reuse their current Todo or opaq
 evidence IDs. An unrelated busy worker establishes no request progress, and a
 short answer needs no manufactured Todo. See the [shared collaboration boundary](../../control_plane/collaboration/README.md).
 
-The inbox reuses the shared conversation answer guidance: report text can return
+CLI and MCP inbox reads reuse the shared conversation answer guidance: report text can return
 verbatim to the requester's conversation, so answer the original request at a
 proportionate depth. Routine execution bookkeeping belongs in the existing
 evidence records; requested detail and material gaps remain in the answer.
