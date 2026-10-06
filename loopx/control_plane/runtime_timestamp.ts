@@ -70,13 +70,8 @@ export function parseTodoTimestampMicros(value: string): bigint | null {
     if (!parsed) return null;
     const hour = Number(parsed[1]), minute = Number(parsed[3] ?? 0), second = Number(parsed[4] ?? 0);
     const fraction = parsed[5] ?? "";
-    // datetime.fromisoformat only accepts a fractional component after seconds.
-    // Python 3.14 also accepts 24:00 as the end of the day, but no other 24-hour
-    // value; retain that input compatibility in the TypeScript owner.
-    if (fraction && parsed[4] === undefined) return null;
     if (!offset && (
-      hour > 24 || minute > 59 || second > 59 ||
-      (hour === 24 && (minute !== 0 || second !== 0 || /[1-9]/u.test(fraction)))
+      hour > 23 || minute > 59 || second > 59
     )) return null;
     const seconds = hour * 3600 + minute * 60 + second;
     const micros = BigInt(seconds) * 1000000n + BigInt(fraction.padEnd(6, "0").slice(0, 6));
@@ -86,10 +81,6 @@ export function parseTodoTimestampMicros(value: string): bigint | null {
   }
   const local = clock(parts[1], false);
   if (local === null) return null;
-  // Python's datetime range ends at year 9999; 24:00 cannot roll that date
-  // into year 10000 even though the wall-clock fields are otherwise valid.
-  if (local === 86400000000n && calendar.getUTCFullYear() === 9999 &&
-      calendar.getUTCMonth() === 11 && calendar.getUTCDate() === 31) return null;
   let offset = 0n;
   if (parts[2] && !["Z", "z"].includes(parts[2])) {
     const parsed = clock(parts[2].slice(1), true);

@@ -90,13 +90,41 @@ def test_monitor_timestamp_input_matches_retained_python_iso_codec(value):
         "role": "agent", "task_class": "continuous_monitor", "enforce_boundedness": True,
         "metadata": {"expires_at": value},
     }
-    # The pre-migration stdlib codec is an independent input-compatibility oracle.
+    # The retained Python reader defines the stable cross-version wire grammar.
     if parse_timestamp(value) is None:
         with pytest.raises(EffectRuntimeRejected, match="timestamp"):
             effect_runtime_result("todo.monitor_metadata.plan", request)
     else:
         result = effect_runtime_result("todo.monitor_metadata.plan", request)
         assert result["metadata"]["expires_at"] == value
+
+
+@pytest.mark.parametrize(("value", "expected_utc"), [
+    ("2030-01-01T00.1", "2030-01-01T00:00:00.100000+00:00"),
+    ("2030-01-01T00:00.1", "2030-01-01T00:00:00.100000+00:00"),
+    ("2030-01-01T00:00:00+01.1", "2029-12-31T22:59:59.900000+00:00"),
+])
+def test_monitor_timestamp_codec_is_stable_across_supported_python_versions(value, expected_utc):
+    parsed = parse_timestamp(value)
+    assert parsed is not None
+    assert parsed.isoformat() == expected_utc
+    result = effect_runtime_result("todo.monitor_metadata.plan", {
+        "schema_version": "loopx_todo_monitor_metadata_request_v0",
+        "role": "agent", "task_class": "continuous_monitor", "enforce_boundedness": True,
+        "metadata": {"expires_at": value},
+    })
+    assert result["metadata"]["expires_at"] == value
+
+
+def test_monitor_timestamp_codec_rejects_version_specific_end_of_day():
+    value = "2030-01-01T24:00:00"
+    assert parse_timestamp(value) is None
+    with pytest.raises(EffectRuntimeRejected, match="timestamp"):
+        effect_runtime_result("todo.monitor_metadata.plan", {
+            "schema_version": "loopx_todo_monitor_metadata_request_v0",
+            "role": "agent", "task_class": "continuous_monitor", "enforce_boundedness": True,
+            "metadata": {"expires_at": value},
+        })
 
 
 @pytest.mark.parametrize("date", ["1970-01-01", "19700101", "1970-W01-4"])
