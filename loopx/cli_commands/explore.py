@@ -84,6 +84,10 @@ def register_explore_commands(
     add_subcommand_format(context)
     context.add_argument("--goal-id", required=True)
     context.add_argument("--agent-id", required=True)
+    context.add_argument("--result-limit", type=int, default=3, help="Evidence details per page (1..20); default 3.")
+    context.add_argument("--result-offset", type=int, default=0, help="Continue using the previous page's result_revision.")
+    context.add_argument("--result-node", help="Read evidence for one question node.")
+    context.add_argument("--result-revision", help="Evidence revision returned by the previous page; rejects changed evidence.")
 
     schema = sub.add_parser("schema", help="Print the result-board schema and LoopX mapping.")
     add_subcommand_format(schema)
@@ -504,7 +508,9 @@ def handle_explore_command(
         elif args.explore_command == "turn-context":
             from ..capabilities.explore.turn_context import explore_turn_context
             payload = explore_turn_context(registry_path=Path(str(source_runtime_route["source_registry"])), runtime_root=runtime_root,
-                goal_id=args.goal_id, agent_id=args.agent_id)
+                                           goal_id=args.goal_id, agent_id=args.agent_id,
+                                           result_limit=args.result_limit, result_offset=args.result_offset,
+                                           result_node=args.result_node, result_revision=args.result_revision)
         elif args.explore_command == "node":
             event = build_explore_node_event(
                 goal_id=args.goal_id,

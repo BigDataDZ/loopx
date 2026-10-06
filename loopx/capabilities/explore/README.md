@@ -469,6 +469,25 @@ it does not claim to reduce history IO. The agent chooses evidence-backed work;
 planner suggestions do not require branching on every turn or recording empty
 ceremonial nodes. Use the detail command when the short view is insufficient.
 
+Explicit writeback results default to three full scoped details, not a hard
+visibility limit. `graph.result_page` reports total/remaining counts and an
+executable `next_command`. Follow that command to read further pages; its
+revision binding rejects changed evidence instead of silently skipping results.
+Restart the first page if the evidence changes. To expand a page or narrow it
+to one question:
+
+```sh
+loopx explore turn-context --goal-id <id> --agent-id <agent> --result-limit 10
+loopx explore turn-context --goal-id <id> --agent-id <agent> --result-node <node-id> --result-limit 10
+```
+
+Page size accepts 1–20; every detail retains applicability and interpretation.
+Planning mode prioritizes one recent refutation per linked question before
+repeated findings on the same question. Evidence-only mode retains recency
+ordering. These reads do not alter planner scores, graph state, claims or quota.
+The dashboard's saved-evidence reader also pages through history; the CLI
+options above control the agent context, not dashboard page size.
+
 Planning context also keeps a bounded `typed_evidence_audit` on suggested
 branches with explicit Todo/node links, and up to three existing exploring
 frontier nodes. Linked findings are resolved before the recent-history limit,

@@ -740,3 +740,111 @@ def test_corrupt_graph_cannot_report_success_on_replay_and_recovers_after_repair
     log.write_bytes(valid)
     assert deliver_result_attachment(payload=payload(), **args)["idempotent_replay"]
     assert log.read_bytes() == valid
+
+
+@pytest.mark.parametrize("planning", [True, False])
+def test_linked_refutations_share_detail_budget_across_questions(tmp_path, planning):
+    from loopx.configure_goal import configure_goal
+
+    args = fixture(tmp_path)
+    configure_goal(
+        registry_path=args["registry_path"], goal_id="research", execute=True,
+        explore_mode="planning" if planning else "evidence",
+    )
+    # Three selected questions have scoped counterexamples. Repeated newer
+    # findings on one question must not erase the other questions' conditions.
+    order = ["route-c", "route-b", "route-a", "route-a", "route-a"]
+    for index, node in enumerate(order):
+        record = payload()
+        record["generated_at"] = f"2026-01-01T00:0{index}:00Z"
+        record["settlement_identity"]["effect_id"] = f"research:worker:probe-{index}"
+        record["explore_result"].update(
+            node_id=node, question=f"Does {node} hold for this input?",
+            applicability=f"Only {node} input revision one.",
+            observation=f"Independent counterexample {index}.",
+        )
+        delivered = deliver_result_attachment(
+            payload=record, **{**args, "turn_instance_id": f"probe-{index}"}
+        )
+        assert delivered["ok"], delivered
+    update_goal_todo(
+        registry_path=args["registry_path"], goal_id="research",
+        todo_id=args["todo_id"], agent_id="worker",
+        explore_result_node_refs=["route-a", "route-b", "route-c"],
+    )
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    context = explore_turn_context(**{
+        key: args[key] for key in ("registry_path", "runtime_root", "goal_id", "agent_id")
+    })
+    results = context["graph"]["writeback_results"]
+    assert [row["node_id"] for row in results] == (
+        ["route-a", "route-b", "route-c"] if planning else ["route-a"] * 3
+    )
+    for row in results:
+        assert f"Only {row['node_id']} input revision one." in row["summary"]
+    assert "Independent counterexample 4." in results[0]["summary"]
+    assert all(p.read_bytes() == content for p, content in before.items())
+
+
+@pytest.mark.parametrize("planning", [True, False])
+def test_progressive_result_reads_follow_real_cli_and_reject_stale_pages(tmp_path, planning):
+    import subprocess
+    import sys
+    from loopx.configure_goal import configure_goal
+
+    args = fixture(tmp_path)
+    configure_goal(
+        registry_path=args["registry_path"], goal_id="research", execute=True,
+        explore_mode="planning" if planning else "evidence",
+    )
+    for index in range(7):
+        record = payload()
+        record["generated_at"] = f"2026-01-01T00:0{index}:00Z"
+        record["settlement_identity"]["effect_id"] = f"research:worker:page-{index}"
+        record["explore_result"]["node_id"] = f"question-{index % 2}"
+        assert deliver_result_attachment(
+            payload=record, **{**args, "turn_instance_id": f"page-{index}"}
+        )["ok"]
+    keys = {key: args[key] for key in ("registry_path", "runtime_root", "goal_id", "agent_id")}
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    first = explore_turn_context(**keys)
+    page = first["graph"]["result_page"]
+    assert (page["total"], page["limit"], page["remaining"]) == (7, 3, 4)
+    seen = [r["finding_id"] for r in first["graph"]["writeback_results"]]
+    saved_next = page["next_command"]
+    while page["next_command"]:
+        read = subprocess.run(
+            [sys.executable, "-m", "loopx.cli", *page["next_command"][1:]],
+            capture_output=True, text=True,
+        )
+        assert read.returncode == 0, read.stdout
+        received = json.loads(read.stdout)
+        seen += [r["finding_id"] for r in received["graph"]["writeback_results"]]
+        page = received["graph"]["result_page"]
+    assert len(seen) == len(set(seen)) == 7
+    expanded = explore_turn_context(**keys, result_limit=10)
+    assert len(expanded["graph"]["writeback_results"]) == 7
+    assert expanded["graph"]["result_page"]["next_command"] is None
+    command = first["graph"]["result_page"]["node_command_template"]
+    read = subprocess.run(
+        [sys.executable, "-m", "loopx.cli", *["question-0" if x == "<node-id>" else x for x in command[1:]]],
+        capture_output=True, text=True,
+    )
+    assert read.returncode == 0, read.stdout
+    filtered = json.loads(read.stdout)["graph"]
+    assert filtered["result_page"]["total"] == 4
+    assert {r["node_id"] for r in filtered["writeback_results"]} == {"question-0"}
+    assert all(p.read_bytes() == content for p, content in before.items())
+    for options in ({"result_limit": 0}, {"result_limit": 21}, {"result_offset": -1}, {"result_offset": 3}):
+        with pytest.raises(EffectRuntimeRejected):
+            explore_turn_context(**keys, **options)
+    # A changed graph/order must not silently skip or repeat evidence mid-read.
+    record["generated_at"] = "2026-01-02T00:00:00Z"
+    record["settlement_identity"]["effect_id"] = "research:worker:new-evidence"
+    assert deliver_result_attachment(
+        payload=record, **{**args, "turn_instance_id": "new-evidence"}
+    )["ok"]
+    read = subprocess.run([sys.executable, "-m", "loopx.cli", *saved_next[1:]], capture_output=True, text=True)
+    assert read.returncode != 0
+    assert "restart at result_offset 0" in json.loads(read.stdout)["error"]
+    assert explore_turn_context(**keys)["graph"]["result_page"]["total"] == 8
