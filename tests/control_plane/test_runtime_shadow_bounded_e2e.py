@@ -525,9 +525,9 @@ def test_public_committed_primary_cannot_be_relabelled_abandoned_by_native_reque
         "partition": entry.partition,
         "seq": entry.seq,
         "capture_lineage_id": entry.prepared.get("capture_lineage_id"),
-        "prepared_sha256": hashlib.sha256(entry.prepared_path.read_bytes()).hexdigest(),
+        "prepared_sha256": "sha256:" + hashlib.sha256(entry.prepared_path.read_bytes()).hexdigest(),
         "committed_sha256": (
-            hashlib.sha256(entry.committed_path.read_bytes()).hexdigest()
+            "sha256:" + hashlib.sha256(entry.committed_path.read_bytes()).hexdigest()
             if entry.committed_path
             else None
         ),
@@ -540,6 +540,10 @@ def test_public_committed_primary_cannot_be_relabelled_abandoned_by_native_reque
         adapter.effect_runtime_result("coordination.runtime_shadow.commit_entry", request, timeout=15)
     assert {path.name: path.read_bytes() for path in directory.iterdir()} == before
     assert w.state.read_bytes() == primary
+    # The byte witness itself is legal; only caller-supplied resolution rejects.
+    request.pop("resolution")
+    delivered = adapter.effect_runtime_result("coordination.runtime_shadow.commit_entry", request, timeout=15)
+    assert delivered["outcome"] == "delivered" and delivered["resolution"] == "committed"
     assert w.drain()["ok"] is True
     view = adapter.read_local_authority_shadow(runtime_root=w.runtime, goal_id=w.goal, scan_limit=20)
     [transaction] = view["proof"]["transactions"][1:]
