@@ -1,6 +1,7 @@
 """Adversarial recovery ordering through the public CLI and real file provider."""
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -139,7 +140,7 @@ def test_native_markerless_resolution_requires_source_evidence(
     request = {"schema_version": "loopx_shadow_entry_delivery_request_v0", "runtime_root": str(w.runtime),
                "goal_id": w.goal, "partition": entry.partition, "seq": entry.seq, "entry_id": entry.entry_id,
                "capture_lineage_id": entry.prepared["capture_lineage_id"],
-               "prepared_sha256": outbox.raw_bytes_digest(entry.prepared_path.read_bytes()),
+               "prepared_sha256": hashlib.sha256(entry.prepared_path.read_bytes()).hexdigest(),
                "committed_sha256": None}
     request["resolution"] = claimed_resolution
     before = {path.name: path.read_bytes() for path in directory.iterdir()}

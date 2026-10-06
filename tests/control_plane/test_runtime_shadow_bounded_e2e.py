@@ -5,6 +5,7 @@ only process scheduling and deliberately edited source bytes.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -524,9 +525,9 @@ def test_public_committed_primary_cannot_be_relabelled_abandoned_by_native_reque
         "partition": entry.partition,
         "seq": entry.seq,
         "capture_lineage_id": entry.prepared.get("capture_lineage_id"),
-        "prepared_sha256": outbox.raw_bytes_digest(entry.prepared_path.read_bytes()),
+        "prepared_sha256": hashlib.sha256(entry.prepared_path.read_bytes()).hexdigest(),
         "committed_sha256": (
-            outbox.raw_bytes_digest(entry.committed_path.read_bytes())
+            hashlib.sha256(entry.committed_path.read_bytes()).hexdigest()
             if entry.committed_path
             else None
         ),
