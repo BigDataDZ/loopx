@@ -417,6 +417,13 @@ Chat, session, collaboration and presentation owners as R2/R3 integration work.
 Do not call a candidate catalog, spinner or queued inbox receipt a completed
 worker handoff. This checkpoint does not lower R1–R3 or G1 gates.
 
+CLI and MCP receiver inbox guidance now composes the existing shared conversation answer
+instruction, making the verbatim requester-facing use of report text explicit.
+It preserves requested depth, evidence and material failures; it adds no
+summarizer, result schema or transport rewrite. R3/S5 still require actual
+original-audience qualification: guidance alone does not establish readable
+receiver results or a completed handoff.
+
 The [ordinary workspace write checkpoint](app-conversation-and-async-inbox-v0.md#ordinary-workspace-writes-default-and-revocation-checkpoint)
 adds default project writes under the host grant, explicit read-only launch/App
 settings and actual Codex sandbox enforcement on start/resume. It reuses the typed
