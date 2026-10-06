@@ -31,8 +31,10 @@ def test_settlement_attachment_preserves_commands_and_off_plan(tmp_path, mode):
         attachment, = writeback.pop("optional_attachments")
         assert attachment["required"] is False
         assert attachment["option"] == "--explore-result-json <result.json>"
+        assert attachment["inline_option"] == "--agent-vision-json <vision.json>"
+        assert attachment["inline_field"] == "explore_result"
         assert attachment["attachment_schema"] == "explore_result_attachment_v0"
-        assert "No attachment is required" in attachment["guidance"]
+        assert "needs no attachment" in attachment["guidance"]
         assert projected == before  # Including command, order, receipts and gates.
     # Unbound planning cannot consume a Todo-scoped result attachment.
     unbound = {**plan, "identity": {**plan["identity"], "todo_id": None}}

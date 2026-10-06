@@ -66,6 +66,7 @@ from .project_lifecycle_inputs import (
     inline_agent_vision_packet,
     inline_progress_observation,
     reject_non_standard_json_constant,
+    split_explore_result_input,
 )
 from .project_lifecycle_sinks import (
     apply_external_sink_postcondition,
@@ -479,9 +480,9 @@ def handle_refresh_state_command(
         elif inline_vision_packet:
             agent_vision_packet = inline_vision_packet
             merge_agent_vision_patch = True
-        explore_result = None
-        if getattr(args, "explore_result_json", None):
-            explore_result = json.loads(Path(args.explore_result_json).expanduser().read_text(encoding="utf-8"))
+        agent_vision_packet, explore_result = split_explore_result_input(
+            agent_vision_packet, getattr(args, "explore_result_json", None),
+        )
         progress_observation = inline_progress_observation(args)
         reward_memory_reflection_json = str(
             getattr(args, "reward_memory_reflection_json", None) or ""

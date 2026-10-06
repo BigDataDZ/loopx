@@ -605,6 +605,8 @@ test("Explore settlement hint cannot inject a command or impose a work obligatio
   const hint = projected.projection as Record<string, unknown>;
   assert.equal(hint.required, false);
   assert.equal(hint.option, "--explore-result-json <result.json>");
+  assert.equal(hint.inline_option, "--agent-vision-json <vision.json>");
+  assert.equal(hint.inline_field, "explore_result");
   assert.equal(hint.attachment_schema, "explore_result_attachment_v0");
   for (const payload of [{required: true}, {command: "run something"}, {guidance: "Always write"}]) {
     assert.throws(() => validateInteractionProjectionHookInvocation({registration: reg,

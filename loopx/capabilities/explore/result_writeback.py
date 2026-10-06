@@ -24,8 +24,11 @@ from .result_log import (
 )
 
 
-def normalize_result_attachment(attachment):
-    return effect_runtime_result("explore.result.normalize", {"attachment": attachment})
+def normalize_result_attachment(attachment, *, other_attachment=...):
+    params = {"attachment": attachment}
+    if other_attachment is not ...:
+        params["other_attachment"] = other_attachment
+    return effect_runtime_result("explore.result.normalize", params)
 
 
 def _events(attachment, *, goal_id, agent_id, source_id, recorded_at):
