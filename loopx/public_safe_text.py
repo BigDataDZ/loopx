@@ -227,6 +227,39 @@ PUBLIC_SAFE_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
     PATH_PREFIX_LOCAL_PATTERN,
     LOCAL_PATH_BOUNDARY_REFERENCE_PATTERN,
 )
+# Presentation redaction keeps its historical Unix-root boundary behavior (it
+# catches paths even after a colon), and also consumes the canonical absolute,
+# drive-letter and UNC path detector. Keeping both definitions here means the
+# presentation layer chooses the redaction policy without owning another path
+# vocabulary (Refs #5136, direction 3).
+PRESENTATION_LOCAL_PATH_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"/(?:Users|home|private|tmp|var)/[^\s`|,)]+"),
+    LOCAL_PATH_SURFACE_PATTERN,
+)
+PRESENTATION_PUBLIC_BOUNDARY_PATTERNS: tuple[
+    tuple[str, re.Pattern[str]], ...
+] = (
+    (
+        "absolute local path",
+        re.compile(
+            r"/(?:Users|home|private|tmp|var)/[^\s`\"'<>]+|"
+            + "(?:"
+            + LOCAL_PATH_SURFACE_PATTERN.pattern
+            + ")"
+        ),
+    ),
+    (
+        "private key material",
+        re.compile(r"BEGIN (?:RSA |OPENSSH |EC |)PRIVATE KEY"),
+    ),
+    (
+        "credential assignment",
+        re.compile(
+            r"\b(?:api[_-]?key|auth[_-]?token|access[_-]?token)\s*[:=]",
+            re.IGNORECASE,
+        ),
+    ),
+)
 # Refs #5136: one definition for "this string carries a raw remote location".
 # Three validators each restated the same scheme list, and the canonical
 # public-safety owner had no counterpart, so a fourth caller had to invent one.
