@@ -902,6 +902,11 @@ outer Turn and native Goal driver on one binding.
 - **Final acceptance:** users submit and revise a macro-goal through both entries; heterogeneous local/cloud workers deliver dependent artifacts continuously. The manager detects blockers, replans within grants, reports and closes the Goal through independent acceptance. No duplicate protected effects or stale/unauthorized commits; performance claims need real measurements. Run synthetic pressure before an explicitly authorized live cohort. This plan starts no hundred-Agent paid run.
 - **Rollback:** reduce concurrency/admission while retaining registrations, history and reconciliation; never weaken correctness gates.
 
+Heartbeat command guidance preserves the selected registry through guard, action
+selection, recovery and settlement, independently of the caller's working
+directory and runtime root. Conflicting-registry CLI fixtures qualify this
+bounded routing repair; they do not qualify host latency or fleet scale.
+
 ## 7. Execution and Review Contract
 
 Select one complete, verifiable slice whose prerequisites hold. Check latest main and canonical Todos first; qualify existing work instead of rebuilding it, update existing tasks and retain supersession lineage. These cards are a static roadmap. Actual assignees, status, PRs and blockers belong in LoopX Todos.
