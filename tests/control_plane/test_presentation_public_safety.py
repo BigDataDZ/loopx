@@ -31,6 +31,8 @@ def test_presentation_path_rules_are_owned_by_public_safe_text() -> None:
         r"\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\Users\alice\goal.md",
         r"path:\\?\Volume{01234567-89ab-cdef-0123-456789abcdef}\Users\alice\goal.md",
         r"\\?\volume{01234567-89ab-cdef-0123-456789abcdef}\Users\alice\goal.md",
+        r"\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1\Users\alice\secret.txt",
+        r"path:\\?\GLOBALROOT\Device\HarddiskVolumeShadowCopy1\Users\alice\secret.txt",
     ],
 )
 def test_windows_local_paths_are_redacted_and_rejected(path: str) -> None:

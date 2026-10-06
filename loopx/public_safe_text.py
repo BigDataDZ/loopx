@@ -191,6 +191,7 @@ LOCAL_PATH_SURFACE_PATTERN = re.compile(
     r"[^\s`'\"<>]+|"
     r"[A-Za-z]:[\\/][^\s`'\"<>]+|"
     r"\\\\\?\\(?:(?i:UNC)\\[A-Za-z0-9_.-]+\\|(?i:Volume)\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}\\)[^\s`'\"<>]+|"
+    r"\\\\\?\\(?i:GLOBALROOT\\Device\\)[^\s`'\"<>]+|"
     r"\\\\[A-Za-z0-9_.-]+\\[^\s`'\"<>]+"
     r")",
     re.IGNORECASE,
@@ -237,6 +238,7 @@ PRESENTATION_COLON_PREFIXED_WINDOWS_PATH_PATTERN = re.compile(
     r"(?<=:)(?:"
     r"[A-Za-z]:[\\/][^\s`|,)]+|"
     r"\\\\\?\\(?:(?i:UNC)\\[A-Za-z0-9_.-]+\\|(?i:Volume)\{[0-9A-Fa-f]{8}(?:-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}\\)[^\s`|,)]+|"
+    r"\\\\\?\\(?i:GLOBALROOT\\Device\\)[^\s`|,)]+|"
     r"\\\\[A-Za-z0-9_.-]+\\[^\s`|,)]+"
     r")"
 )
