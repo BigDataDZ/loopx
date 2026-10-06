@@ -352,6 +352,17 @@ function boundary(payload: JsonObject): JsonObject {
     };
   }
   const guards = textList(source.guards, 8, 280);
+  // Effective automation is already resolved for this Goal/Agent. Keep the
+  // shared participation facts, not private config, diagnostics or recall.
+  const memory = object(object(source.capabilities).reward_memory);
+  if (memory.enabled === true && memory.configured_for_agent === true
+      && memory.experiment_available === true
+      && (memory.automatic_recall === true || memory.automatic_ingest === true)) {
+    result.capabilities = {reward_memory: {
+      automatic_recall: memory.automatic_recall === true,
+      automatic_ingest: memory.automatic_ingest === true,
+    }};
+  }
   if (guards.length > 0) result.guards = guards;
   const stopCondition = text(source.stop_condition, 320);
   if (stopCondition) result.stop_condition = stopCondition;

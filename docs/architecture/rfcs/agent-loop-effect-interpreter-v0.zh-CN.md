@@ -312,6 +312,26 @@ R5 短包投影也完整保留已有 CLI 结算计划，包括 effect identity�
 
 ### 还缺什么
 
+#### Heartbeat 与 TurnEnvelope 收敛
+
+沿用既有 M7.4 与 roadmap S2/S3/S6/S8，统一 heartbeat 和 Turn host 消费的
+**执行事实**，宿主效果的所有权仍分别保留。现有大 quota packet 与小 TurnEnvelope
+都不是仅凭大小就合理的目标形态。可选 memory 参与事实现进入一个有界、签名覆盖的
+envelope 投影，Codex CLI 保持关闭隔离；这不代表安装态 heartbeat/App 或模型收益
+已验收。
+
+后续实施 Todo 按依赖顺序推进：
+
+| Todo | 可观察结果与决定性验收 |
+|---|---|
+| 核对 heartbeat 与 TurnEnvelope 的执行和上下文要求 | 同一捕获的权威决策保留 actor/Goal/Todo、必读全文、claim/lease、选择、replan/收尾、带条件结算和 scheduler 所有权。删除渲染分支前列明遗漏与重复事实。覆盖可选能力关闭、仅 recall、仅 ingest、绑定失效和 provider 失败；私有详情只经有权限的引用访问。 |
+| 在真实宿主 renderer 采用同一 typed 投影 | heartbeat full/thin 与 Turn host 消费同一执行事实及同 Turn 捕获/详情入口；显式保留通知和 scheduler 的宿主传输。真实 File/SQLite CLI 与打包 Codex App 覆盖重入、来源丢失、必读前拒绝、迟到结果、backoff 和一次结算；补读不触发第二次准入。最后调用方迁移后才退役旧投影。 |
+| 核验上下文形态及迁移默认 | 将相同的正常、replan、等待/恢复与可选能力负载同时对照当前完整和短包路径，测量载荷/model token、详情 IO、延迟、资源增长、遗漏、决策与结果质量。数据丢失、重复效果、身份和结算错误保持硬约束；保留受支持的已保存 prompt/回执与可逆 rollout，根据证据再改预算或默认。 |
+
+不引入通用 executor，也不降低验收门槛来让短包通过。保留未满足要求，分别记录
+传输等价、安装态宿主采用和有效模型结果。见
+[当前 envelope 契约](../../reference/protocols/turn-envelope-v0.md#optional-memory-participation)。
+
 - 通用共享 executor 被有意保留为空。当前 adapter 共享 plan/receipt algebra，却拥有不同的执行边界，因此 M7.3 应以 no-follow-up 关闭，而不是用推测性 framework 填充。
 - 常规 LoopX 核心路径仍需逐条做有界采用判断。只有当路径包含多步 external effect、单一稳定 identity、durable receipt、replay 要求，并且变更能删除重复 settlement truth 时，才应该使用这套 algebra。
 - Race/CAS qualification 推迟到真实并发执行入口出现后；同步 adapter 本身不足以证明需要并发基础设施或测试。
