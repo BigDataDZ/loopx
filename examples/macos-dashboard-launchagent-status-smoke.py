@@ -110,6 +110,66 @@ def check_real_status_deadline(fake_bin: Path, home: Path) -> None:
         thread.join(timeout=2)
 
 
+def check_chat_runtime_verification_deadline(tmp: Path, fake_bin: Path) -> None:
+    """A hung readiness read must share the outer startup deadline."""
+    real_curl = shutil.which("curl")
+    assert real_curl, "curl is required for the Chat runtime deadline regression"
+    request_started = threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            assert self.path == "/api/chat/capabilities", self.path
+            request_started.set()
+            time.sleep(10)
+
+        def log_message(self, *_args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    source, separator, _ = LAUNCHAGENT_SCRIPT.read_text(encoding="utf-8").partition(
+        "\nparsed_args=()\n"
+    )
+    assert separator, "could not isolate LaunchAgent helper definitions"
+    probe = tmp / "chat-runtime-deadline-probe.sh"
+    write_executable(
+        probe,
+        source
+        + f"""
+chat_runtime_endpoint=127.0.0.1:{server.server_port}
+started="$SECONDS"
+if verify_current_chat_runtime '{{"schema_version":"loopx_runtime_identity_v1"}}' 1; then
+  exit 2
+fi
+elapsed=$((SECONDS - started))
+if (( elapsed > 2 )); then
+  echo "verification exceeded its shared deadline: ${{elapsed}}s" >&2
+  exit 3
+fi
+""",
+    )
+    try:
+        path = os.pathsep.join(
+            part for part in os.environ.get("PATH", "").split(os.pathsep)
+            if Path(part or ".").resolve() != fake_bin.resolve()
+        )
+        result = subprocess.run(
+            [str(probe)],
+            env={**os.environ, "PATH": path},
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        assert request_started.is_set(), "Chat verification did not reach the HTTP server"
+        assert result.returncode == 0, (result.stdout, result.stderr)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def log_rotation_prelude(plist: Path) -> str:
     """The rotation step the agent wrapper runs before it execs the service."""
     command = plistlib.loads(plist.read_bytes())["ProgramArguments"][2]
@@ -308,6 +368,8 @@ def main() -> int:
             "{\"ok\":true,\"status_contract\":{\"schema_version\":${version},\"producer\":\"loopx status\"},\"local_dashboard_api\":{\"control_plane_write_enabled\":${write_enabled}}}\n"
             "EOF\n",
         )
+
+        check_chat_runtime_verification_deadline(tmp, fake_bin)
 
         old_output = run_status(fake_bin, home, schema_version=1)
         assert "- com.loopx.status: loaded" in old_output, old_output
