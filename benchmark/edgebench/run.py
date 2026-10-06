@@ -75,14 +75,22 @@ def main(argv=None):
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--worker", choices=PROFILES, required=True)
     parser.add_argument("--feedback", choices=("native", "blind"), default="native")
+    parser.add_argument("--turn-envelope", action="store_true",
+                        help="Opt-in short heartbeat context with same-invocation full captures")
     parser.add_argument("--model", required=True)
     parser.add_argument("--effort", choices=("low", "medium", "high", "xhigh"), required=True)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--replan-after-turns", type=int, choices=range(1, 6),
+                        help="Opt in to settled work Turn cadence for heartbeat profiles")
     parser.add_argument("--eval-interval", type=int, default=300)
     parser.add_argument("--submission-cooldown", type=int, default=120)
     parser.add_argument("--judge-url", required=True)
     parser.add_argument("--api-proxy-url", help="Operator-owned, OpenAI-only CONNECT proxy")
     args = parser.parse_args(argv)
+    if args.turn_envelope and args.worker not in {"heartbeat-resume", "heartbeat-explore"}:
+        parser.error("--turn-envelope requires a heartbeat worker")
+    if args.replan_after_turns is not None and not args.worker.startswith("heartbeat-"):
+        parser.error("--replan-after-turns requires a heartbeat worker")
     # One directory is one attempt: never reuse native registration or overwrite
     # source/profile evidence after an ambiguous launch.
     trial = args.log_dir / "runs" / args.run_id / args.task
@@ -117,7 +125,9 @@ def main(argv=None):
             "NO_PROXY": f"localhost,127.0.0.1,{urlsplit(args.judge_url).hostname}",
         }
     agent = SForgeWorker(config, profile=args.worker, cwd=task.cwd,
-                         timeout_seconds=args.timeout, blind_prompt=blind_prompt)
+                         timeout_seconds=args.timeout, blind_prompt=blind_prompt,
+                         turn_envelope=args.turn_envelope,
+                         replan_after_turns=args.replan_after_turns)
     if args.api_proxy_url:
         agent.default_api_base_url = args.api_proxy_url
     logger = logging.getLogger("edgebench-runtime")
@@ -131,10 +141,13 @@ def main(argv=None):
         "run_id": args.run_id, "task": args.task, "worker": args.worker,
         "model": args.model, "effort": args.effort, "timeout_seconds": args.timeout,
         "loopx_commit": pins[0], "runner_commit": pins[1],
+        **({"turn_envelope": True} if args.turn_envelope else {}),
         "task_sha256": hashlib.sha256(task_file.read_bytes()).hexdigest(),
         "feedback": args.feedback, "internet": task.internet,
         "eval_interval": args.eval_interval, "submission_cooldown": args.submission_cooldown,
         "status": "starting", "score_countable": False,
+        **({"replan_after_effective_turns": args.replan_after_turns}
+           if args.replan_after_turns is not None else {}),
     }
     receipt_path = trial / "runtime-receipt.json"
     receipt_path.write_text(json.dumps(receipt, indent=2))
