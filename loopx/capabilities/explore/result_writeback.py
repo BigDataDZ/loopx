@@ -11,7 +11,6 @@ from ...control_plane.effect_runtime import effect_runtime_result
 from ...control_plane.coordination.local_authority import (
     read_canonical_todos_if_promoted,
 )
-from ...control_plane.work_items.task_lease import lease_is_active
 from ...cli_commands.post_writeback import dispatch_committed_cli_post_writeback_hooks
 from ...todos import list_goal_todos, update_goal_todo
 from .turn_context import _policy
@@ -73,18 +72,18 @@ def _link_arguments(
     if snapshot is not None:
         leases = [item for item in snapshot["leases"] if item.get("todo_id") == todo_id]
         if snapshot.get("handoff_mode") == "hard_lease" or leases:
-            active = [
+            owned = [
                 item
                 for item in leases
-                if lease_is_active(item) and item.get("owner") == agent_id
+                if item.get("owner") == agent_id
             ]
-            if len(active) != 1:
+            if len(owned) != 1:
                 raise ValueError(
                     "Explore result delivery requires the caller's current Todo lease"
                 )
             proof = {
-                "task_lease_idempotency_key": active[0]["idempotency_key"],
-                "task_lease_expected_version": active[0]["version"],
+                "task_lease_idempotency_key": owned[0]["idempotency_key"],
+                "task_lease_expected_version": owned[0]["version"],
             }
     return dict(
         registry_path=registry_path,

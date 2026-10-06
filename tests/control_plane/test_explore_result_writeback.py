@@ -174,8 +174,10 @@ def test_partial_link_failure_replays_without_duplicate_or_primary_rollback(
     assert second["ok"] and second["graph"]["appended_event_count"] == 0
 
 
+@pytest.mark.parametrize("terminal", [False, True])
 def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_retry(
     tmp_path,
+    terminal,
 ):
     from tests.control_plane.test_quota_settlement_cli import (
         _write_fixture,
@@ -210,6 +212,37 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         cwd=project,
     )
     assert rc == 0, claimed
+    terminal_proof = {}
+    if terminal:
+        from canonical_authority_fixture import initialize_canonical_authority
+        from loopx.control_plane.coordination.runtime_shadow import (
+            build_todo_runtime_shadow_projection,
+        )
+        from loopx.control_plane.work_items.task_lease import acquire_task_lease
+        from loopx.todos import complete_goal_todo
+
+        todos = list_goal_todos(registry_path=path, goal_id=GOAL_ID)["todos"]
+        initialize_canonical_authority(
+            runtime,
+            GOAL_ID,
+            build_todo_runtime_shadow_projection(
+                goal_id=GOAL_ID, todos=todos, handoff_mode="hard_lease"
+            ),
+            state_path=project / config["goals"][0]["state_file"],
+            provider="file",
+        )
+        lease = acquire_task_lease(
+            registry_path=path,
+            runtime_root=runtime,
+            goal_id=GOAL_ID,
+            todo_id=TODO_ID,
+            owner=AGENT_ID,
+            idempotency_key="cli-terminal-result",
+        )
+        terminal_proof = dict(
+            task_lease_idempotency_key="cli-terminal-result",
+            task_lease_expected_version=lease["lease"]["version"],
+        )
     binding = (
         "--goal-id",
         GOAL_ID,
@@ -232,6 +265,15 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         cwd=project,
     )
     assert rc == 0, guard
+    if terminal:
+        complete_goal_todo(
+            registry_path=path,
+            goal_id=GOAL_ID,
+            todo_id=TODO_ID,
+            agent_id=AGENT_ID,
+            evidence="Synthetic validation passed",
+            **terminal_proof,
+        )
     source = tmp_path / "result.json"
     source.write_text(json.dumps(ATTACHMENT))
     args = (
@@ -362,8 +404,9 @@ def test_later_observation_preserves_question_state_and_scoped_history(tmp_path)
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
+@pytest.mark.parametrize("mode", ["soft_claim", "hard_lease"])
 def test_completed_work_can_attach_evidence_without_reopening_or_changing_completion(
-    tmp_path, provider
+    tmp_path, provider, mode
 ):
     from tests.control_plane.test_native_todo_planning_update import (
         fixture as canonical_fixture,
@@ -373,33 +416,75 @@ def test_completed_work_can_attach_evidence_without_reopening_or_changing_comple
     from loopx.control_plane.coordination.runtime_shadow import (
         build_todo_runtime_shadow_projection,
     )
+    from loopx.control_plane.coordination.local_authority import (
+        read_canonical_todos_if_promoted,
+    )
+    from loopx.control_plane.work_items.task_lease import acquire_task_lease
+    from loopx.todos import complete_goal_todo
 
     path, state = canonical_fixture(tmp_path, False, provider)
-    state.write_text(
-        state.read_text()
-        .replace("- [ ] Synthetic task", "- [x] Synthetic task")
-        .replace("todo_id=todo_target status=open", "todo_id=todo_target status=done")
-    )
+    config = json.loads(path.read_text())
+    config["goals"][0]["explore_graph"] = {"enabled": True}
+    path.write_text(json.dumps(config))
+    runtime = tmp_path / "runtime"
     todos = list_goal_todos(registry_path=path, goal_id="goal-a")["todos"]
-    projection = build_todo_runtime_shadow_projection(
-        goal_id="goal-a", todos=todos, handoff_mode="soft_claim"
-    )
     initialize_canonical_authority(
-        tmp_path / "runtime", "goal-a", projection, state_path=state, provider=provider
+        runtime,
+        "goal-a",
+        build_todo_runtime_shadow_projection(
+            goal_id="goal-a", todos=todos, handoff_mode=mode
+        ),
+        state_path=state,
+        provider=provider,
+    )
+    proof = {}
+    if mode == "hard_lease":
+        lease = acquire_task_lease(
+            registry_path=path,
+            runtime_root=runtime,
+            goal_id="goal-a",
+            todo_id="todo_target",
+            owner="agent-a",
+            idempotency_key="terminal-result",
+        )
+        proof = dict(
+            task_lease_idempotency_key="terminal-result",
+            task_lease_expected_version=lease["lease"]["version"],
+        )
+    complete_goal_todo(
+        registry_path=path,
+        goal_id="goal-a",
+        todo_id="todo_target",
+        agent_id="agent-a",
+        evidence="Synthetic validation passed",
+        **proof,
     )
     before = records(path)["todo_target"]
-    assert before["status"] == "done"
-    update_goal_todo(
+    leases_before = read_canonical_todos_if_promoted(
+        runtime_root=runtime, goal_id="goal-a", include_leases=True
+    )["leases"]
+    args = dict(
         registry_path=path,
+        runtime_root=runtime,
         goal_id="goal-a",
         agent_id="agent-a",
         todo_id="todo_target",
-        append_explore_result_node_refs=["question"],
+        turn_instance_id="terminal-turn",
     )
+    assert before["status"] == "done"
+    prepare_result_attachment(ATTACHMENT, **args)
+    result = deliver_result_attachment(payload=payload(), **args)
+    assert result["ok"], result
     after = records(path)["todo_target"]
     assert after["status"] == "done" and after["claimed_by"] == "agent-a"
     assert after.get("completion_continuation") == before.get("completion_continuation")
-    assert after["explore_result_node_refs"] == ["question"]
+    assert after["explore_result_node_refs"] == [ATTACHMENT["node_id"]]
+    assert (
+        read_canonical_todos_if_promoted(
+            runtime_root=runtime, goal_id="goal-a", include_leases=True
+        )["leases"]
+        == leases_before
+    )
     with pytest.raises((ValueError, RuntimeError)):
         update_goal_todo(
             registry_path=path,
@@ -407,7 +492,35 @@ def test_completed_work_can_attach_evidence_without_reopening_or_changing_comple
             agent_id="agent-b",
             todo_id="todo_target",
             append_explore_result_node_refs=["foreign"],
+            **proof,
         )
+    with pytest.raises((ValueError, RuntimeError)):
+        update_goal_todo(
+            registry_path=path,
+            goal_id="goal-a",
+            agent_id="agent-a",
+            todo_id="todo_target",
+            append_explore_result_node_refs=["mixed"],
+            note="Other edit",
+            **proof,
+        )
+    if mode == "hard_lease":
+        # A mismatched retained lease version must not authorize even this
+        # narrow metadata operation; completion need not increment the version.
+        assert leases_before[0]["status"] == "released"
+        with pytest.raises((ValueError, RuntimeError)):
+            update_goal_todo(
+                registry_path=path,
+                goal_id="goal-a",
+                agent_id="agent-a",
+                todo_id="todo_target",
+                append_explore_result_node_refs=["stale"],
+                **{
+                    **proof,
+                    "task_lease_expected_version": proof["task_lease_expected_version"]
+                    + 1,
+                },
+            )
 
 
 @pytest.mark.parametrize("provider", ["file", "sqlite"])

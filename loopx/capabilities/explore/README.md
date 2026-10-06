@@ -138,7 +138,9 @@ The effect-free capability hook emits an ingestion intent; the consumer creates
 the question only if absent, appends a finding, and adds the reference through
 the existing Todo owner. This opt-in append may attach evidence to a completed
 Todo while retaining its terminal status and completion metadata; claim and
-lease checks still apply. Other completed-Todo edits remain rejected. It never acquires a claim, renews a lease, changes a
+lease checks still apply. A completed owner may use the retained released lease
+key and current version solely for this additive evidence association; it grants
+no renewed execution or other edit authority. Other completed-Todo edits remain rejected. It never acquires a claim, renews a lease, changes a
 question's existing status, or launches another worker. An existing question id
 must keep the same question and applicability; use a distinct id for a changed
 scope. `input_revision` is the caller's recorded revision, not a claim that the
