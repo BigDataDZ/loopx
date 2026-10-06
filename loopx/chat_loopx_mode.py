@@ -1025,8 +1025,6 @@ def pump_delegation_wakes(
                     type(exc).__name__,
                 )
                 continue
-            if receipt is not None:
-                changed.append(receipt)
         except (OSError, ValueError, KeyError, TypeError, RuntimeError,
                 ChatTurnAcceptanceUnavailableError) as exc:
             # Isolate one record; the others still progress this tick.
