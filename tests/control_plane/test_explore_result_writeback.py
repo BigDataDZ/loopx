@@ -229,7 +229,7 @@ def test_real_cli_inline_validation_precedes_primary_commit(tmp_path, case):
             if case == "path-no-evidence":
                 packet["path_delta"]["evidence_refs"] = []
             if case == "path-overflow":
-                packet["path_delta"]["observed_reality"] = "x" * 301
+                packet["path_delta"]["observed_reality"] = "x" * 321
     source = tmp_path / "vision.json"
     source.write_text(json.dumps(packet))
     extra = ()
@@ -257,7 +257,7 @@ def test_real_cli_inline_validation_precedes_primary_commit(tmp_path, case):
 
 @pytest.mark.parametrize("terminal", [False, True])
 @pytest.mark.parametrize("interrupted", [False, True])
-@pytest.mark.parametrize("source_mode", ["file", "vision", "both", "path_delta"])
+@pytest.mark.parametrize("source_mode", ["file", "vision", "both", "path_delta", "wide_path_delta"])
 def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_retry(
     tmp_path, terminal, interrupted, source_mode, monkeypatch, capsys,
 ):
@@ -369,7 +369,7 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         "vision_patch": {"acceptance_summary": "Require a uniform tail bound."},
         "explore_result": template,
     }
-    if source_mode == "path_delta":
+    if source_mode in {"path_delta", "wide_path_delta"}:
         packet["path_delta"] = {
             "schema_version": "goal_path_delta_v0", "outcome": "continue",
             "prior_assumption": "A finite prefix might establish the bound.",
@@ -382,11 +382,22 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
             ("node_id", "question", "applicability", "input_revision", "status")
         }
         packet["explore_result"]["schema_version"] = "explore_result_from_path_delta_v0"
+        if source_mode == "wide_path_delta":
+            # Independent scope/tail oracle, exceeding the old 1200-character
+            # stored-summary cap and using all nine legal route entries.
+            packet["explore_result"]["input_revision"] = "r" * 160
+            packet["explore_result"]["applicability"] = "Finite prefix only; ".ljust(200, "a")
+            packet["path_delta"]["observed_reality"] = ATTACHMENT["observation"].ljust(320, "o")
+            for kind in ("retained", "changed", "stopped"):
+                packet["path_delta"][kind] = [f"{kind}-{i}: ".ljust(120, str(i)) for i in range(3)]
+            packet["path_delta"]["stopped"][-1] = "Do not transfer without a uniform tail bound.".rjust(120, "s")
+            packet["path_delta"]["evidence_refs"] = [*ATTACHMENT["evidence_refs"], ".loopx/evidence/probe.json"]
+            packet["explore_result"]["evidence_refs"] = ATTACHMENT["evidence_refs"]
     vision.write_text(json.dumps(packet))
     attachment_args = ()
     if source_mode in {"file", "both"}:
         attachment_args += ("--explore-result-json", str(source))
-    if source_mode in {"vision", "both", "path_delta"}:
+    if source_mode in {"vision", "both", "path_delta", "wide_path_delta"}:
         attachment_args += ("--agent-vision-json", str(vision))
     args = (
         "refresh-state",
@@ -447,10 +458,21 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
     finding = received["graph"]["writeback_results"][0]
     assert finding["finding_id"] == replay["explore_result_delivery"]["finding_id"]
     assert ATTACHMENT["observation"] in finding["summary"]
-    assert ATTACHMENT["applicability"] in finding["summary"]
+    if source_mode != "wide_path_delta":
+        assert ATTACHMENT["applicability"] in finding["summary"]
+    if source_mode == "wide_path_delta":
+        assert len(finding["summary"]) > 1200
+        assert packet["explore_result"]["input_revision"] in finding["summary"]
+        assert packet["explore_result"]["applicability"] in finding["summary"]
+        assert packet["path_delta"]["observed_reality"] in finding["summary"]
+        for kind in ("retained", "changed", "stopped"):
+            for item in packet["path_delta"][kind]:
+                assert item in finding["summary"]
+        assert finding["evidence_refs"] == ATTACHMENT["evidence_refs"]
+        assert len(finding["summary"]) <= 2000
     assert index.read_bytes() == before
     changed = {**ATTACHMENT, "interpretation": "A different conclusion."}
-    if source_mode == "path_delta":
+    if source_mode in {"path_delta", "wide_path_delta"}:
         packet["path_delta"]["observed_reality"] = "A changed observation on retry."
         vision.write_text(json.dumps(packet))
     elif source_mode == "vision":

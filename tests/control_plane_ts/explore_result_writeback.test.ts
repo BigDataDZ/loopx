@@ -44,7 +44,7 @@ const scope = {
   input_revision: attachment.input_revision, status: "tentative",
 };
 const resolved = {...attachment, status: "tentative",
-  interpretation: 'Outcome: continue; retained: ["Require a uniform estimate."]; stopped: ["Transfer from a finite prefix."]'};
+  interpretation: 'Outcome: continue\nretained:\n- Require a uniform estimate.\nstopped:\n- Transfer from a finite prefix.'};
 
 test("explicit scoped capture reuses the same typed path delta without inferring finding status", () => {
   const vision = {path_delta: delta};
@@ -74,11 +74,36 @@ test("scoped path capture cannot fall back to a missing, misplaced or invalid de
     vision_packet: {path_delta: delta}}), /unknown fields/);
 });
 
-test("reused text respects result limits without truncation or omission", () => {
+test("same-packet ref selection excludes local pointers without inventing evidence", () => {
+  const vision = {path_delta: {...delta, evidence_refs: [...delta.evidence_refs, ".loopx/evidence/probe.json"]}};
+  assert.throws(() => normalizeExploreResultAttachment({attachment: scope, vision_packet: vision}), /opaque identifier/);
+  assert.deepEqual(normalizeExploreResultAttachment({attachment: {...scope, evidence_refs: attachment.evidence_refs},
+    vision_packet: vision, other_attachment: resolved}), resolved);
+  for (const refs of [null, [], ["validation:foreign"], [".loopx/evidence/probe.json"]]) {
+    assert.throws(() => normalizeExploreResultAttachment({attachment: {...scope, evidence_refs: refs}, vision_packet: vision}));
+  }
+});
+
+test("legal wide path deltas preserve every route condition without JSON expansion", () => {
+  const retained = ["a".repeat(120), "b".repeat(120), '"'.repeat(120)];
+  const changed = ["c".repeat(120), "d".repeat(120), "e".repeat(120)];
+  const stopped = ["f".repeat(120), "g".repeat(120), "Do not transfer without a uniform tail bound.".padStart(120, "h")];
+  const observed = "o".repeat(320);
+  const result = normalizeExploreResultAttachment({attachment: scope, vision_packet: {
+    path_delta: {...delta, observed_reality: observed, retained, changed, stopped}}});
+  assert.equal(result.observation, observed);
+  for (const item of [...retained, ...changed, ...stopped]) assert.ok((result.interpretation as string).includes(item));
+  assert.ok((result.interpretation as string).length <= 1200);
+  assert.equal(result.status, "tentative");
+});
+
+test("reused text respects the owning Goal and finding limits", () => {
   assert.throws(() => normalizeExploreResultAttachment({attachment: scope,
-    vision_packet: {path_delta: {...delta, observed_reality: "x".repeat(301)}}}), /observation/);
+    vision_packet: {path_delta: {...delta, observed_reality: "x".repeat(321)}}}), /observed_reality/);
   assert.throws(() => normalizeExploreResultAttachment({attachment: scope,
-    vision_packet: {path_delta: {...delta, retained: ["x".repeat(110), "y".repeat(110), "z".repeat(110)]}}}), /interpretation/);
+    vision_packet: {path_delta: {...delta, retained: ["x".repeat(121)]}}}), /retained/);
+  assert.throws(() => normalizeExploreResultAttachment({attachment: {...attachment,
+    interpretation: "x".repeat(1201)}}), /interpretation/);
   assert.throws(() => normalizeExploreResultAttachment({attachment: {...scope, applicability: ""},
     vision_packet: {path_delta: delta}}), /applicability/);
 });

@@ -7,6 +7,9 @@ import {normalizeGoalPathDelta} from "../goals/vision_checkpoint.ts";
 
 export const EXPLORE_RESULT_ATTACHMENT_SCHEMA = "explore_result_attachment_v0";
 export const EXPLORE_PATH_DELTA_ATTACHMENT_SCHEMA = "explore_result_from_path_delta_v0";
+// The complete scoped finding fits the result-log owner: 160 revision + 200
+// applicability + 320 observation + 1200 interpretation + four labels < 2000.
+export const EXPLORE_WRITEBACK_SUMMARY_LIMIT = 2000;
 /** Shared point-of-use guidance; optional metadata never changes settlement. */
 export function exploreResultWritebackAffordance(): JsonObject {
   return {
@@ -21,7 +24,7 @@ export function exploreResultWritebackAffordance(): JsonObject {
       schema_version: EXPLORE_PATH_DELTA_ATTACHMENT_SCHEMA,
       node_id: "", question: "", applicability: "", input_revision: "", status: "tentative",
     },
-    guidance: "After validating reusable evidence, put explore_result in the vision JSON already submitted with --agent-vision-json. Prefer path_delta_attachment_template when this same packet contains an evidence-linked path_delta: supply only the stable question, applicability, tested input revision and explicit finding status; the hook reuses its observation, route decision and evidence refs. Otherwise fill attachment_template, inline or via --explore-result-json. Matching sources coalesce; conflicts reject. Routine work needs no attachment; do not invent findings. Capture is optional, not a settlement obligation. A stopped route does not imply refuted status, and a score alone does not prove refutation. Keep raw logs local. If reused text exceeds attachment limits, use a compact, scoped full attachment; nothing is silently clipped.",
+    guidance: "After validating reusable evidence, put explore_result in the vision JSON already submitted with --agent-vision-json. Prefer path_delta_attachment_template when this same packet contains an evidence-linked path_delta: supply the stable question, applicability, tested input revision and explicit finding status; the hook reuses the complete observation and route decision. If path_delta also references local files, explicitly select its opaque identifiers with optional evidence_refs; selected refs must occur in this same path_delta. Without a selection, all refs must be opaque identifiers. Otherwise fill attachment_template, inline or via --explore-result-json. Matching sources coalesce; conflicts reject. Routine work needs no attachment; do not invent findings. Capture is optional, not a settlement obligation. A stopped route does not imply refuted status, and a score alone does not prove refutation. Keep raw logs local. Observations allow 320 characters, interpretations 1200; the complete scoped summary is preserved within 2000 characters.",
     // Blank evidence fields deliberately fail validation until the caller
     // supplies observed facts. Goal/Agent/Todo/Turn bind in ordinary writeback;
     // a source-code revision here would not establish the tested input revision.
@@ -68,14 +71,14 @@ function normalizeAttachment(value: unknown, visionPacket?: unknown): JsonObject
     question: text(row.question, "question", 180),
     applicability: text(row.applicability, "applicability", 200),
     input_revision: text(row.input_revision, "input_revision", 160),
-    observation: text(row.observation, "observation", 300),
-    interpretation: text(row.interpretation, "interpretation", 300),
+    observation: text(row.observation, "observation", 320),
+    interpretation: text(row.interpretation, "interpretation", 1200),
     status: requireStringLiteral(row.status, ["tentative", "confirmed", "refuted"], "finding status"),
     evidence_refs: [...new Set(refs)]};
 }
 /** Explicit reference, not inferred evidence. Preserve every route item verbatim. */
 function attachmentFromPathDelta(row: JsonObject, visionPacket: unknown): JsonObject {
-  const fields = ["schema_version", "node_id", "question", "applicability", "input_revision", "status"];
+  const fields = ["schema_version", "node_id", "question", "applicability", "input_revision", "status", "evidence_refs"];
   if (Object.keys(row).some(key => !fields.includes(key))) {
     throw new EffectRuntimeRequestError("Explore path_delta attachment contains unknown fields");
   }
@@ -84,13 +87,19 @@ function attachmentFromPathDelta(row: JsonObject, visionPacket: unknown): JsonOb
   if (delta === null) {
     throw new EffectRuntimeRequestError("Explore path_delta capture requires top-level path_delta in this vision packet");
   }
+  // Plain list text preserves each normalized item without JSON escaping
+  // inflating the Goal owner's nine-by-120-character route budget.
   const decision = [
     `Outcome: ${delta.outcome}`,
     ...["retained", "changed", "stopped"].filter(key => delta[key] !== undefined)
-      .map(key => `${key}: ${JSON.stringify(delta[key])}`),
-  ].join("; ");
+      .map(key => `${key}:\n- ${(delta[key] as string[]).join("\n- ")}`),
+  ].join("\n");
+  const refs = Object.hasOwn(row, "evidence_refs") ? row.evidence_refs : delta.evidence_refs;
+  if (!Array.isArray(refs) || refs.some(ref => !(delta.evidence_refs as unknown[] | undefined)?.includes(ref))) {
+    throw new EffectRuntimeRequestError("Explore selected evidence_refs must occur in this same path_delta");
+  }
   return normalizeAttachment({...row, schema_version: EXPLORE_RESULT_ATTACHMENT_SCHEMA,
-    observation: delta.observed_reality, interpretation: decision, evidence_refs: delta.evidence_refs});
+    observation: delta.observed_reality, interpretation: decision, evidence_refs: refs});
 }
 export function normalizeExploreResultAttachment(params: JsonObject): JsonObject {
   const result = normalizeAttachment(params.attachment, params.vision_packet);
