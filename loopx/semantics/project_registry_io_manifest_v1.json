@@ -1983,7 +1983,7 @@
     },
     {
       "site": "loopx/history.py::<module>.collect_history::codec_read:load_registry#1",
-      "line": 343,
+      "line": 353,
       "column": 20,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1991,7 +1991,7 @@
     },
     {
       "site": "loopx/history.py::<module>.inspect_index_duplicates::codec_read:load_registry#1",
-      "line": 603,
+      "line": 619,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
@@ -1999,7 +1999,7 @@
     },
     {
       "site": "loopx/history.py::<module>.rebuild_index_artifact_collisions::codec_read:load_registry#1",
-      "line": 817,
+      "line": 833,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2007,7 +2007,7 @@
     },
     {
       "site": "loopx/history.py::<module>.repair_index_duplicates::codec_read:load_registry#1",
-      "line": 707,
+      "line": 723,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",

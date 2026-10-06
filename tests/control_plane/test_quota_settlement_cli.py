@@ -1258,6 +1258,178 @@ def test_typed_blocked_retry_without_successor_defers_the_only_todo(
     assert next_turn["should_run"] is False, next_turn
 
 
+def test_scheduler_cache_misses_after_todo_state_changes_without_run(
+    tmp_path: Path,
+) -> None:
+    project, runtime, registry_path = _write_fixture(tmp_path)
+    guard = (
+        "quota",
+        "should-run",
+        "--codex-app",
+        "--goal-id",
+        GOAL_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--scan-path",
+        str(project),
+    )
+    rc, initial = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--write-projection-cache",
+        cwd=project,
+    )
+    assert rc == 0, initial
+    assert initial["selected_todo"]["todo_id"] == TODO_ID
+    index_path = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
+    index_before = index_path.read_bytes() if index_path.exists() else None
+
+    rc, updated = _run_cli(
+        registry_path,
+        runtime,
+        "todo",
+        "update",
+        "--goal-id",
+        GOAL_ID,
+        "--todo-id",
+        TODO_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--status",
+        "deferred",
+        "--resume-when",
+        "resume_at:2099-01-01T00:00:00Z",
+    )
+    assert rc == 0, updated
+    assert updated["status"] == "deferred"
+    assert (index_path.read_bytes() if index_path.exists() else None) == index_before
+
+    rc, refreshed = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--use-projection-cache",
+        cwd=project,
+    )
+
+    assert rc == 0, refreshed
+    assert refreshed["status_projection_cache"]["hit"] is False
+    assert (
+        refreshed["status_projection_cache"]["miss_reason"]
+        == "goal_todo_projection_changed"
+    )
+    assert refreshed["should_run"] is False
+    assert "selected_todo" not in refreshed
+
+
+def test_scheduler_cache_misses_after_goal_is_stopped_without_run(
+    tmp_path: Path,
+) -> None:
+    project, runtime, registry_path = _write_fixture(tmp_path)
+    guard = (
+        "quota",
+        "should-run",
+        "--codex-app",
+        "--goal-id",
+        GOAL_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--scan-path",
+        str(project),
+    )
+    rc, initial = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--write-projection-cache",
+        cwd=project,
+    )
+    assert rc == 0, initial
+    assert initial["should_run"] is True
+    index_path = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
+    index_before = index_path.read_bytes() if index_path.exists() else None
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    registry["goals"][0]["activation_state"] = "stopped"
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    assert (index_path.read_bytes() if index_path.exists() else None) == index_before
+
+    rc, refreshed = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--use-projection-cache",
+        cwd=project,
+    )
+
+    assert rc == 0, refreshed
+    assert refreshed["status_projection_cache"]["hit"] is False
+    assert refreshed["status_projection_cache"]["miss_reason"] == (
+        "goal_registry_changed"
+    )
+    assert refreshed["should_run"] is False
+    assert refreshed["effective_action"] == "quota_skip"
+
+
+@pytest.mark.parametrize(
+    ("section", "field", "value", "expected_action"),
+    [
+        ("quota", "allowed_slots", 0, "throttled_skip"),
+        ("adapter", "status", "disconnected", "operator_gate_notify"),
+    ],
+)
+def test_scheduler_cache_misses_after_goal_configuration_changes_without_run(
+    tmp_path: Path,
+    section: str,
+    field: str,
+    value: object,
+    expected_action: str,
+) -> None:
+    project, runtime, registry_path = _write_fixture(tmp_path)
+    guard = (
+        "quota",
+        "should-run",
+        "--codex-app",
+        "--goal-id",
+        GOAL_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--scan-path",
+        str(project),
+    )
+    rc, initial = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--write-projection-cache",
+        cwd=project,
+    )
+    assert rc == 0, initial
+    assert initial["should_run"] is True
+    index_path = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
+    index_before = index_path.read_bytes() if index_path.exists() else None
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    registry["goals"][0][section][field] = value
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    assert (index_path.read_bytes() if index_path.exists() else None) == index_before
+
+    rc, refreshed = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--use-projection-cache",
+        cwd=project,
+    )
+
+    assert rc == 0, refreshed
+    assert refreshed["status_projection_cache"]["hit"] is False
+    assert refreshed["status_projection_cache"]["miss_reason"] == (
+        "goal_registry_changed"
+    )
+    assert refreshed["should_run"] is False
+    assert refreshed["effective_action"] == expected_action
+
+
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
 def test_typed_blocked_retry_with_peer_hard_lease(
     tmp_path: Path,
