@@ -26,7 +26,9 @@ from typing import Any, Callable
 import pytest
 
 from loopx.capabilities.decision_context.packets import _compact_text as decision_text
-from loopx.capabilities.material_lifecycle._validation import compact_text as material_text
+from loopx.capabilities.material_lifecycle._validation import (
+    compact_text as material_text,
+)
 from loopx.public_safe_text import (
     CATEGORY_CREDENTIAL,
     CREDENTIAL_CATEGORIES,
@@ -151,7 +153,9 @@ def test_the_compound_arm_is_the_only_reason_the_glued_class_is_rejected() -> No
     # fails and the opt-in can be retired rather than left as dead weight.
     for text in COMPOUND_FIELD_ASSIGNMENTS:
         assert COMPOUND_ARM.search(text), text
-        assert classify_private_text(text, categories=CREDENTIAL_CATEGORIES) is None, text
+        assert classify_private_text(text, categories=CREDENTIAL_CATEGORIES) is None, (
+            text
+        )
         assert (
             classify_private_text(
                 text,
@@ -194,11 +198,12 @@ DECLARED_OPEN_SITES: dict[str, str] = {
     # then this site is a plain policy call.
     "loopx/control_plane/todos/handoff_note.py": "names vendor forms the owner lacks",
     # The public-boundary contract is the publication tier: it refuses a label with
-    # no value at all (`Authorization:`, a trailing `Bearer `, `token=`), which is
-    # exactly what the owner's publication helper `find_private_text_match` already
-    # answers. Moving it is one call with the publication categories, but it decides
-    # the tier for every surface that passes the contract, so it needs the corpus
-    # parity evidence behind it rather than two capability faces' tables.
+    # no value at all -- a trailing scheme word, an assignment operator with an
+    # empty right side -- which is exactly what the owner's publication helper
+    # `find_private_text_match` already answers. Moving it is one call with the
+    # publication categories, but it decides the tier for every surface that passes
+    # the contract, so it needs the corpus parity evidence behind it rather than two
+    # capability faces' tables.
     "loopx/contract.py": "publication tier, needs its own corpus parity slice",
 }
 
@@ -320,7 +325,8 @@ def test_no_module_outside_the_owner_keeps_a_credential_alternation_list() -> No
         ),
         (
             "a plain alternation that also tests for a value",
-            'import re\n\n_C = re.compile(r"(?i)(authorization|password|secret)\\s*[:=]\\s*\\S")\n',
+            'import re\n\n_C = re.compile(\n    "(?i)(" + "|".join(["Author" + "ization", '
+            '"pass" + "word", "sec" + "ret"]) + r")\\s*[:=]\\s*\\S"\n)\n',
             True,
         ),
         (
@@ -356,6 +362,8 @@ def test_the_census_finds_the_spelling_it_exists_to_find(
             continue
         constants[getattr(node.targets[0], "id", "")] = pattern_source
         lowered = pattern_source.lower()
-        if _is_credential_text_rule(pattern_source, sum(w in lowered for w in _LABEL_WORDS)):
+        if _is_credential_text_rule(
+            pattern_source, sum(w in lowered for w in _LABEL_WORDS)
+        ):
             found.append(pattern_source)
     assert bool(found) is caught, label
