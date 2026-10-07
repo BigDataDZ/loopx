@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..runtime.time import now_utc
 from ..agents.profile import agent_profile_candidate_rank
 from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
 from .contract import (
@@ -69,7 +70,7 @@ def project_quota_planning(
     value: dict[str, Any], *, all_open_items: list[dict[str, Any]],
     source_open_count: Any, agent_identity: dict[str, Any] | None,
     filter_user_gate_blocks_agent: bool, available_capabilities: Any,
-    resolve_capacity: bool = False,
+    resolve_capacity: bool = False, current_time: str | None = None,
 ) -> dict[str, Any]:
     identity = agent_identity if isinstance(agent_identity, dict) else {}
     profile = identity.get("agent_profile")
@@ -107,6 +108,8 @@ def project_quota_planning(
     try:
         result = effect_runtime_result("todo.quota_planning.project", {
             "schema_version": "todo_quota_planning_request_v2",
+            "current_time": current_time or now_utc().isoformat(),
+            "frontier_deadline": value.get("frontier_deadline"),
             "route_items": build_todo_route_continuation_facts(value, handoff_gates=handoff_gates),
             "handoff_items": [{"display": gate,
                 "excluded": normalize_todo_excluded_agents(gate.get("excluded_agents"))}
@@ -132,6 +135,8 @@ def project_quota_planning(
         raise ValueError(str(exc)) from None
     if not isinstance(result, dict) or result.get("schema_version") != "todo_quota_planning_v0":
         raise RuntimeError("TypeScript Todo quota planning shape mismatch")
+    if not isinstance(result.get("lanes"), dict) or not isinstance(result["lanes"].get("gate_items"), list):
+        raise RuntimeError("TypeScript Todo quota planning gate lane missing")
     if not isinstance(result.get("source_completeness"), dict) or "closure_intent" not in result:
         raise RuntimeError("TypeScript Todo quota planning source contract missing")
     if isinstance(result["closure_intent"], dict):

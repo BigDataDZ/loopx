@@ -1,3 +1,4 @@
+import {parseTodoTimestampMicros} from "../runtime_timestamp.ts";
 import {countTodoWork} from "./summary_lanes.ts";
 import type { JsonObject } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
@@ -122,7 +123,7 @@ function claimScope(source: readonly Row[], selected: readonly Row[], agent: str
   };
 }
 
-export function projectQuotaSelection(value: unknown): JsonObject {
+export function projectQuotaSelection(value: unknown, includeGateItems = false): JsonObject {
   const request = requireJsonObject(value, "quota selection");
   const available = request.available === undefined ? undefined : requireStringArray(request.available, "available");
   const source = rows(request.items, available), active = rows(request.active_items, available), activeExecutable = rows(request.active_executable_items, available);
@@ -178,6 +179,7 @@ export function projectQuotaSelection(value: unknown): JsonObject {
     user_action_agent_scope_filter: actionFilter, other_agent_scoped_items: payloads(otherGates),
     agent_scope_filter: gateFilter, open_items: payloads(open), claim_scope: scope,
     executable_items: payloads(open.filter(row => row.actionable && row.taskClass === "advancement_task")),
+    ...(includeGateItems ? {gate_items: payloads(open.filter(row => row.gate))} : {}),
     monitor_items: payloads(monitors), monitor_due_items: payloads(admittedDue),
     watch_only_monitor_items: payloads(watchOnlyMonitors),
     watch_only_monitor_due_items: payloads(admittedDue.filter(row => row.watchOnly)),
@@ -269,6 +271,66 @@ function handoffGateLanes(value: unknown, agent: string | null, limit: number): 
   return result;
 }
 
+const frontierLanes = ["current_agent_claimed_monitor_items", "monitor_open_items", "gate_open_items",
+  "deferred_resume_candidates", "current_agent_deferred_resume_candidates", "resume_blocked_items",
+  "current_agent_monitor_blocked_resume_candidates", "current_agent_handoff_gates"];
+const object = (value: unknown): JsonObject | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value) ? value as JsonObject : null;
+const timestamp = (value: unknown) => typeof value === "string" ? parseTodoTimestampMicros(value.trim()) : null;
+const text = (value: unknown) => String(value ?? "").trim();
+function identity(row: JsonObject): string {
+  for (const key of ["todo_id", "target_key", "action_kind", "title", "text"]) {
+    const value = text(row[key]);
+    if (value) return value;
+  }
+  return row.index == null ? "frontier_transition" : String(row.index);
+}
+function source(row: JsonObject, lane: string): string {
+  const taskClass = text(row.task_class);
+  if (taskClass) return taskClass;
+  // Preserve historical raw-summary classification; typed current records
+  // carry task_class. This is a display codec, never admission authority.
+  const action = text(row.action_kind).toLowerCase();
+  if (action.includes("monitor")) return "continuous_monitor";
+  if (action.includes("gate") || action.includes("approval")) return "user_gate";
+  if (lane.includes("monitor")) return "continuous_monitor";
+  if (lane.includes("gate")) return "user_gate";
+  return "frontier_todo";
+}
+function utcIso(micros: bigint): string {
+  // Match datetime.isoformat, including sub-millisecond deadlines and years
+  // before 1970. The existing codec validates calendars and timezone offsets.
+  const seconds = micros >= 0n ? micros / 1000000n : (micros - 999999n) / 1000000n;
+  const fraction = micros - seconds * 1000000n;
+  const date = new Date(Number(seconds * 1000n)).toISOString().slice(0, -5);
+  return `${date}${fraction ? `.${String(fraction).padStart(6, "0")}` : ""}+00:00`;
+}
+function projectTodoFrontierDeadline(summary: JsonObject, now: bigint): JsonObject | null {
+  const projected = object(summary.frontier_deadline);
+  const projectedTime = timestamp(projected?.next_due_at);
+  if (projected && projectedTime !== null && projectedTime > now) return {...projected};
+  const seen = new Set<string>();
+  let selected: JsonObject | null = null, earliest: bigint | null = null;
+  for (const lane of frontierLanes) {
+    const items = summary[lane];
+    if (!Array.isArray(items)) continue;
+    for (const raw of items) {
+      const row = object(raw);
+      if (!row) continue;
+      const expiry = timestamp(row.expires_at), due = timestamp(row.next_due_at);
+      if (expiry !== null && expiry <= now || due === null || due <= now) continue;
+      const id = identity(row), key = JSON.stringify([id, String(due)]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (earliest === null || due < earliest) {
+        earliest = due;
+        selected = {identity: id, source: source(row, lane), next_due_at: utcIso(due)};
+      }
+    }
+  }
+  return selected ? {schema_version: "todo_frontier_deadline_v0", ...selected, candidate_count: seen.size} : null;
+}
+
 /** One quota read boundary composes scope/claim selection, resume, hint
  * visibility and the typed source closure rules. */
 export function projectTodoQuotaPlanning(value: unknown): JsonObject {
@@ -280,11 +342,30 @@ export function projectTodoQuotaPlanning(value: unknown): JsonObject {
   const selection = requireJsonObject(request.selection, "selection");
   const closure = request.schema_version === "todo_quota_planning_request_v2"
     ? validateTodoClosureSource(request.source_contract) : {};
-  return {schema_version: "todo_quota_planning_v0", resume_planning: projectTodoResumePlanning(request.resume),
-    ...projectQuotaSelection(selection), ...closure,
-    ...(request.schema_version === "todo_quota_planning_request_v2" ? {handoff_lanes:
-      handoffGateLanes(request.handoff_items, optionalNonEmptyString(selection.agent_id, "agent_id"),
-        requireInteger(selection.backlog_limit, "backlog_limit")), route_lanes:
-      routeContinuationLanes(request.route_items, optionalNonEmptyString(selection.agent_id, "agent_id"),
-        requireInteger(selection.backlog_limit, "backlog_limit"))} : {})};
+  const resume = projectTodoResumePlanning(request.resume);
+  const selected = projectQuotaSelection(selection, request.current_time !== undefined);
+  const agent = optionalNonEmptyString(selection.agent_id, "agent_id");
+  const limit = requireInteger(selection.backlog_limit, "backlog_limit");
+  const handoff = request.schema_version === "todo_quota_planning_request_v2"
+    ? handoffGateLanes(request.handoff_items, agent, limit) : {};
+  const route = request.schema_version === "todo_quota_planning_request_v2"
+    ? routeContinuationLanes(request.route_items, agent, limit) : {};
+  const now = request.current_time === undefined ? null :
+    typeof request.current_time === "string" ? parseTodoTimestampMicros(request.current_time) : null;
+  if (request.current_time !== undefined && now === null) throw new EffectRuntimeRequestError("invalid quota planning clock");
+  const lanes = requireJsonObject(selected.lanes, "selection lanes");
+  const frontier = now === null ? null : projectTodoFrontierDeadline({
+    ...requireJsonObject(selected.claim_visibility, "claim visibility"),
+    ...requireJsonObject(resume.deferred_lanes, "deferred lanes"),
+    ...requireJsonObject(resume.resume_blocked_lanes, "resume blocked lanes"), ...handoff,
+    frontier_deadline: request.frontier_deadline ?? null,
+    monitor_open_items: lanes.monitor_items,
+    gate_open_items: lanes.gate_items,
+  }, now);
+  // The full gate lane stays inside this batch. Transport only the original
+  // three-row display after deadline selection, rather than duplicating bodies.
+  if (now !== null) lanes.gate_items = (lanes.gate_items as JsonObject[]).slice(0, 3);
+  return {schema_version: "todo_quota_planning_v0", resume_planning: resume, ...selected, ...closure,
+    ...(request.schema_version === "todo_quota_planning_request_v2" ? {handoff_lanes: handoff, route_lanes: route} : {}),
+    ...(now === null ? {} : {frontier_deadline: frontier})};
 }

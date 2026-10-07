@@ -23,7 +23,6 @@ from .summary_item import (
     todo_planning_source_items,
     todo_summary_source_items,
 )
-from .user_gate import is_user_gate_todo_item
 
 MONITOR_DUE_ITEM_LIMIT = 1
 TODO_BACKLOG_ITEM_LIMIT = 8
@@ -178,6 +177,7 @@ class _QuotaTodoLanes:
     open_items: list[dict[str, Any]]
     claim_scope: dict[str, Any] | None
     executable_items: list[dict[str, Any]]
+    gate_items: list[dict[str, Any]]
     monitor_items: list[dict[str, Any]]
     monitor_due_items: list[dict[str, Any]]
     watch_only_monitor_items: list[dict[str, Any]]
@@ -213,6 +213,7 @@ def summarize_user_todos_for_quota(
         filter_user_gate_blocks_agent=filter_user_gate_blocks_agent,
         available_capabilities=available_capabilities,
         resolve_capacity=resolve_capacity,
+        current_time=now_utc().isoformat(),
     )
     lanes = _QuotaTodoLanes(**planning["lanes"])
     resume_planning = planning["resume_planning"]
@@ -223,11 +224,6 @@ def summarize_user_todos_for_quota(
             "monitor_writeback": value.get("monitor_writeback"),
         }
     )
-    gate_items = [
-        item
-        for item in lanes.open_items
-        if is_user_gate_todo_item(item)
-    ]
     blocker_items = [
         item
         for item in lanes.all_open_items
@@ -258,7 +254,7 @@ def summarize_user_todos_for_quota(
         "source_completeness": planning["source_completeness"],
         "first_open_items": lanes.display_open_items[:3],
         "first_executable_items": lanes.executable_items[:3],
-        "gate_open_items": gate_items[:3],
+        "gate_open_items": lanes.gate_items,
         "monitor_open_items": lanes.monitor_items,
         "monitor_due_count": len(lanes.monitor_due_items),
         "monitor_due_items": lanes.monitor_due_items[:MONITOR_DUE_ITEM_LIMIT],
@@ -307,6 +303,8 @@ def summarize_user_todos_for_quota(
         ]
     if planning["closure_intent"]:
         summary["closure_intent"] = planning["closure_intent"]
+    if planning.get("frontier_deadline"):
+        summary["frontier_deadline"] = planning["frontier_deadline"]
     monitor_writeback = todo_summary_monitor_writeback_contract(value)
     if monitor_writeback:
         summary["monitor_writeback"] = monitor_writeback
@@ -658,6 +656,7 @@ def summarize_project_asset_todos_for_quota(
         filter_user_gate_blocks_agent=filter_user_gate_blocks_agent,
         available_capabilities=available_capabilities,
         resolve_capacity=resolve_capacity,
+        current_time=now_utc().isoformat(),
     )
     lanes = _QuotaTodoLanes(**planning["lanes"])
     resume_planning = planning["resume_planning"]
@@ -693,6 +692,8 @@ def summarize_project_asset_todos_for_quota(
         "backlog_items": lanes.display_open_items[:TODO_BACKLOG_ITEM_LIMIT],
         "executable_backlog_items": lanes.executable_items[:TODO_BACKLOG_ITEM_LIMIT],
     }
+    if planning.get("frontier_deadline"):
+        summary["frontier_deadline"] = planning["frontier_deadline"]
     monitor_writeback = todo_summary_monitor_writeback_contract(value)
     if monitor_writeback:
         summary["monitor_writeback"] = monitor_writeback
