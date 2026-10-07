@@ -124,11 +124,14 @@ so a separate Chat store cannot split it from the recipient policy and inbox.
 The exact execution catalog and handoff dispatch use that same resolved root;
 private Session/Turn files remain in the existing Chat store.
 Controllers predating that root retain the existing Chat-parent layout.
-External evidence collection retries one invalidated inventory snapshot when
+External on-demand context retries one invalidated local inventory snapshot when
 the exact Goal instances and current audience scope remain unchanged. This is
 a fresh read in the same Turn, without another model thread or request replay.
 Revocation, Goal replacement, missing authority and continued inventory churn
 remain unavailable; an accepted inbox request does not bypass these checks.
+Prompt-only contexts that collect remote evidence inline retain the original
+single collection and rejection behavior, including after a failed SSH read;
+recovery cannot reset their one-dial, total-time budget in the same Turn.
 Messages outside the shared inbox's source-context bounds remain intact in
 ordinary Chat, but cannot be handed off as inline context; use a scoped artifact
 for larger material. Image content is not transferred by this text ingress record.

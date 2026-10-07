@@ -818,10 +818,10 @@ def collect_manager_turn_context(
         )
         if before != after or before_scope_id != after_scope_id:
             return unavailable_manager_context("external_authorization_changed")
-        # A registry observation write can invalidate the inventory snapshot
-        # without changing the authorized Goal instances. Recollect once under
-        # the original scope; never reuse stale evidence or retry a revocation.
-        if (attempt == 0 and before_scope_id is not None
+        # Recollect local, on-demand context once under the original scope.
+        # Inline remote collection owns one dial/Turn budget, including failed
+        # reads; recollecting it would restart that budget.
+        if (attempt == 0 and not remote_evidence and before_scope_id is not None
                 and context.get("warnings") == ["external_authorization_changed"]):
             continue
         break
