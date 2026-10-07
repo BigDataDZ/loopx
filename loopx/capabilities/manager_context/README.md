@@ -405,6 +405,39 @@ loopx manager-inbox report --goal-id research --agent-id worker \
   --request-id <id> --phase conclusion --reply-text 'What was assessed or changed, what was validated, and what remains.'
 ```
 
+For a verified bound-owner App request, explicitly attach a file from the
+registered Goal workspace with the same result publication:
+
+```sh
+loopx manager-inbox report --goal-id research --agent-id worker \
+  --request-id <id> --reply-text 'The report is attached.' \
+  --attachment-ref reports/result.pdf
+```
+
+Scoped MCP workers use `return_result(..., attachment_refs=["reports/result.pdf"])`.
+Repeat the CLI flag for additional files: at most four, each nonempty and at most
+30 MiB, at most 60 MiB together. Paths must be relative, without symlink components;
+the host requires POSIX no-follow directory opens. An explicitly registered
+canonical project alias may supply the working copy; arbitrary working directories
+cannot replace the Goal workspace. Publication snapshots the bytes and binds name,
+relative ref, size and SHA-256 into the immutable result identity. Editing the
+workspace later does not change a queued file. Use a new stable update id for a
+changed artifact, rather than replacing an already committed result.
+
+The Lark return includes the authored Markdown and an attachment zone in one reply
+to the original private conversation. Upload, message delivery and downloaded-byte
+verification are separate facts. A failed verification preserves the sent-message
+locator; restart reads that message and never resends it or reconstructs missing
+resource records with a new upload. Missing upload scope, changed authority or
+unsupported transport remains an explicit delivery gap. A path mentioned only in
+text is not an attachment. This slice does not qualify local-Web file presentation,
+group disclosure, cross-host transfer or inline video playback. Installed live
+provider qualification remains separate from the synthetic transport regressions.
+Before downgrading to an older runtime that does not understand result files,
+pause the reply pump while any file-bearing result remains pending; an old
+text-only reader cannot certify attachment delivery. Retain the result snapshots
+and resource records for recovery by a compatible runtime.
+
 Each CLI/MCP read includes the recorded receiver decision and fresh Core work
 from explicit request links. `receiver_followthrough` separates assessment,
 accepted work, owed answers and unavailable evidence; it is advice, not a priority
