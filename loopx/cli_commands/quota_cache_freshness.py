@@ -45,11 +45,22 @@ def _todo_source_projection(fields: Mapping[str, object]) -> dict[str, object]:
     for role in ("agent", "user"):
         summary = fields.get(f"{role}_todos")
         items = summary.get("items") if isinstance(summary, Mapping) else None
-        projection[f"{role}_todos"] = [
+        source_summary = {
+            key: value
+            for key, value in summary.items()
+            if not isinstance(value, list)
+            and key
+            not in {
+                "advancement_frontier_revision_index",
+                "payload_compaction",
+            }
+        } if isinstance(summary, Mapping) else {}
+        source_summary["items"] = [
             canonical_todo_read_record(item)
             for item in items or ()
             if isinstance(item, dict)
         ]
+        projection[f"{role}_todos"] = source_summary
     for key in (
         "active_state_next_action_entries",
         "next_action_basis",

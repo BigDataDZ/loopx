@@ -1323,6 +1323,162 @@ def test_scheduler_cache_misses_after_todo_state_changes_without_run(
     assert "selected_todo" not in refreshed
 
 
+def test_scheduler_cache_tracks_todo_changes_beyond_display_limit(
+    tmp_path: Path,
+) -> None:
+    project, runtime, registry_path = _write_fixture(tmp_path)
+    state_path = project / ".codex" / "goals" / GOAL_ID / "ACTIVE_GOAL_STATE.md"
+    tail_rows = "".join(
+        f"- [ ] [P2] Tail task {index}.\n"
+        f"  <!-- loopx:todo todo_id=todo_tail_{index:02d} status=open "
+        "task_class=advancement_task action_kind=implement -->\n"
+        for index in range(40)
+    )
+    state_path.write_text(
+        state_path.read_text(encoding="utf-8").rstrip() + "\n" + tail_rows,
+        encoding="utf-8",
+    )
+    guard = (
+        "quota",
+        "should-run",
+        "--codex-app",
+        "--goal-id",
+        GOAL_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--scan-path",
+        str(project),
+    )
+    initial_rc, initial = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--write-projection-cache",
+        cwd=project,
+    )
+    assert initial_rc == 0, initial
+
+    state_path.write_text(
+        state_path.read_text(encoding="utf-8").replace(
+            "Tail task 39.",
+            "Tail task 39 with revised display text.",
+        ),
+        encoding="utf-8",
+    )
+    display_rc, display_only = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--use-projection-cache",
+        cwd=project,
+    )
+    assert display_rc == 0, display_only
+    assert display_only["status_projection_cache"]["hit"] is True
+
+    index_path = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
+    index_before = index_path.read_bytes() if index_path.exists() else None
+    deferred_rc, deferred = _run_cli(
+        registry_path,
+        runtime,
+        "todo",
+        "update",
+        "--goal-id",
+        GOAL_ID,
+        "--todo-id",
+        "todo_tail_39",
+        "--agent-id",
+        AGENT_ID,
+        "--status",
+        "deferred",
+        "--resume-when",
+        "resume_at:2099-01-01T00:00:00Z",
+    )
+    assert deferred_rc == 0, deferred
+    assert (index_path.read_bytes() if index_path.exists() else None) == index_before
+
+    deferred_cached_rc, deferred_cached = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--use-projection-cache",
+        cwd=project,
+    )
+    deferred_fresh_rc, deferred_fresh = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        cwd=project,
+    )
+    assert deferred_cached_rc == deferred_fresh_rc == 0, deferred_cached
+    assert deferred_cached["status_projection_cache"]["hit"] is False
+    assert (
+        deferred_cached["status_projection_cache"]["miss_reason"]
+        == "goal_todo_projection_changed"
+    )
+    parity_fields = (
+        "should_run",
+        "decision",
+        "effective_action",
+        "selected_todo",
+        "todo_summary_projection",
+        "open_count",
+        "agent_todo_summary",
+    )
+    assert {field: deferred_cached.get(field) for field in parity_fields} == {
+        field: deferred_fresh.get(field) for field in parity_fields
+    }
+    assert deferred_cached["agent_todo_summary"]["deferred_count"] == 1
+
+    deferred_cache_rc, deferred_cache = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--write-projection-cache",
+        cwd=project,
+    )
+    assert deferred_cache_rc == 0, deferred_cache
+    resumed_rc, resumed = _run_cli(
+        registry_path,
+        runtime,
+        "todo",
+        "update",
+        "--goal-id",
+        GOAL_ID,
+        "--todo-id",
+        "todo_tail_39",
+        "--agent-id",
+        AGENT_ID,
+        "--status",
+        "open",
+        "--clear-resume-when",
+    )
+    assert resumed_rc == 0, resumed
+
+    resumed_cached_rc, resumed_cached = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--use-projection-cache",
+        cwd=project,
+    )
+    resumed_fresh_rc, resumed_fresh = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        cwd=project,
+    )
+    assert resumed_cached_rc == resumed_fresh_rc == 0, resumed_cached
+    assert resumed_cached["status_projection_cache"]["hit"] is False
+    assert (
+        resumed_cached["status_projection_cache"]["miss_reason"]
+        == "goal_todo_projection_changed"
+    )
+    assert {field: resumed_cached.get(field) for field in parity_fields} == {
+        field: resumed_fresh.get(field) for field in parity_fields
+    }
+    assert resumed_cached["agent_todo_summary"]["deferred_count"] == 0
+
+
 def test_scheduler_malformed_cached_todo_rebuilds_without_authority_write(
     tmp_path: Path,
 ) -> None:
