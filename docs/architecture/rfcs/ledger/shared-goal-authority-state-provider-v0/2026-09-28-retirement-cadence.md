@@ -308,6 +308,27 @@ This closes a per-database backup defect; whole-Goal multi-file quiescence,
 subsequent-write rollback, installed consumer recovery and D2 observation remain
 separate evidence requirements.
 
+The installed CLI continuity slice now has a single real-provider journey in
+`tests/control_plane/test_local_provider_settlement_journey.py`: canonical File
+→ SQLite → acknowledged Todo additions/updates/completion → fresh-process reads
+→ File. It compares the complete retained domain journal, original operation
+receipts and current Todo records, retries add/update/completion/spend without
+another business commit or debit, and rejects cutover while a task lease is
+active. An old backup matches only its retained prefix after new writes; it is
+not a rollback of the current head. A new wake still owes final-outcome replan
+when its checkpoint lacks a qualified path decision. Provider recovery must not
+erase that obligation or turn Todo completion into Goal acceptance.
+
+This closes the bounded CLI composition gap, not the entire installed product
+journey. The App's existing task-ownership editor migrates execution policy;
+it has no existing-Goal File/SQLite cutover interaction. The next companion
+belongs to the same TS migration owner: a path-free preview/apply transport,
+durable original-preview recovery after response loss/restart, explicit failures
+and separate selected-source readback in the existing Goal settings. Qualify it
+with the real packaged UI and backend, including pending projection/outbox and
+stopped/settled Host work. Legacy Markdown capture, isolated checkpoint import,
+whole-Goal recovery, D2 and release-default decisions remain independent gates.
+
 These are proposed engineering windows from a frozen candidate, not promised
 release dates. Run faults on disposable runtimes and detached verified copies;
 never kill/rewrite live Goals to make a test pass.
