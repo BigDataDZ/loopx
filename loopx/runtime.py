@@ -41,7 +41,11 @@ def archive_runtime_goal(
     execute: bool,
 ) -> dict[str, Any]:
     registry = load_registry(registry_path)
-    runtime_root = resolve_runtime_root(registry, runtime_root_override)
+    runtime_root = resolve_runtime_root(
+        registry,
+        runtime_root_override,
+        registry_path=registry_path,
+    )
     safe_goal_id = validate_goal_id_path_segment(goal_id)
     registered_ids = {str(goal.get("id")) for goal in registry_goals(registry)}
     registry_member = safe_goal_id in registered_ids
