@@ -454,7 +454,7 @@ Current source-path audit for the first convergence slice:
 | Execution fact | Existing owner / projection | Remaining boundary |
 |---|---|---|
 | Goal/Agent/Todo identity | Quota selection and receipt; envelope actor, selected Todo and signed settlement identity | Capture identity and mutation-time validation remain necessary; display identity is not an execution grant |
-| Full requirements | Interaction required reads; compact commands retained verbatim | Shared full Goal/Todo reads are proposed in #5794; neither a summary nor a source hash proves that a host read them |
+| Full requirements | Authoritative Agent-channel required reads; exact commands, ordering and hook/capability coordinates retained across quota and envelope | Shared Goal/acceptance/selected-work reads and one full exact Todo record are proposed together; neither a summary nor a source hash proves host adoption |
 | Capability refusal | Existing quota `capability_gate_v0`; compact boundary now retains exact `required`/`missing` arrays and historical source names | This repairs omitted facts, not readiness policy or capability activation |
 | Selection / claim / lease | Selected Todo, action portfolio and current owning transactions | Compact selected ownership is not a fresh lease; retain the captured source and revalidate at the owning mutation |
 | Replan / Goal closure | Replan action packet, contract capsule and vision audit | Full evidence remains on authorized detail paths; Todo completion is not Goal completion |
@@ -470,6 +470,19 @@ provider-failure and settlement cases remain covered separately, and do not
 qualify installed App convergence or model costs. Keep all three Todos below
 open until their own acceptance is met; this inventory is not blanket permission
 to delete the remaining Python IO adapters.
+
+The unified required-work context proposal adds whole Goal intent, enabled
+canonical acceptance and effective selected-work reads after final admission,
+then preserves their exact commands, ordering and hook/capability coordinates
+through signed envelopes and shipped prompt adapters. It uses one Agent-channel
+carrier, including an explicit empty list to suppress stale fallback reads.
+Exact Todo reads return one complete source record; inventory views remain
+bounded. Real legacy/File/SQLite CLI cases cover source loss, long requirement
+tails, quoted routes, admission refusal and signed-coordinate mutation. See
+[required work context](../../reference/required-work-context.md). Live model
+adoption, packaged App/Lark operation and overall context-efficiency acceptance
+remain separate qualification work; this stage does not change transport default
+or retire Python adapters with active callers.
 
 Remaining implementation Todos, in dependency order:
 
