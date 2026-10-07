@@ -38,6 +38,7 @@ MAX_REQUEST_BYTES = 2 * 1024 * 1024
 MAX_LOCAL_SNAPSHOT_BYTES = 64 * 1024 * 1024
 LOCAL_SNAPSHOT_METHODS = frozenset({
     "todo.context.page",
+    "work_item.context.project",
     "goal.checkpoint_read_context.resolve",
     "goal.checkpoint_read_context.commit",
     "goal.checkpoint_read_context.inspect_replay",
@@ -463,6 +464,12 @@ def _read_info(path: Path, *, fingerprint: str) -> dict[str, Any] | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except PermissionError as exc:
+        # On Windows, opening a directory as a file reports access denied.
+        # Defer that occupied-locator case to the managed server, which can
+        # publish the shared filesystem diagnostic through its startup envelope.
+        # Keep symlinks and genuinely unreadable metadata on the host-permission path.
+        if path.is_dir() and not path.is_symlink():
+            return None
         raise EffectRuntimeHostPermissionError() from exc
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         return None
@@ -898,7 +905,7 @@ def _start_runtime(*, fingerprint: str, info_path: Path) -> dict[str, Any]:
                     pass
                 continue
             try:
-                if time.time() - lock.stat().st_mtime > 10:
+                if holder_pid is None and time.time() - lock.stat().st_mtime > 10:
                     lock.unlink(missing_ok=True)
             except OSError:
                 pass

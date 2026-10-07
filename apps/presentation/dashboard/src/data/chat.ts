@@ -1144,7 +1144,8 @@ export type DelegationReadback = {
   status: string; worker_active: boolean; recovery_required: boolean;
   artifacts?: Array<{ref: string; sha256: string; text: string}>; error?: string;
   validation?: {source: "goal_acceptance" | "todo_validation"; basis_sha256: string;
-    check_count: number; pinned_file_count: number};
+    check_count: number; pinned_file_count: number; checked_at?: string;
+    output_versions?: Array<{ref: string; sha256: string}>};
   dependencies?: DelegationDependency[]; adoptions?: DelegationAdoption[];
 };
 export function readLoopXTeamWork(sessionId: string, operationId: string) {
@@ -2425,4 +2426,25 @@ export async function changePrivateAgentTarget(bindingId: string, revision: numb
   return privateConversationsSchema.parse(await requestJson<unknown>("/api/chat/lark/private-conversations/agent-targets", {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({binding_id: bindingId, revision, ...target}),
   }));
+}
+
+// Display validation only; finding status semantics remain owned by Explore.
+const exploreResultPageSchema = z.object({
+  ok: z.literal(true), goal_id: z.string(), total: z.number().int().nonnegative(),
+  next_cursor: z.string().nullable(),
+  items: z.array(z.object({
+    finding_id: z.string(), finding: z.string(), summary: z.string(), status: z.string(),
+    node_id: z.string(), question: z.string(), scope: z.string(), agent_id: z.string(),
+    evidence_refs: z.array(z.string()), last_updated_at: z.string(),
+    linked_todos: z.array(z.object({
+      todo_id: z.string(), text: z.string(), status: z.string(), claimed_by: z.string(),
+    })),
+  })),
+});
+export type ExploreResultPage = z.infer<typeof exploreResultPageSchema>;
+export async function fetchExploreResults(goalId: string, cursor?: string) {
+  const query = new URLSearchParams({goal_id: goalId, ...(cursor ? {cursor} : {})});
+  const page = exploreResultPageSchema.parse(await requestJson<unknown>(`/api/chat/explore-results?${query}`));
+  if (page.goal_id !== goalId) throw new Error("Explore result Goal mismatch");
+  return page;
 }

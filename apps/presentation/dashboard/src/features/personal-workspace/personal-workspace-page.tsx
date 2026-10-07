@@ -28,6 +28,7 @@ import {
   setupGoalChannel,
   stewardPrompts,
   transitionTypedAction,
+  typedActionProposalSchema,
   type GoalRepositoryContext,
   type LarkGoalConnection,
   type ManagerChannelBinding,
@@ -39,7 +40,9 @@ import { useTypedActionReadback } from "../../data/use-typed-action-readback";
 import { ChannelHeader } from "./channel-header";
 import { GoalLoopXMode } from "./goal-loopx-mode";
 import { GoalTeamResults } from "./goal-team-results";
+import {GoalExploreResults} from "./goal-explore-results";
 import { GoalManagedResults } from "./goal-managed-results";
+import { GoalResearchResults, type GoalResearchApi } from "./goal-research-results";
 import { sendLoopXMessage, type LoopXModeSnapshot } from "../../data/chat";
 import { MessageActivity } from "./message-activity";
 import { ChannelTimeline } from "./channel-timeline";
@@ -56,6 +59,7 @@ import type {
   PersonalWorkspaceCallbacks,
   WorkspaceAgentOption,
   WorkspaceActionPreview,
+  WorkspaceAttention,
   WorkspaceActionPreviewRequest,
   WorkspaceDrawerSelection,
   WorkspaceGoal,
@@ -204,6 +208,7 @@ function GoalOutputsView({
   teamSessionId,
   goalId,
   localResults,
+  researchApi,
 }: {
   active: boolean;
   items: Array<Extract<WorkspaceTimelineItem, { kind: "output" }>>;
@@ -212,6 +217,7 @@ function GoalOutputsView({
   teamSessionId?: string;
   goalId: string;
   localResults: boolean;
+  researchApi?: GoalResearchApi;
 }) {
   const { locale, t } = useWorkspaceI18n();
   const [teamSnapshot, setTeamSnapshot] = useState<LoopXModeSnapshot | null>(null);
@@ -263,6 +269,8 @@ function GoalOutputsView({
         ))}
         {localResults ? <GoalManagedResults goalId={goalId} zh={locale === "zh-CN"} /> : null}
       </section>
+      {active && localResults ? <GoalExploreResults key={goalId} goalId={goalId} zh={locale === "zh-CN"} /> : null}
+      {active && researchApi ? <GoalResearchResults key={`${goalId}:${researchApi.indexUrl}:${researchApi.detailUrl}`} goalId={goalId} api={researchApi} zh={locale === "zh-CN"} /> : null}
       {active && teamSessionId && !teamSnapshot && !teamError ? <p className="personal-object-list-state" role="status">{t("files.checkingTeam")}</p> : null}
       {active && teamSessionId && teamError ? <p className="personal-object-list-state is-error" role="alert">{t("files.teamLoadFailed")} <button type="button" onClick={() => setTeamRefresh(value => value + 1)}>{t("startup.retry")}</button></p> : null}
       {active && teamConfigured && teamSessionId ? <GoalTeamResults sessionId={teamSessionId} zh={locale === "zh-CN"} refreshKey={JSON.stringify(teamSnapshot?.deliveries ?? [])} /> : null}
@@ -686,7 +694,8 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
         : operationFrame?.kind === "confirmation" && !operationFrame.confirmationDeliveryVerified
         ? t("proposal.impact.operationDeliveryPending") : t("proposal.impact.operation")
       : proposal.action_kind === "team.plan"
-      ? proposal.status === "applied" ? t("proposal.teamPlan.assignedHint") : t("proposal.impact.teamPlan")
+      ? proposal.status === "failed" || proposal.status === "stale" ? ""
+        : proposal.status === "applied" ? t("proposal.teamPlan.assignedHint") : t("proposal.impact.teamPlan")
       : decision ? proposal.status === "applied" ? "" : t(`proposal.impact.gate.${decision}`)
       : proposal.action_kind === "goal.create"
       ? t("proposal.impact.goalCreate")
@@ -791,6 +800,7 @@ export function PersonalWorkspacePage({
   managerChannelBinding,
   managerRuntime,
   model,
+  researchApi,
   readOnly = false,
   typedActionsRevision = 0,
   selectedAgentId: controlledAgentId,
@@ -813,6 +823,7 @@ export function PersonalWorkspacePage({
   managerChannelBinding?: ManagerChannelBinding | null;
   managerRuntime?: ManagerRuntimeSessionReadback | null;
   model: WorkspaceModel;
+  researchApi?: GoalResearchApi;
   ownerLabel?: string;
   readOnly?: boolean;
   // Bumped when typed previews were stored outside this page, so the page
@@ -908,6 +919,22 @@ export function PersonalWorkspacePage({
   function suggestReply(text: string) {
     setComposer(composer ? `${composer}\n${text}` : text);
     composerRef.current?.focus();
+  }
+  // A draft for another Goal waits until that Goal's composer is the visible one.
+  const [composerPrefill, setComposerPrefill] = useState<{ goalId: string; text: string } | null>(null);
+  useEffect(() => {
+    if (!composerPrefill || composerPrefill.goalId !== selectedGoalId) return;
+    setComposerPrefill(null);
+    suggestReply(composerPrefill.text);
+  }, [composerPrefill, selectedGoalId]);
+  function draftAttentionMessage(attention: WorkspaceAttention, intent: "reply" | "explain") {
+    const task = attention.text.length > 120 ? `${attention.text.slice(0, 119)}…` : attention.text;
+    const key = intent === "reply" ? "drawer.attentionReplyPrefill"
+      : attention.details?.interaction === "decision" ? "drawer.decisionExplainPrefill" : "drawer.attentionExplainPrefill";
+    if (attention.goalId !== selectedGoalId) selectGoal(attention.goalId, "chat");
+    openGoalConversation();
+    setSelection(null);
+    setComposerPrefill({ goalId: attention.goalId, text: t(key, { task }) });
   }
   // The steward prompt set is owned by the client model; the quick-prompt row
   // reuses it so one affordance answers "what now / what blocks / what is proven".
@@ -1179,7 +1206,7 @@ export function PersonalWorkspacePage({
       setManagerChannelProposalIds([]);
       return;
     }
-    if (!actionReadback.data) return;
+    if (!actionReadback.isSuccess || !actionReadback.data) return;
     const knownGoals = new Set(workspaceGoals.map(goal => goal.goalId));
     const stored = actionReadback.data.filter(proposal => selectedGoalId || proposal.context.kind === "manager"
       || (proposal.action_kind === "operation.execute" && knownGoals.has(String(proposal.normalized_parameters.goal_id))));
@@ -1203,7 +1230,7 @@ export function PersonalWorkspacePage({
     if (!selectedGoalId) setManagerChannelProposalIds(stored.filter(proposal => proposal.context.kind === "manager"
       || proposal.action_kind === "operation.execute")
       .map(proposal => proposal.proposal_id));
-  }, [readOnly, selectedGoalId, actionReadback.data, actionReadback.dataUpdatedAt, t, workspaceGoals]);
+  }, [readOnly, selectedGoalId, actionReadback.data, actionReadback.dataUpdatedAt, actionReadback.isSuccess, t, workspaceGoals]);
 
   const homeOperations = Object.values(proposals).filter(proposal => proposal.actionKind === "operation.execute"
     && proposal.reviewPlan?.operationFrame?.kind === "confirmation" && proposal.status === "gated");
@@ -1415,11 +1442,9 @@ export function PersonalWorkspacePage({
       presentation?: "drawer" | "feedback";
     } = {},
   ) {
-    // A failed/uncertain assignment retries its original authorized operation.
-    // The server still revalidates admission or recovers its immutable receipt.
-    const retryTeamAssignment = proposal.actionKind === "team.plan" && proposal.status === "error"
-      && ["apply_failed", "readback_unverified"].includes(proposal.reviewPlan?.reason ?? "");
-    if (proposal.reviewPlan && !proposal.reviewPlan.canApply && !retryTeamAssignment) return;
+    if (proposal.reviewPlan && !proposal.reviewPlan.canApply) return;
+    if (proposal.actionKind === "team.plan" && proposal.status === "error"
+      && !proposal.reviewPlan?.retryOriginal) return;
     const showDrawer = options.presentation !== "feedback";
     const inferredLifecycleChange = proposal.actionKind === "goal.lifecycle"
       && proposal.goalId
@@ -1482,6 +1507,8 @@ export function PersonalWorkspacePage({
         setActionFeedback(
           result.proposal.status === "stale"
             ? t("feedback.stale")
+            : applied.actionKind === "team.plan" && applied.status === "error" && !applied.reviewPlan?.canApply
+              ? t("proposal.teamPlan.retryUnavailable")
             : t(`actionReview.${applied.reviewPlan!.reason}`),
         );
         return;
@@ -1510,7 +1537,9 @@ export function PersonalWorkspacePage({
         const gate = rawGate && typeof rawGate === "object" ? rawGate as Record<string, unknown> : {};
         const gated = {
           ...proposal,
-          reviewPlan: proposal.reviewPlan ? { ...proposal.reviewPlan, interaction: "gated" as const, reason: "authority_gate" as const, canApply: false as const } : undefined,
+          reviewPlan: proposal.reviewPlan ? { ...proposal.reviewPlan, retryOriginal: undefined, interaction: "gated" as const, reason: "authority_gate" as const, canApply: false as const } : undefined,
+          impact: proposal.reviewPlan?.retryOriginal ? "" : proposal.impact,
+          primaryLabel: proposal.reviewPlan?.retryOriginal ? undefined : proposal.primaryLabel,
           gate: {
             kind: String(gate.kind ?? "protected_action"),
             nextAction: typeof gate.next_action === "string" ? gate.next_action : undefined,
@@ -1531,9 +1560,34 @@ export function PersonalWorkspacePage({
       }
       const stale = error instanceof ChatApiError && isStaleActionFailure(error.payload);
       const readbackMismatch = error instanceof ChatApiError && error.payload.error_code === "action_response_mismatch";
+      // Failed apply responses may carry the stored proposal. Otherwise read
+      // it back: only the typed owner can authorize recovery of this identity.
+      const returned = error instanceof ChatApiError
+        ? typedActionProposalSchema.safeParse(error.payload.proposal) : null;
+      let stored = returned?.success ? returned.data : undefined;
+      if (!stored && proposal.actionKind === "team.plan" && !readbackMismatch) {
+        const readback = await actionReadback.refetch();
+        // Query errors retain cached data; it cannot certify this attempt.
+        if (readback.isSuccess) stored = readback.data?.find(item => item.proposal_id === proposal.previewId);
+      }
+      if (stored?.proposal_id === proposal.previewId && stored.action_kind === proposal.actionKind
+        && (proposal.actionKind !== "team.plan" || stored.normalized_parameters.goal_id === proposal.goalId)) {
+        await actionReadback.acceptProposal(stored);
+        const observed = workspaceProposal(stored, t);
+        const reconciled = { ...observed, errorMessage: observed.status === "error"
+          ? error instanceof Error ? error.message : String(error) : undefined };
+        setProposals(current => ({ ...current, [proposal.previewId]: reconciled }));
+        setSelection({ item: reconciled, kind: "proposal" });
+        setActionFeedback(stored.status === "stale" ? t("feedback.stale")
+          : observed.reviewPlan?.interaction === "completed" ? t("feedback.completed", { title: observed.title })
+          : t("feedback.executionFailed", { error: error instanceof Error ? error.message : String(error) }));
+        return;
+      }
       const failed = {
         ...proposal,
-        reviewPlan: proposal.reviewPlan ? { ...proposal.reviewPlan, interaction: stale ? "refresh" as const : "repair" as const, reason: readbackMismatch ? "readback_unverified" as const : stale ? "stale_proposal" as const : "apply_failed" as const, canApply: false as const } : undefined,
+        reviewPlan: proposal.reviewPlan ? { ...proposal.reviewPlan, retryOriginal: undefined, interaction: stale ? "refresh" as const : "repair" as const, reason: readbackMismatch ? "readback_unverified" as const : stale ? "stale_proposal" as const : "apply_failed" as const, canApply: false as const } : undefined,
+        impact: proposal.reviewPlan?.retryOriginal ? "" : proposal.impact,
+        primaryLabel: proposal.reviewPlan?.retryOriginal ? undefined : proposal.primaryLabel,
         errorMessage: error instanceof Error ? error.message : String(error),
         status: (stale ? "stale" : "error") as "stale" | "error",
       };
@@ -1577,6 +1631,8 @@ export function PersonalWorkspacePage({
       callbacks.onOpenOutput?.(output);
     },
     onApplyProposal: applyProposal,
+    onExplainDecision: callbacks.onExplainDecision ?? ((attention) => draftAttentionMessage(attention, "explain")),
+    onReplyToAttention: callbacks.onReplyToAttention ?? draftAttentionMessage,
     onCancelProposal: async (proposal) => {
       setSelection(null);
       setProposals((current) => {
@@ -1851,7 +1907,7 @@ export function PersonalWorkspacePage({
       notice={serviceNotice}
       drawer={drawerSelection ? <ContextDrawer agents={agents} attentionHistory={model.attentionHistory ?? model.userTodos} onSelectAttention={(item) => setSelection({ kind: "attention", item })} callbacks={effectiveDrawerCallbacks} goalNotifications={model.goalNotifications ?? []} goals={workspaceGoals} inspectorExpanded={taskInspectorExpanded} larkConnections={readOnly ? [] : larkConnections}
         todoReadbackUnavailable={drawerSelection.kind === "todo" && !workspaceGoals.some((goal) =>
-          goal.goalId === drawerSelection.item.goalId && (drawerSelection.item.done
+          goal.goalId === drawerSelection.item.goalId && (drawerSelection.item.detailMode === "request_only" || drawerSelection.item.done
             || goal.agentTodos.some((todo) => todo.todoId === drawerSelection.item.todoId)))}
         proposalReadbackUnavailable={actionReadback.isError || !actionReadback.data
           || (drawerSelection.kind === "proposal" && !actionReadback.data.some(proposal => proposal.proposal_id === drawerSelection.item.previewId))}
@@ -1990,7 +2046,8 @@ export function PersonalWorkspacePage({
                     reportState={model.periodicReports}
                     teamSessionId={!readOnly && selectedAgentId === "codex" ? conversationSessionId : undefined}
                     goalId={selectedGoal.goalId}
-                    localResults={!readOnly && selectedGoalTab === "files"}
+            localResults={!readOnly && selectedGoalTab === "files"}
+            researchApi={researchApi}
                   />),
                   chat: (<>
                     {selectedGoal && activeSessionRun?.goalId === selectedGoal.goalId ? (

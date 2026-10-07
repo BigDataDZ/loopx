@@ -294,11 +294,66 @@ new operation family; existing complete/supersede receipt identities remain vali
 
 ## Migration boundary
 
-Unpromoted Goals retain their existing Python Markdown/event adapters. The
+Unpromoted Goals retain their existing Python Markdown adapters. The
 shared host validation executor and failure projection replace duplicated
 transport plumbing; the TS edit decoder/materializer is no longer owned only
 by the ordinary update transaction. Permanent rendering and private command
 execution still have real Python callers and are not retirement candidates.
+
+Durable text publication is owned by
+`control_plane/runtime/document_io.py`, independently of Todo editing.
+`atomic_write_state_text`, `verify_state_text_durable` and
+`fsync_state_directory` keep their existing locking precondition, exact UTF-8
+newlines, permissions, exclusive create, atomic replace and durability barriers.
+Canonical projections and validator declarations, registry/session publication,
+supervisor logs, feedback, migration and team-plan adapters use that same Host IO
+owner. The old definitions in `todos/active_state_editing.py` are removed;
+its live source editing/read helpers remain. Publication or readback failure
+still propagates to the caller's existing recovery contract. This changes no
+provider, default, format, authority policy or supported legacy upgrade route.
+
+永久文本落盘由 `control_plane/runtime/document_io.py` 负责，解除与 Todo 编辑
+模块的依赖。三个原函数保留锁前提、UTF-8 换行字节、权限、排他创建、原子替换和
+文件／目录持久化屏障；投影、验证声明、registry/session、supervisor 日志、
+feedback、迁移和 team-plan 调用方复用同一 Host IO owner。旧编辑模块只删除这
+三个定义，仍活跃的源编辑／读取函数保留。故障仍进入原调用方恢复契约，不切换
+provider、默认值、格式或权威策略，也不强制旧 Goal 升级。
+
+Canonical Todo creation, update, completion, supersession and archive do not
+import the Markdown line writer or source Todo capture producers during CLI
+registration. Bootstrap loads capture producers only for a source-state write;
+canonical creation and original-operation recovery do not need them. The source
+adapter loads them only when an unpromoted operation needs them. Explicit historic imports
+from `loopx.todos` still resolve to the same functions in
+`control_plane.todos.line_update`; they do not create another decision owner.
+Provider failure still rejects the canonical operation without a source write.
+
+The absence regression runs real File/SQLite new-Goal creation and Todo
+lifecycle commands with the line writer and four source Todo capture producer
+functions physically removed from a disposable package. Prose write guards and
+lease capture evidence remain in their owning adapter and keep their live callers.
+Original creation recovery preserves later work when the display is
+missing and device defaults change; an unavailable selected provider requires
+restoration rather than rebuilding source authority. It qualifies that caller
+boundary, not deletion of the supported Markdown writer, backup readers or
+receipt recovery. Those paths retain their own last-caller migration exits.
+The same absence check covers admitted hard-lease work through material vision
+writeback, one quota settlement and exact retry. Missing leases and provider
+outages still reject; rebuilding the display does not make it fallback authority.
+
+canonical Todo 创建、更新、完成、替代和归档不再在 CLI 注册时导入 Markdown
+行写入器或旧源 Todo capture producer；bootstrap 仅在源状态写入时加载 capture，
+canonical 创建和原操作恢复不依赖它。未迁移操作实际需要旧路径时才加载。
+`loopx.todos` 的历史显式导入仍指向
+同一实现，不新增决策 owner。provider 失效仍拒绝 canonical 写入，不回退到旧源。
+缺失模块回归在一次性包中物理移除行写入器及四个旧源 Todo capture 函数，并运行真实 File/SQLite 新 Goal 创建与
+Todo 生命周期。显示源缺失且设备默认值改变后，原创建操作恢复仍保留后续工作；所选
+provider 不可用时要求恢复，不重建旧源权威。
+同一 adapter 中仍有真实调用方的 prose 写入边界和 lease capture evidence 保留。
+相同缺失模块检查覆盖 hard-lease 工作的准入、实质 vision 写回、一次额度结算与原
+Turn 重试；缺租约和 provider 失效仍拒绝，重建显示不会使它成为回退权威。
+这验证调用方隔离；仍受支持的 Markdown writer、备份读取和原回执恢复保留各自的
+迁移与最后调用方退役条件。
 
 This closes the User completion-update caller within TS T1/T2 and local-default
 L2. It does not close every Monitor/event caller, executor-held effect fencing,
@@ -349,3 +404,32 @@ publication recovery, not cross-host distribution of private validation commands
 私有声明先持久保存，权威摘要再引用它；没有被权威 Todo 引用的内容不会成为验证要求。
 被选中内容损坏时仍拒绝执行。旧 sidecar 可继续读取，历史创建回执不能回滚新验证器。
 此改动不提供私有验证命令的跨主机分发，也不会自动清理未引用内容。
+
+## Completion-state crossing retirement
+
+Completion and terminal update already compose `completion_state.ts` inside
+their typed transaction. The following internal crossings have no production,
+dynamic-handler or packaged CLI caller after that adoption:
+
+| Retired entry | Last consumer / retained owner |
+| --- | --- |
+| Python `require_todo_completion_continuation` | No caller; live metadata decoding retains `require_todo_completion_metadata` |
+| Python `completion_continuation_for_write` | Facade-only test; completion and update call the TS state owner directly |
+| `todo.completion_state.continuation_for_write` RPC and `selectTodoCompletionContinuation` carrier | Retired facade and characterization; `completionContinuationForWrite` remains in the whole TS decisions |
+
+The retired RPC rejects unsupported-method requests. Continuation selection,
+contradictory-intent rejection and historical terminal recovery remain covered
+through the production owner. Python normalization/cache, import-compatible
+enums, original receipt values, Markdown projection, backup readers and live
+Host IO remain. This removes neither the Markdown writer nor shadow capture,
+and changes no provider default. File/SQLite CLI completion and settlement
+recovery are the real-path checks; installation qualification also runs those
+paths from a wheel with the retired entries absent. Reverting this code restores
+the internal crossing without converting data or rewriting receipts.
+
+完成与 terminal update 已在现有 TS 事务中组合完成状态规则。本批只退役两个无生产
+调用方的 Python 入口及其不再使用的 RPC carrier；选择 continuation、拒绝矛盾意图
+和历史收尾恢复仍由原 TS owner 承担。Python 编解码/cache、兼容枚举、原回执、
+Markdown 投影、备份读取及活跃 Host IO 保留。真实 File/SQLite CLI 和删除旧入口后的
+wheel 路径验证完成与结算恢复；本批不删除 Markdown writer/shadow，也不改变默认
+provider。代码回滚不需要转换数据或重写回执。

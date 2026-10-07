@@ -296,13 +296,22 @@ Digest equality or a reference alone authenticates nothing: the output fixes
 
 A processed ineligible assessment exits 0; inspect eligibility and reasons.
 Malformed input exits 1 with an error packet. Existing reducers/replays and
-numeric accuracy keep their original bytes and behavior. This is an optional
-direct CLI/API prerequisite; managed protocol dispatch, Lusen immutable input
-version/pin integration, App/Lark and financial utility remain separate stages.
+numeric accuracy keep their original bytes and behavior. Extension 0.8.5 routes
+the same input version through the no-argument stdin provider entrypoint used
+by `loopx extension run`. Direct and managed assessment use the same reducer;
+ineligible results remain processed results rather than transport failures.
+Lusen immutable input version/pin integration, App/Lark and financial utility
+remain separate stages.
 No catalog entry, Core authority, default installation or source call is added.
 Consumers must qualify the exact new API/schema/version pair; restore their
 original inputs, pins and binary pair to opt out or roll back, rather than
-deleting declarations from frozen evidence. Old binaries do not supply this API.
+deleting declarations from frozen evidence. Binaries before 0.8.3 do not supply
+this API.
+
+The 0.8.3 API/direct CLI already supplies this assessment, but its managed
+entrypoint does not route period inputs. Keep the original binary, manifest
+and input pins together when reverting to that version; a successful doctor
+alone does not qualify managed period dispatch.
 
 中文：新增期间 API/CLI 分开编码边界与父审经济期间声明，原字面值和时区缺证
 保持。事件到收益 duration 的映射必须显式提供，日期相等或精度已知不能填补。
@@ -310,6 +319,53 @@ deleting declarations from frozen evidence. Old binaries do not supply this API.
 或金融/交易准入。当前经济检查限定有限 duration，instant 不自动变成 duration。
 源 context/bytes/父审、原 payload/pin 与撤回/时点门禁沿既有调用者 owner；Lusen
 成对协议、App/Lark、发布和效用分别验收，旧回放不随升级改写。
+
+### Disclosure identity and presentation scope (extension 0.8.6)
+
+`finance_period_comparison_input_v2` extends the existing `assess-period`
+operation. Its exact fields are `schema_version`, `left`, `right`,
+`period_intent` and `basis_bridge`. Each operand retains the v1 period fields
+and adds `statement_basis`: null, or exactly `subject_ref`, `metric_ref`,
+`filing_ref`, `version_ref`, `scope_ref`, `evidence_ref`, `unit` and `value`.
+References are bounded nonempty strings or explicit nulls. Unit and bounded
+signed numeric strings follow the cash reconciliation rules; null prevents
+comparison eligibility. Source digest belongs to the original period operand;
+event metadata cannot substitute for source content.
+
+With `basis_bridge: null`, declared subjects, metrics, units, sources,
+filings, versions and scopes must match. Matching periods or labels alone do
+not join disclosure bases. Different bases require a parent-reviewed bridge
+with exactly `evidence_ref`, `target_scope_ref`, `target_component_refs`,
+`left` and `right`. Each side contains its operand's exact `source_digest`,
+`filing_ref`, `version_ref` and `scope_ref`, a `coverage_evidence_ref`, and
+`components`. Components have exactly `component_ref` and signed `value`;
+lists contain 1..32 unique references. All selected targets must exist on
+both sides. Target meanings and complete partition coverage remain parent
+declarations; a sum cannot authenticate them.
+
+Each side's full signed component sum must equal its original reported
+value. Nonzero residuals, missing values/coverage or changed pins hold the
+relation. The selected subset projects both declarations to the explicit
+target scope without replacing the original aggregate. Selected amounts need
+not equal: different periods or revisions may have different values. No unit
+conversion, residual balancing, precision recovery or clock inference is
+performed. Bounded Decimal arithmetic reports exact lexical sums; precision
+assurance remains unknown.
+
+The result `finance_period_comparison_assessment_v2` retains the v1-owned
+`period_evidence_eligible` economic-period axis. Additional
+`statement_basis_assessment` reports `match`, `bridged` or `unproven`,
+original bases, decomposition residuals and reason codes. Combined
+`comparison_evidence_eligible` requires both axes. It does not authenticate
+sources, assess lifecycle/PIT, admit financial evidence or authorize trading.
+Original v1 input/output and persisted clocks remain unchanged. Malformed
+closed shapes fail; missing declarations remain explicit holds.
+
+This vocabulary is local to the existing Finance extension. No Core authority,
+catalog entry, provider installation or account effect is added. Real source
+consumers own extraction, revision chains, context/accuracy and first-public
+evidence. App/Lark presentation and independent provider adoption remain
+companion acceptance stages.
 
 ### Producer-declared numeric accuracy (extension 0.8.2)
 

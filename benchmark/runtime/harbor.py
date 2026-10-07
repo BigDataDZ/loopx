@@ -56,8 +56,9 @@ class BenchmarkCodex(CodexOffline):
         scheduler_timeout_sec=5080,
         replan_after_todos=None,
         replan_after_turns=None,
-        task_entry="seeded-todo",
+        task_entry=None,
         planning_timeout_sec=300,
+        turn_envelope=False,
         **kwargs,
     ):
         if isinstance(validation_command, str):
@@ -69,6 +70,7 @@ class BenchmarkCodex(CodexOffline):
             float(scheduler_timeout_sec) - 160 if turn_timeout_sec is None else float(turn_timeout_sec),
             validation_command if validation_command is not None else (),
             task_entry,
+            turn_envelope,
         )
         self.planning_timeout = float(planning_timeout_sec)
         if not 0 < self.planning_timeout < float("inf"):
@@ -90,6 +92,7 @@ class BenchmarkCodex(CodexOffline):
         self.replan_after_todos = int(3 if replan_after_todos is None else replan_after_todos)
         if not 1 <= self.replan_after_todos <= 5:
             raise ValueError("replan_after_todos must be between 1 and 5")
+        self._task_path = "/usr/local/bin:/usr/bin:/bin"
         self._phase_number = 0
         self._seeded_todo_id: str | None = None
         super().__init__(*args, **kwargs)
@@ -145,7 +148,7 @@ class BenchmarkCodex(CodexOffline):
         return {
             "HOME": _PROFILE_HOME,
             "CODEX_HOME": _SHARED_CODEX_HOME,
-            "PATH": f"{_NODE}/bin:{_PROFILE}/bin:/usr/local/bin:/usr/bin:/bin",
+            "PATH": f"{_NODE}/bin:{_PROFILE}/bin:{self._task_path}",
             "LOOPX_PYTHON": f"{_PYTHON}/bin/python3",
             "LOOPX_PROMOTE_DEFAULT": "1",
             "LOOPX_INSTALL_CANARY": "0",
@@ -161,11 +164,26 @@ class BenchmarkCodex(CodexOffline):
             "LOOPX_INSTALL_CLAUDE": "0",
             "LOOPX_SKILL_DEDUPE_OTHER_ROOT": "0",
             # Codex tool calls use `bash -lc`, whose login profile may replace
-            # PATH. BASH_ENV restores the staged Node for LoopX subprocesses.
+            # PATH. BASH_ENV restores staged tools and the task image toolchain.
             "BASH_ENV": _BASH_ENV,
         }
 
+    def _shell_path_restore(self) -> str:
+        # Keep login-profile additions after the pinned runtime and image tools.
+        path = (self._profile_env()["PATH"] if self.execution.uses_loopx
+                else self._task_path)
+        return f'export PATH={shlex.quote(path)}:"$PATH"'
+
+    async def _capture_task_path(self, environment: BaseEnvironment) -> None:
+        # Read inside the task container, before applying the isolated profile.
+        # Never import the operator host PATH or the rest of the task environment.
+        task_path = await environment.exec(command='printf "%s" "$PATH"', timeout_sec=30)
+        if task_path.return_code or not task_path.stdout:
+            raise RuntimeError("Could not read the task container PATH before installation")
+        self._task_path = task_path.stdout
+
     async def install(self, environment: BaseEnvironment) -> None:
+        await self._capture_task_path(environment)
         await super().install(environment)
 
         loopx_src = Path(os.environ["LOOPX_SRC_DIR"]).resolve()
@@ -189,7 +207,7 @@ class BenchmarkCodex(CodexOffline):
         await self.exec_as_root(
             environment,
             command=(
-                f"printf '%s\\n' 'export PATH={_NODE}/bin:$PATH' > {_BASH_ENV}; "
+                f"printf '%s\\n' {shlex.quote(self._shell_path_restore())} > {_BASH_ENV}; "
                 f"chmod 0644 {_BASH_ENV}; "
                 f"find {_SRC} -maxdepth 2 \\( -name '*.egg-info' -o "
                 f"-name '*.dist-info' \\) -exec rm -rf {{}} +; "
@@ -249,6 +267,7 @@ class BenchmarkCodex(CodexOffline):
             "execution_mode": self.execution.mode,
             "iteration_context": self.execution.context,
             "task_entry": self.execution.task_entry,
+            **({"turn_envelope": True} if self.execution.turn_envelope else {}),
             "home_scope": "trial",
             "login_shell_node_path": _BASH_ENV,
             "scheduler_terminal_packet_compatibility": True,
@@ -413,9 +432,9 @@ class BenchmarkCodex(CodexOffline):
 
     async def _seed_phase(self, environment: BaseEnvironment, *, cwd: str) -> None:
         text = (
-            f"[P0] Execute benchmark phase {self._phase_number}. Read the exact "
-            f"current task from {self._task_document}; inspect the workspace, implement and "
-            "validate it."
+            f"[P0] Complete the task in {self._task_document}. Inspect the workspace, "
+            "implement and validate against the task's full requirements and acceptance "
+            "criteria. Keep unmet requirements explicit when judging task completion."
         )
         if self._seeded_todo_id:
             listed = await self._loopx(environment, [
@@ -462,7 +481,7 @@ class BenchmarkCodex(CodexOffline):
     def _worker_env(self, *, cwd: str) -> dict[str, str]:
         env = self._profile_env()
         if not self.execution.uses_loopx:
-            env["PATH"] = "/usr/local/bin:/usr/bin:/bin"
+            env["PATH"] = self._task_path
         env.update(
             {
                 "PYTHONPATH": _SRC,
@@ -478,6 +497,7 @@ class BenchmarkCodex(CodexOffline):
                 "LOOPX_SHARED_SKILLS": _SHARED_SKILLS,
                 "LOOPX_EXECUTION_MODE": self.execution.mode,
                 "LOOPX_TASK_ENTRY": self.execution.task_entry,
+                **({"LOOPX_TURN_ENVELOPE": "1"} if self.execution.turn_envelope else {}),
                 "LOOPX_ITERATION_CONTEXT": self.execution.context,
                 "LOOPX_CODEX_SANDBOX": self.execution.sandbox,
                 "LOOPX_VALIDATION_COMMAND_JSON": json.dumps(
@@ -585,6 +605,7 @@ class BenchmarkCodex(CodexOffline):
             "execution_mode": self.execution.mode,
             "iteration_context": self.execution.context,
             "task_entry": self.execution.task_entry,
+            **({"turn_envelope": True} if self.execution.turn_envelope else {}),
             "home_scope": "trial",
             **self._replan_receipt(),
             "benchmark_phase": self._phase_number,

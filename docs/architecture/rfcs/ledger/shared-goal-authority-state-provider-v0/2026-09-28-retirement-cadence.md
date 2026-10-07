@@ -49,6 +49,26 @@ public CLI/import or serialized contracts. Retain public behavior tests; remove
 only characterization scaffolding whose retired implementation has no consumer.
 Deletion is code retirement, not deletion of users' state, receipts or backups.
 
+### Permanent document IO separation
+
+The durable text effects formerly defined in `todos/active_state_editing.py`
+now live unchanged in `runtime/document_io.py`. This is retained Python Host IO,
+not a new semantic owner or a Python-retirement count. The caller inventory is:
+
+| Caller family | Retained obligation |
+| --- | --- |
+| Canonical Todo projection, completion validation store, team plan | Complete document/declaration publication, exclusive rebuild and durable retry; authority decisions remain typed |
+| Project registry, source-session registration/registry/Turn effects, supervisor log | Atomic publication and file/directory durability with original identity/retry contracts |
+| Bootstrap, runtime shadow writer, feedback, legacy state migration | Existing source/prose effects and upgrade recovery; supported source writers remain reachable |
+
+Failure injection targets the new owner, including the embedded real recovery
+probe. Real File/SQLite projection/replay and source writer tests retain their
+authority, crash and no-duplicate-effect assertions. Removing the old three
+definitions does not remove the editor's live read/edit helpers. Reverting this
+package changes code ownership only, without a state conversion. Last source
+writer/outbox exits, installed adoption, D2 and release-default qualification
+remain separate acceptance boundaries.
+
 ### Merged T4 slice: unused Python lease/handoff facades
 
 The caller audit at `e240730ec` led to #5395, merged at `8474c8d86`.
@@ -62,15 +82,46 @@ default-entry adoption.
 | `task_lease.acquire.decide`, `task_lease.lifecycle.decide`, `coordination.handoff_mode.plan` RPC registrations | Only those retired facades / handler tests; native transactions call the same typed rules directly | Obsolete private RPCs now reject unsupported methods. Keep `task_lease.owner_eligibility` and write-scope overlap: actual Python callers remain. |
 | Lease-only `local_snapshot.py` normalization and error projection | No remaining caller; native executors own lease facts and errors | Keep `todo_snapshot_from_mapping`, used by live Todo mutation authorization. No store, receipt, backup or migration reader is removed. |
 
-`authority_core.py` is still a live Todo bridge. `LeaseAction` and
-`LeaseModeGateCommand` also remain because the semantic-vocabulary registry
-explicitly retains that input contract until its M4 review. This slice does not
-lower semantic coverage floors to discard a declared compatibility obligation.
+`authority_core.py` remains a live Todo bridge. At the #5395 boundary,
+`LeaseAction` / `LeaseModeGateCommand` remained registered until M4 review.
+The bounded M4 package now retires that unused private input and its union,
+with a regrowth/import guard and explicit internal import incompatibility.
+The valuable native lifecycle subset proof is rehomed to its actual TS request
+owner; the 26/51/9 coverage floors and all remaining budgets stay unchanged.
+Installed File/SQLite lease/recovery tests run with the old input truly absent.
+Restore the previous code package to recover private imports, without a state
+conversion. Public lease transactions, source writers/outbox, legacy policy,
+historical backup/format/receipt readers and permanent Host IO remain. This
+is a last-caller slice, not whole C1/M4, D2 or release-default completion.
 Old facade-only tests retired with their implementation; public/native behavior
 tests remain. Reverting this slice restores the internal crossing without a data
 conversion. Local CLI adoption at `db3672f3c` verifies a clean source manifest,
 qualified SQLite runtime, current known authority formats and healthy canonical
 contract readback. This does not certify every installed Host or D2.
+
+### Todo snapshot refusal: retained semantics, one native owner
+
+The next bounded T4 slice moves the live Todo bridge's two snapshot refusals to
+`coordination/todo_lifecycle_decision.ts`. Claim/update and complete/supersede
+now share `invalid_lease_snapshot` before `todo_not_found`, actor admission and
+terminal replay. An active lease cannot be absent or released; an explicit null
+Todo is a domain refusal. Missing/malformed wire fields still fail strict
+decoding. Direct native callers gain the protection previously confined to the
+Python bridge; normalized Python outcomes and refusal precedence stay intact.
+
+| Retired symbol | Caller / replacement | Retained obligation and rollback |
+| --- | --- | --- |
+| Python `_invalid_lease_snapshot`, `_result` and the bridge's early missing-Todo decision | `authority_core.decide` / `_typescript_todo_decision`; existing terminal/mutation RPCs reach the same TS owner | Preserve rejection codes, no proposed write/release, actor/delegation/CAS rules and valid holder behavior. Keep the live Python snapshot/result adapter used by `todos/mutation_authority.py`, including native result-shape validation. Revert the code package without state conversion. |
+
+Independent negative cases cover all four verbs and three handoff modes,
+including absent Todo, done replay and an unauthorized actor. The baseline
+Python bridge already rejects these states; direct baseline TS does not.
+Qualification also exercises real File/SQLite creation, update, terminal
+effects, original-operation recovery, unavailable-provider refusal and leased
+settlement in isolated source and wheel installations. These are synthetic
+entrypoint tests, not attached-App or sustained-cost qualification. No store,
+writer, outbox, historical format/receipt reader or permanent Host IO is retired;
+C1, D2 and release-default adoption remain separate acceptance boundaries.
 
 ## Current closeout: validation, migration and deletion (2026-10-02)
 
