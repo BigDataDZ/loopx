@@ -1310,9 +1310,12 @@ def derive_goal_frontier_replan_obligation_from_summaries(
                 "credentials, destructive git, production actions, or owner-only decisions"
             ),
             recommended_action=(
-                "15+ Todos: read evidence; bounded public research if weak; "
-                "group/prune. Write vision via replan_action_packet.writeback_contract "
-                "with this Turn's binding. Reuse runnable work; no replan-only Todos."
+                "run a bounded long-chain vision replan before continuing a 15+ "
+                "todo lane: read evidence, use public research if local evidence "
+                "is weak, group/prune work, and record an evidence-linked vision "
+                "path through replan_action_packet.writeback_contract using the "
+                "current Turn settlement binding; retain existing runnable work "
+                "when appropriate instead of adding a Todo whose only action is replan"
             ),
             rearmed_after_obligation_id=(
                 long_chain_ack_decision.rearmed_after_obligation_id
