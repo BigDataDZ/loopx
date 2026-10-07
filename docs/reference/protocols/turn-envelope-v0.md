@@ -113,20 +113,24 @@ default and caller migration:
    aliases and reject `--thin`), including when canonical
    Todos supersede a stale Markdown display. Adaptive work uses its primary ID.
 
-Ordinary product heartbeat consumes
-`interaction_contract.agent_channel.required_reads`; the CLI channel carries
-the same list. TurnEnvelope consumes and signs this list as `required_reads`,
-including in Codex CLI and shared host adapters. It does not independently
-synthesize another read policy. Historical top-level read lists remain readable.
-The CLI source commands bind the registry/runtime when available. Missing,
-ambiguous, failed or changed reads require a fresh guard before acting. Reads
-return current content, not a snapshot bound to the earlier selection, and
-grant no read/write permission, claim, lease or amendment authority.
+Ordinary product heartbeat consumes current task/acceptance/User sources from
+`interaction_contract.agent_channel.work_context`, then any remaining
+`agent_channel.required_reads`. The Agent channel is the single content/read
+carrier; the CLI channel carries transitions. TurnEnvelope consumes and signs
+both as `work_context` and `required_reads`; it never independently synthesizes
+another policy. Already delivered content requires no second CLI invocation.
+The mixed Goal document remains an exact progressive full read; quota checks
+source availability rather than automatically copying unrelated tasks/history.
+No heading heuristic replaces Goal intent. `work_context.complete` does not
+settle pending read obligations. Full delivered sources and related User
+obligations survive budget overflow. Missing,
+ambiguous, failed or changed sources require recovery and a fresh guard before
+dependent work; content grants no claim, lease or amendment authority.
 
 This is a default decision/heartbeat behavior change, not an envelope opt-in.
 Admitted replans acquire Goal reads, without an old selected-Todo read.
 Non-delivery, selection-only, settlement-only and governed-capability lanes
-acquire no extra reads. Full quota summaries stay compact. Shared adapters retain
+acquire no extra core work reads. Related User obligations remain scoped; full quota summaries stay compact. Shared adapters retain
 selected Todo context; text aliases require exact equality, never a case-folded
 or truncated-prefix match. Supplied selected text survives envelope serialization
 intact. Hosts must honor the reads; signing does not prove execution or model
