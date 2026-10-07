@@ -156,6 +156,29 @@ evaluation still precedes filtering, and returned positions refer to the origina
 array, not a newly numbered subset. Python retains public field allowlists,
 warning text, privacy redaction and Markdown parsing/rendering.
 
+Agent summaries compute their existing `advancement_frontier_revision_index`
+inside this same projection, after source selection and before display caps.
+The shared frontier owner retains the v0 serialization/hash, excluded-agent
+lanes, owned-work ACK identity and commitment counts. Missing or contradictory
+codec facts fail the read; no separate index RPC repairs the result. The
+single-caller Python attachment is retired. Direct frontier calls used by replan
+and successor causality remain, as do Markdown writers for supported unmigrated
+Goals, backup/receipt recovery and Host IO. Internal summary request v3 composes
+the existing owners; v1/v2 callers and public summary/index schemas remain
+compatible. This is a source-read retirement slice, not SQLite-default or full
+writer-retirement qualification. Roll back the matching Python/TS distribution
+together; no persisted data migration is involved.
+
+Agent summary 在同一 TS 批次中生成既有 `advancement_frontier_revision_index`：先筛选
+完整来源，再生成索引，最后应用展示上限。沿用 frontier owner 的 v0 序列化/哈希、
+排除 Agent 的 lane、已拥有工作对应的 ACK 身份和承诺计数。缺失或矛盾的 codec 事实会
+明确拒绝读取，不会补调另一个索引 RPC。删除仅有一个调用方的 Python attachment；
+replan 和 successor 因果核验仍使用的直接 frontier 入口、未迁移 Goal 的 Markdown
+writer、备份/原回执恢复及 Host IO 继续保留。内部 summary 请求升级为 v3，保留
+v1/v2 调用兼容和公共 summary/index schema。本批只完成来源读取边界的退役，不代表
+SQLite 默认或全部 writer 退役已验收；回退时一起回退匹配的 Python/TS 分发，无需迁移
+持久化数据。
+
 **Intentional read behavior changes:** recent completions are ordered by the
 actual `completed_at` instant, preserving timezone offsets and microseconds.
 Later `updated_at` edits no longer make an old completion recent. Missing or
@@ -224,3 +247,34 @@ Python 独立判断。TS succession owner 负责生成和验证；Python 只传�
 
 覆盖 legacy 与 canonical 的 status、Todo 查询和 quota 摘要；展示预算保持原值。
 没有新增设置、权限或 writer，不改变 provider 默认值，也不宣称完成整 Goal 迁移。
+
+## Frontier deadlines before gate display limits
+
+Quota's existing typed planning batch now selects future deadlines from the
+complete addressed gate lane and Monitor lane before rendering limits. The
+public `frontier_deadline` shape stays `todo_frontier_deadline_v0`; expiry,
+UTC offsets, microseconds, deduplication and first equal-time source are retained.
+A gate shown later by priority can own the earliest transition: hiding it after
+three displayed gates must not postpone the scheduler's recheck. Other-Agent
+gates remain excluded by the existing scope rule.
+
+This intentionally corrects quota and scheduler readback for legacy and
+canonical File/SQLite records carrying future gate timestamps. It adds no RPC,
+setting, persisted field, provider default or migration requirement. Frontend
+and Lark views retain the same Core display fields and limits. Matching package
+rollback restores the previous discovery behavior without changing stored data.
+
+The batch uses the same explicit observation instant for v3 Monitor due/gap
+selection and frontier discovery; conflicting clock facts fail closed. Supported
+v0/v1/v2 requests retain their original untimed shape. The downstream scheduler
+retains its current-time validation of projected deadlines. Raw/stale-summary Python
+compatibility, bounded resume/handoff lanes and the live App wait qualification
+remain separate retirement work. A projected deadline never grants gate
+clearance, execution or Goal closure.
+
+quota 在既有 TS planning 批次中，先对完整且已按 Agent 范围筛选的 gate／Monitor
+来源计算未来截止点，再裁剪展示。后列 gate 不再因三项展示上限丢失最早唤醒；其他
+Agent 的 gate 仍被原有范围规则排除。保留时间偏移、微秒、过期、去重与同刻稳定顺序，
+公开 deadline 格式、展示预算、provider 默认与既有数据不变，不增加 RPC 或迁移要求。
+下游仍按当前时刻校验投影；旧／过期摘要的 Python 兼容逻辑、有界 resume/handoff
+来源和实际 App 等待态验收继续保留，不能据此宣称全部退役或 Goal 收尾。

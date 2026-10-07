@@ -4297,8 +4297,18 @@ def test_pending_selection_preserves_workspace_repair_then_reenters_same_turn(
     assert resumed["workspace_repair_allowed"] is False
     assert resumed["selected_todo"]["todo_id"] == ALTERNATIVE_TODO_ID
     assert resumed["selected_todo"]["selection_binding"] == "heartbeat_receipt"
-    assert resumed["heartbeat_receipt"]["status"] == "replayed"
-    assert _heartbeat_receipt_count(runtime, turn_instance_id) == 2
+    # Workspace recovery admits work on the already selected identity. Keep
+    # the repair receipt intact and append qualification rather than replaying
+    # its stale negative delivery facts to downstream admission readers.
+    assert resumed["heartbeat_receipt"]["status"] == "upgraded"
+    assert resumed["heartbeat_receipt"]["settlement_identity"] == repair["heartbeat_receipt"]["settlement_identity"]
+    assert resumed["heartbeat_receipt"]["event_id"] != repair["heartbeat_receipt"]["event_id"]
+    assert _heartbeat_receipt_count(runtime, turn_instance_id) == 3
+    replay_rc, replay = _run_cli(registry_path, runtime, *guard_args,
+        "--todo-id", ALTERNATIVE_TODO_ID, cwd=linked_worktree)
+    assert replay_rc == 0 and replay["heartbeat_receipt"]["status"] == "replayed", replay
+    assert replay["heartbeat_receipt"]["event_id"] == resumed["heartbeat_receipt"]["event_id"]
+    assert _heartbeat_receipt_count(runtime, turn_instance_id) == 3
 
 
 def test_boundary_projection_repair_keeps_same_turn_alternative_selectable(
@@ -4526,11 +4536,18 @@ def test_pending_action_selection_does_not_preempt_newly_due_monitor(
 
 
 @pytest.mark.parametrize("capture", [False, True])
-def test_pending_action_selection_returns_fresh_autonomous_replan_inline(
-    tmp_path: Path, capture: bool,
+@pytest.mark.parametrize("legacy_cadence", [False, True])
+def test_pending_selection_periodic_review_uses_selected_counting_unit(
+    tmp_path: Path, capture: bool, legacy_cadence: bool,
 ) -> None:
     project, runtime, registry_path = _write_fixture(tmp_path)
     _configure_selectable_alternative(project)
+    if legacy_cadence:
+        rc, configured = _run_cli(
+            registry_path, runtime, "configure-goal", "--goal-id", GOAL_ID,
+            "--execution-replan-after-todos", "5", "--execute",
+        )
+        assert rc == 0, configured
     turn_instance_id = "turn-pending-selection-replan-preemption"
     guard_args = (
         "quota",
@@ -4564,6 +4581,13 @@ def test_pending_action_selection_returns_fresh_autonomous_replan_inline(
     )
 
     assert selected_rc == 0, selected
+    if not legacy_cadence:
+        # Unsettled run records cannot become effective work Turns, even across
+        # pending action selection and decision-file capture.
+        assert selected["decision"] == "run"
+        assert selected["selected_todo"]["todo_id"] == ALTERNATIVE_TODO_ID
+        assert not selected.get("autonomous_replan_obligation")
+        return
     assert selected["decision"] == "autonomous_replan_required"
     assert selected["normal_delivery_allowed"] is False
     assert selected["heartbeat_receipt"]["status"] == "upgraded"
