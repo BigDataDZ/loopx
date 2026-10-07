@@ -44,6 +44,10 @@ test("route planning shares claim exclusion, preserves legacy visibility and nev
   assert.deepEqual((timed.lanes as JsonObject).gate_items, []);
   assert.equal(timed.frontier_deadline, null);
   const result = projectTodoQuotaPlanning(input), routes = result.route_lanes as JsonObject;
+  const v3 = projectTodoQuotaPlanning({...input, schema_version: "todo_quota_planning_request_v3",
+    selection: {...input.selection, observed_at: 100}});
+  assert.deepEqual(v3.route_lanes, routes);
+  assert.deepEqual(v3.source_completeness, result.source_completeness);
   assert.equal(routes.route_continuation_replan_count, 5);
   assert.equal(routes.current_agent_route_continuation_replan_count, 3);
   assert.equal(routes.unclaimed_route_continuation_replan_count, 3);
@@ -82,6 +86,9 @@ test("handoff counts retain addressed review states, source order and duplicates
         "current_agent_claimed_monitor_items", "claimed_monitor_open_items"].map(key => [key, []]))}};
   const before = structuredClone(input);
   const result = projectTodoQuotaPlanning(input), lanes = result.handoff_lanes as JsonObject;
+  const v3 = projectTodoQuotaPlanning({...input, schema_version: "todo_quota_planning_request_v3",
+    selection: {...input.selection, observed_at: 100}});
+  assert.deepEqual(v3.handoff_lanes, lanes);
   assert.equal(lanes.handoff_gate_count, 10);
   assert.equal(lanes.current_agent_handoff_gate_count, 9);
   assert.equal(lanes.current_agent_cleared_without_successor_handoff_count, 3);
@@ -217,6 +224,57 @@ test("malformed facts are rejected, not coerced into scope or execution authorit
   assert.throws(() => projectQuotaSelection(request([], {visibility_limit: -1})));
 });
 
+function clockRequest(items: JsonObject[], fields: JsonObject = {}): JsonObject {
+  return {schema_version: "todo_quota_planning_request_v3", selection: request(items, {available: [], observed_at: 100, ...fields}),
+    route_items: [], handoff_items: [], source_contract: {},
+    resume: {schema_version: "todo_resume_planning_request_v0", sources: Object.fromEntries([
+      "items", "backlog_items", "first_open_items", "deferred_items", "deferred_resume_candidates",
+      "resume_blocked_items", "monitor_open_items", "current_agent_claimed_monitor_items", "claimed_monitor_open_items",
+    ].map(key => [key, []])), agent_id: null, available_capabilities: null,
+    item_limit: 8, has_deferred_count: false, has_visible_deferred_count: false}};
+}
+
+test("quota v3 derives due and gap from the same clock, preserving priority presentation and fences", () => {
+  const monitor = (id: string, fields: JsonObject = {}) => row(id, {task_class: "continuous_monitor",
+    due_at: null, expires_at: null, required: [], targets: [], ...fields});
+  const items = [monitor("gap-first", {index: 1}), monitor("gap-owned", {index: 2, claim: "agent-a"}),
+    monitor("due", {due_at: 100, due: false}), monitor("future", {due_at: 101, due: true}),
+    monitor("expired", {due_at: 90, expires_at: 100, due: true}),
+    monitor("expired-gap", {expires_at: 100}), monitor("watch-gap", {watch_only: true}),
+    monitor("watch-due", {watch_only: true, due_at: 90}),
+    monitor("capability", {due_at: 90, required: ["compiler"]}),
+    monitor("peer", {claim: "agent-b"}), monitor("excluded", {excluded: ["agent-a"]}),
+    monitor("blocked", {actionable: false})];
+  const input = clockRequest(items), before = structuredClone(input);
+  const lanes = projectTodoQuotaPlanning(input).lanes as JsonObject;
+  assert.deepEqual(ids(lanes.monitor_schedule_gap_items), ["gap-first", "gap-owned"]);
+  assert.deepEqual(ids(lanes.monitor_due_items), ["due", "watch-due"]);
+  assert.deepEqual(ids(lanes.monitor_capability_blocked_due_items), ["capability"]);
+  assert.deepEqual(ids(lanes.watch_only_monitor_due_items), ["watch-due"]);
+  assert.deepEqual(input, before);
+  const unsupported = projectTodoQuotaPlanning(clockRequest(items, {monitor_supported: false})).lanes as JsonObject;
+  assert.deepEqual(unsupported.monitor_schedule_gap_items, []);
+  assert.deepEqual(unsupported.monitor_due_items, []);
+});
+
+test("quota v3 requires finite clock and schedule facts while v0/v1/v2 keep their old wire shape", () => {
+  for (const observed_at of [undefined, null, "100", NaN, Infinity]) {
+    assert.throws(() => projectTodoQuotaPlanning(clockRequest([], {observed_at})), /observed_at/);
+  }
+  for (const fields of [{due_at: undefined}, {due_at: "100"}, {due_at: Infinity}, {expires_at: false}]) {
+    assert.throws(() => projectTodoQuotaPlanning(clockRequest([row("bad", {
+      due_at: null, expires_at: null, required: [], targets: [], ...fields})])), /due_at|expires_at/);
+  }
+  assert.throws(() => projectTodoQuotaPlanning({...clockRequest([]), source_contract: undefined}), /closure source/);
+  const selection = request([row("old", {due: true, task_class: "continuous_monitor", required: [], targets: []})], {available: []});
+  const direct = projectQuotaSelection(selection);
+  for (const schema_version of ["todo_quota_planning_request_v0", "todo_quota_planning_request_v1", "todo_quota_planning_request_v2"]) {
+    const projected = projectTodoQuotaPlanning({...clockRequest([]), schema_version, selection});
+    assert.deepEqual(projected.lanes, direct.lanes);
+    assert.equal((projected.lanes as JsonObject).monitor_schedule_gap_items, undefined);
+  }
+});
+
 test("quota v2 validates closure in the existing batch while retaining v0/v1 wire behavior", () => {
   const resume = {schema_version: "todo_resume_planning_request_v0", sources: {
     items: [], backlog_items: [], first_open_items: [], deferred_items: [], deferred_resume_candidates: [],
@@ -279,6 +337,13 @@ test("planning clock retains fresh projection extensions and rechecks stale/raw 
     .frontier_deadline, {schema_version: "todo_frontier_deadline_v0", identity: "0", source: "user_action",
       next_due_at: "2026-10-01T00:02:00+00:00", candidate_count: 1});
   assert.equal(planningDeadline([], [{}]).frontier_deadline, null);
+  const timed = clockRequest([]);
+  assert.throws(() => projectTodoQuotaPlanning({...timed, current_time: "2026-10-01T00:00:00Z"}), /clocks must match/);
+  const current_time = "1970-01-01T00:01:40Z";
+  const combined = projectTodoQuotaPlanning({...timed, current_time});
+  assert.deepEqual(combined.handoff_lanes, projectTodoQuotaPlanning(timed).handoff_lanes);
+  assert.deepEqual((combined.lanes as JsonObject).monitor_schedule_gap_items, []);
+  assert.deepEqual((combined.lanes as JsonObject).gate_items, []);
   assert.equal((planningDeadline([], [{title: "Review", next_due_at: "1969-12-31T23:59:59.000001Z"}],
     {current_time: "1969-12-31T23:59:58Z"}).frontier_deadline as JsonObject).next_due_at,
     "1969-12-31T23:59:59.000001+00:00");

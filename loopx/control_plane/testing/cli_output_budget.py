@@ -69,7 +69,8 @@ class CliOutputCommandClassification:
 
 # These ceilings characterize the emitted CLI text on public fixtures. They are
 # deliberately separate from compact in-memory payload budgets. Baseline-only
-# ceilings freeze current debt so later optimization can lower them safely.
+# ceilings characterize current cost, not immutable authority. Adjust them with
+# matched measurements when useful decision semantics would otherwise be lost.
 CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
     CliOutputBudgetSpec(
         surface_id="start_goal_guided",
@@ -140,7 +141,10 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
         markdown_anchor="# LoopX Quota Should Run",
         max_chars={
             "small": {"json": 20_000, "markdown": 6_700},
-            "crowded": {"json": 34_000, "markdown": 7_800},
+            # 36 Todos / 12 runs emit 34,371 chars with complete long-chain
+            # ordering, evidence and continuation guidance. 35,000 leaves 629;
+            # per-Todo growth and other routes retain their independent guards.
+            "crowded": {"json": 35_000, "markdown": 7_800},
             "multi_agent": {"json": 23_000, "markdown": 7_000},
         },
         max_lines={
@@ -172,17 +176,18 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
             "small": {"json": 12_000, "markdown": 300},
             # Required vision carries the validator's complete authoring schema,
             # executable registry-bound commands and the overflow diagnostic.
-            # The same fixed-path fixture emits 14,647 chars on base and head;
-            # 15,000 leaves 353 chars without dropping these decision inputs.
+            # The same fixed-path fixture emits 15,023 chars, or 15,454 with
+            # agent vision. 16,000 leaves at least 546 chars while retaining
+            # the temporal, evidence and reasonable-next-step obligations.
             # Keep the line, per-Todo and fixed semantic-growth guards below.
-            "crowded": {"json": 15_000, "markdown": 600},
+            "crowded": {"json": 16_000, "markdown": 600},
             "multi_agent": {"json": 12_000, "markdown": 300},
         },
         max_lines={
             "small": {"json": 320, "markdown": 12},
-            # The complete example renders in 397 lines. Keep the existing
-            # 400-line ceiling; characters remain the primary cost guard.
-            "crowded": {"json": 400, "markdown": 12},
+            # Complete vision state renders in 409 lines; 420 leaves 11.
+            # Characters and per-Todo growth remain independent cost guards.
+            "crowded": {"json": 420, "markdown": 12},
             "multi_agent": {"json": 320, "markdown": 12},
         },
         scale_axis="todo_count",
@@ -190,11 +195,12 @@ CLI_OUTPUT_BUDGET_SPECS: tuple[CliOutputBudgetSpec, ...] = (
         # The complete validator-owned vision-authoring schema appears only on
         # the required-vision route. Account for that fixed semantic packet
         # separately so it does not relax the per-Todo growth budget. The
-        # executable example changes crowded-minus-small from 5,957 to 6,168
-        # chars. The old 3,800 + 35*60 allowance was already 57 short on base;
-        # 4,200 leaves 132 chars of fixed headroom. Absolute and per-Todo
-        # ceilings remain unchanged; this is not a model-token measurement.
-        max_json_fixed_semantic_growth_chars=4_200,
+        # complete schema and guidance produce crowded-minus-small = 6,544
+        # chars on both current main and the restored head. Keep 35*60 = 2,100
+        # as the per-Todo allowance; 4,700 leaves 256 fixed chars of headroom.
+        # The historical 4,200 + 2,100 ceiling was 244 short without any
+        # candidate output growth. This is a regression budget, not authority.
+        max_json_fixed_semantic_growth_chars=4_700,
     ),
     CliOutputBudgetSpec(
         surface_id="status",

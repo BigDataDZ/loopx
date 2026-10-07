@@ -11,6 +11,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
 from loopx.cli import main as cli_main
 from loopx.control_plane.scheduler.execution_context import SchedulerRuntimeProfile
 from loopx.control_plane.testing.cli_output_budget import (
@@ -1072,7 +1074,9 @@ def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
 
     assert default_exit_code == 0, default_text
     assert detail_exit_code == 0, detail_text
-    assert len(default_text) <= 40_000
+    # The same 36-Todo / 12-run vision fixture emits 40,164 characters with
+    # complete replan guidance. Preserve that meaning; 41k leaves 836 chars.
+    assert len(default_text) <= 41_000
     default_payload = json.loads(default_text)
     detail_payload = json.loads(detail_text)
     compact_audit = default_payload["vision_continuation_audit"]
@@ -1134,13 +1138,16 @@ def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
     )
 
 
+@pytest.mark.parametrize("include_agent_vision", [False, True])
 def test_crowded_turn_plan_budget_preserves_executable_vision_authoring(
     tmp_path: Path,
+    include_agent_vision: bool,
 ) -> None:
     with _stable_budget_fixture_root(tmp_path / "turn-plan-vision") as stable_root:
         project, runtime, registry_path, state_file = _write_fixture(
             stable_root,
             SCENARIOS[1],
+            include_agent_vision=include_agent_vision,
         )
         command = _surface_commands(
             project=project,
@@ -1163,7 +1170,35 @@ def test_crowded_turn_plan_budget_preserves_executable_vision_authoring(
     # This fixed executable schema legitimately crosses the old 12k/320
     # ceiling; retain bounded headroom without relaxing Todo-scale growth.
     assert 12_000 < len(text) <= CLI_OUTPUT_BUDGET_BY_ID["loopx_turn_plan"].max_chars["crowded"]["json"]
-    assert len(text.splitlines()) <= 400
+    assert len(text.splitlines()) <= CLI_OUTPUT_BUDGET_BY_ID["loopx_turn_plan"].max_lines["crowded"]["json"]
+
+
+@pytest.mark.parametrize("include_agent_vision", [False, True])
+def test_crowded_quota_preserves_long_chain_decision_clauses(
+    tmp_path: Path, include_agent_vision: bool,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "long-chain-guidance") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(
+            stable_root, SCENARIOS[1], include_agent_vision=include_agent_vision,
+        )
+        command = _surface_commands(
+            project=project, runtime=runtime, registry_path=registry_path,
+            state_file=state_file, output_format="json",
+        )["quota_should_run"]
+        code, text = _invoke_cli(command)
+    assert code == 0, text
+    payload = json.loads(text)
+    # Independently required semantics: replan before continuing a long lane,
+    # evidence-linked authoring and conditional reuse. Stable fields alone
+    # would not detect the instruction loss in the earlier compact wording.
+    recommendation = payload["autonomous_replan_obligation"]["recommended_action"]
+    assert "replan before continuing a 15+" in recommendation
+    assert "evidence-linked vision path" in recommendation
+    assert "retain existing runnable work when appropriate" in recommendation
+    guidance = " ".join(payload["replan_action_packet"]["planning_guidance"])
+    assert "a reasonable in-scope next step" in guidance
+    assert "Otherwise explain why no such step remains" in guidance
+    assert "do not invent work, exceed authority or consume budget merely to stay active" in guidance
 
 
 def test_quota_cli_keeps_full_user_todo_diagnostics_on_explicit_cold_path(

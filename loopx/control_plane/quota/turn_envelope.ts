@@ -6,7 +6,7 @@ import {
   type JsonObject,
 } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
-import { projectTurnStartUnavailableContext, turnStartPromptBudgetBytes } from "../capability_hooks.ts";
+import { projectTurnStartUnavailableContext } from "../capability_hooks.ts";
 import { requireJsonObject } from "../runtime_decode.ts";
 import { projectPendingCapabilityIntent } from "../work_items/pending_capability_intent.ts";
 import { measureTurnEnvelope, turnEnvelopeBudgetBytes, TURN_ENVELOPE_SECTION_TARGETS } from "./turn_envelope_budget.ts";
@@ -209,26 +209,6 @@ function compactFields(
   return compact;
 }
 
-function sameActionText(left: unknown, right: unknown): boolean {
-  const leftText = text(left, 2_000);
-  const rightText = text(right, 2_000);
-  if (!leftText || !rightText) return false;
-  // JS has no native casefold. Upper-then-lower preserves the Python v0
-  // behavior for multi-character folds such as German sharp-s and ligatures.
-  const leftFolded = leftText.toUpperCase().toLowerCase();
-  const rightFolded = rightText.toUpperCase().toLowerCase();
-  if (leftFolded === rightFolded) return true;
-  if (leftFolded.endsWith("...")) {
-    const prefix = leftFolded.slice(0, -3).trimEnd();
-    return prefix.length >= 80 && rightFolded.startsWith(prefix);
-  }
-  if (rightFolded.endsWith("...")) {
-    const prefix = rightFolded.slice(0, -3).trimEnd();
-    return prefix.length >= 80 && leftFolded.startsWith(prefix);
-  }
-  return false;
-}
-
 function selectedTodo(payload: JsonObject, recommendedAction: string | null): JsonObject | null {
   const source = object(payload.selected_todo);
   if (Object.keys(source).length === 0) return null;
@@ -241,8 +221,10 @@ function selectedTodo(payload: JsonObject, recommendedAction: string | null): Js
   ]) {
     if (source[field] !== null && source[field] !== undefined) compact[field] = source[field];
   }
-  const rendered = text(source.text, 360);
-  if (rendered && sameActionText(source.text, recommendedAction)) {
+  // Work declarations can end in acceptance/stop conditions. Keep their exact
+  // text; a display prefix or case-folded recommendation cannot stand in for it.
+  const rendered = scalarString(source.text, "selected_todo.text");
+  if (rendered && rendered === recommendedAction) {
     compact.text_ref = "action.recommended_action";
   } else if (rendered) {
     compact.text = rendered;
@@ -296,22 +278,24 @@ function responsePlan(interaction: JsonObject): JsonObject | null {
 }
 
 function requiredReads(interaction: JsonObject, payload: JsonObject): JsonObject[] {
-  const raw = interaction.required_reads || payload.required_reads;
-  if (!Array.isArray(raw)) return [];
+  const raw = object(interaction.agent_channel).required_reads
+    ?? interaction.required_reads ?? payload.required_reads;
   const result: JsonObject[] = [];
-  for (const value of raw) {
+  for (const value of Array.isArray(raw) ? raw : []) {
     const item = object(value);
-    const promptBudget = item.source === "turn_start_capability_hook"
-      ? turnStartPromptBudgetBytes(item.prompt_budget_bytes) : 0;
     // Required reads are executable obligations, not display summaries. Keep
     // every admitted command byte-for-byte, including quoted path whitespace.
     const command = scalarString(item.command, "required read command");
     if (!command) continue;
     const compact: JsonObject = { command };
-    if (promptBudget) compact.prompt_budget_bytes = promptBudget;
-    for (const field of ["kind", "reason", "source"]) {
-      const rendered = text(item[field], 240);
-      if (rendered) compact[field] = rendered;
+    // These are existing obligation coordinates, not provider diagnostics.
+    // Keep identity and ordering intact, just like the executable command.
+    for (const field of ["kind", "reason", "source", "ordering", "hook_id", "capability_id"]) {
+      const value = scalarString(item[field], `required read ${field}`);
+      if (value) compact[field] = value;
+    }
+    if (item.source === "turn_start_capability_hook" && item.prompt_budget_bytes !== undefined) {
+      compact.prompt_budget_bytes = item.prompt_budget_bytes;
     }
     result.push(compact);
   }
@@ -728,6 +712,8 @@ function actionProjection(payload: JsonObject, protocolActionFields: JsonObject)
   );
   const context = object(interaction.agent_context);
   if (Object.keys(context).length > 0) projection.agent_context = context;
+  const workContext = object(object(interaction.agent_channel).work_context);
+  if (Object.keys(workContext).length > 0) projection.work_context = workContext;
   const orchestration = object(payload.task_orchestration_contract);
   if (Object.keys(orchestration).length > 0) projection.task_orchestration_contract = orchestration;
   const plan = responsePlan(interaction);
@@ -814,6 +800,9 @@ export function turnEnvelopeActionSignatureDocument(value: unknown): JsonObject 
   if (Object.keys(object(envelope.agent_context)).length > 0) {
     signature.agent_context = object(envelope.agent_context);
   }
+  if (Object.keys(object(envelope.work_context)).length > 0) {
+    signature.work_context = object(envelope.work_context);
+  }
   if (Object.keys(object(responsePlanValue)).length > 0) {
     signature.response_plan = { ...object(responsePlanValue) };
   }
@@ -835,9 +824,11 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-function commandPrefix(runtimeRoot: unknown): string {
+function commandPrefix(runtimeRoot: unknown, registry?: unknown): string {
   const runtimeRootText = scalarString(runtimeRoot, "quota payload runtime_root").trim();
-  return runtimeRootText ? `loopx --runtime-root ${shellQuote(runtimeRootText)}` : "loopx";
+  const registryText = scalarString(registry, "quota payload registry").trim();
+  return "loopx" + (registryText ? ` --registry ${shellQuote(registryText)}` : "") +
+    (runtimeRootText ? ` --runtime-root ${shellQuote(runtimeRootText)}` : "");
 }
 
 function coldPath(
@@ -848,7 +839,7 @@ function coldPath(
 ): JsonObject {
   const goalId = scalarString(payload.goal_id, "quota payload goal_id", "<goal-id>");
   const agentArg = agentId ? ` --agent-id ${agentId}` : "";
-  const prefix = commandPrefix(payload.runtime_root);
+  const prefix = commandPrefix(payload.runtime_root, payload.registry);
   return {
     full_decision: capturedDecisionPath ? `cat -- ${shellQuote(capturedDecisionPath)}` : schedulerExecutionArgs
       ? `${prefix} --format json quota should-run --goal-id ${goalId}${agentArg}${schedulerExecutionArgs}`

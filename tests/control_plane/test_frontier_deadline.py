@@ -77,7 +77,8 @@ def test_future_projection_preserves_extra_fields_and_stale_projection_falls_bac
 @pytest.mark.parametrize("user_gate_scope", [False, True])
 def test_quota_planning_keeps_gate_deadline_before_visibility_limits(monkeypatch, user_gate_scope):
     from loopx.control_plane.todos import quota_summary
-    monkeypatch.setattr(quota_summary, "now_utc", lambda: NOW)
+    from loopx.control_plane.todos import quota_selection
+    monkeypatch.setattr(quota_selection, "now_utc", lambda: NOW)
     gates = [{"todo_id": f"gate_{i}", "index": i + 1, "text": "Review the source",
               "status": "open", "task_class": "user_gate", "blocks_agent": "agent-a",
               "next_due_at": "2026-10-01T00:10:00Z"} for i in range(25)]
@@ -90,7 +91,6 @@ def test_quota_planning_keeps_gate_deadline_before_visibility_limits(monkeypatch
             gate["claimed_by"] = "agent-a"
         gates[-1]["claimed_by"] = "agent-b"
     original = json.loads(json.dumps(gates))
-    from loopx.control_plane.todos import quota_selection
     crossings = []
     invoke = quota_selection.effect_runtime_result
     def observed(method, params):

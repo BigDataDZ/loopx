@@ -241,8 +241,10 @@ setting, persisted field, provider default or migration requirement. Frontend
 and Lark views retain the same Core display fields and limits. Matching package
 rollback restores the previous discovery behavior without changing stored data.
 
-The batch uses its explicit observation clock; the downstream scheduler retains
-its current-time validation of projected deadlines. Raw/stale-summary Python
+The batch uses the same explicit observation instant for v3 Monitor due/gap
+selection and frontier discovery; conflicting clock facts fail closed. Supported
+v0/v1/v2 requests retain their original untimed shape. The downstream scheduler
+retains its current-time validation of projected deadlines. Raw/stale-summary Python
 compatibility, bounded resume/handoff lanes and the live App wait qualification
 remain separate retirement work. A projected deadline never grants gate
 clearance, execution or Goal closure.
