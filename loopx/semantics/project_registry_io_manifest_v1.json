@@ -2159,8 +2159,16 @@
     },
     {
       "site": "loopx/runtime.py::<module>.archive_runtime_goal::codec_read:load_registry#1",
-      "line": 43,
+      "line": 64,
       "column": 16,
+      "kind": "codec_read",
+      "api": "load_registry",
+      "classification": "codec_api"
+    },
+    {
+      "site": "loopx/runtime.py::<module>.archive_runtime_goal::codec_read:load_registry#2",
+      "line": 126,
+      "column": 31,
       "kind": "codec_read",
       "api": "load_registry",
       "classification": "codec_api"
