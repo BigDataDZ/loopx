@@ -78,9 +78,11 @@ FINDING_STATUSES = {
 }
 
 TITLE_LIMIT = 200
-SUMMARY_LIMIT = 1200
-# Reader preparation for a 2000-character writer, including the historical
-# compactor's two-character ellipsis overflow. Keep the writer default separate.
+# A writeback finding includes its revision, applicability, observation and
+# complete route decision. Bound display separately without clipping that scope.
+SUMMARY_LIMIT = 2000
+# Persisted source compatibility includes the historical compactor's
+# two-character ellipsis overflow; it is independent of the writer budget.
 PERSISTED_TEXT_LIMIT = 2002
 REF_LIMIT = 240
 MAX_EVIDENCE_REFS = 16

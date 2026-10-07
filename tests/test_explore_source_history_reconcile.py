@@ -56,7 +56,7 @@ def _persisted_event(kind, length):
 
 
 @pytest.mark.parametrize("kind", ["node", "edge", "finding"])
-@pytest.mark.parametrize("length", [1200, 1202, 1275, 1968, 2002])
+@pytest.mark.parametrize("length", [1200, 1202, 1275, 1968, 2000, 2002])
 def test_persisted_summary_budget_does_not_recompact_source_truth(tmp_path, kind, length):
     event = _persisted_event(kind, length)
     log = tmp_path / "results.jsonl"
@@ -65,6 +65,30 @@ def test_persisted_summary_budget_does_not_recompact_source_truth(tmp_path, kind
     assert load_explore_result_events_strict(log, goal_id=GOAL_ID) == [event]
     assert log.read_text() == original
     assert event["summary"].endswith("Do not transfer beyond the tested input.")
+
+
+@pytest.mark.parametrize("kind", ["node", "edge", "finding"])
+def test_persisted_text_compatibility_is_independent_of_writer_budget(monkeypatch, kind):
+    from loopx.capabilities.explore import result_log
+
+    event = _persisted_event(kind, 2002)
+    monkeypatch.setattr(result_log, "SUMMARY_LIMIT", 1200)
+    assert validate_explore_result_event(event, expected_goal_id=GOAL_ID) == event
+
+
+def test_current_writer_overflow_is_readable_without_rewriting(tmp_path):
+    event = build_explore_node_event(
+        goal_id=GOAL_ID, title="Bounded source", status="blocked",
+        summary="x" * 2003, blocked_reason="y" * 2003,
+        recorded_at="2026-01-01T00:00:00Z",
+    )
+    assert event["summary"] == "x" * 1999 + "..."
+    assert event["blocked_reason"] == "y" * 1999 + "..."
+    log = tmp_path / "results.jsonl"
+    original = json.dumps(event) + "\n"
+    log.write_text(original)
+    assert load_explore_result_events_strict(log, goal_id=GOAL_ID) == [event]
+    assert log.read_text() == original
 
 
 @pytest.mark.parametrize("damage", ["over-budget", "private-tail", "whitespace",
@@ -107,7 +131,7 @@ def test_long_persisted_result_survives_real_cli_readback(tmp_path):
     node = build_explore_node_event(
         goal_id="research", node_id="scope", title="Scoped result",
     )
-    finding = _persisted_event("finding", 1968)
+    finding = _persisted_event("finding", 2002)
     finding.update(goal_id="research", agent_id="worker", tags=["writeback-result"])
     _rehash(finding)
     log = explore_result_log_path(root, "research")
@@ -127,7 +151,7 @@ def test_long_persisted_result_survives_real_cli_readback(tmp_path):
         if command == "summary":
             assert finding["summary"] in result.stdout
         else:
-            assert packet["graph"]["writeback_results"][0]["summary"] == finding["summary"][:1200]
+            assert packet["graph"]["writeback_results"][0]["summary"] == finding["summary"][:2000]
             assert "summary" in packet["graph"]["summary_command"]
         assert log.read_bytes() == original
 
