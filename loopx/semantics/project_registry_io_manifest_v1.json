@@ -2119,7 +2119,7 @@
     },
     {
       "site": "loopx/project_uninstall.py::<module>.uninstall_project::codec_transaction:project_registry_transaction#1",
-      "line": 334,
+      "line": 360,
       "column": 18,
       "kind": "codec_transaction",
       "api": "project_registry_transaction",

@@ -283,19 +283,24 @@ def uninstall_project(
     global_after = global_receipt["goal_count_after"]
 
     archive_root = registry_path.parent / "archived-project-state"
-    state_actions = (
-        [
-            _archive_state_directory(
-                goal=goal,
-                registry_path=registry_path,
-                archive_root=archive_root,
-                timestamp=timestamp,
-                dry_run=dry_run,
-            )
-            for goal in selected
-        ]
-        if archive_state
-        else [
+    state_actions: list[dict[str, Any]]
+    if archive_state:
+        state_actions = (
+            [
+                _archive_state_directory(
+                    goal=goal,
+                    registry_path=registry_path,
+                    archive_root=archive_root,
+                    timestamp=timestamp,
+                    dry_run=True,
+                )
+                for goal in selected
+            ]
+            if dry_run
+            else []
+        )
+    else:
+        state_actions = [
             {
                 "goal_id": str(goal.get("id")),
                 "action": "kept",
@@ -303,13 +308,18 @@ def uninstall_project(
             }
             for goal in selected
         ]
-    )
 
-    local_backup_path = _copy_backup(
-        registry_path, label="project-uninstall-backup", dry_run=dry_run
+    local_backup_path = (
+        _copy_backup(
+            registry_path,
+            label="project-uninstall-backup",
+            dry_run=True,
+        )
+        if dry_run
+        else None
     )
     global_backup_path = (
-        _copy_backup(global_path, label="project-uninstall-backup", dry_run=dry_run)
+        _copy_backup(global_path, label="project-uninstall-backup", dry_run=True)
         if dry_run and global_removed
         else None
     )
@@ -331,6 +341,22 @@ def uninstall_project(
                         timeout_seconds=CANONICAL_AUTHORITY_WRITE_TIMEOUT_SECONDS,
                     )
                 )
+            if archive_state:
+                state_actions = [
+                    _archive_state_directory(
+                        goal=goal,
+                        registry_path=registry_path,
+                        archive_root=archive_root,
+                        timestamp=timestamp,
+                        dry_run=False,
+                    )
+                    for goal in selected
+                ]
+            local_backup_path = _copy_backup(
+                registry_path,
+                label="project-uninstall-backup",
+                dry_run=False,
+            )
             with project_registry_transaction(
                 registry_path,
                 operation="project_uninstall_local_registry",
