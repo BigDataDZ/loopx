@@ -260,6 +260,7 @@ export function validateTodoClosureSource(value: unknown): JsonObject {
     (terminal.all_todos_done === true || terminal.all_convergent_todos_done === true) &&
     count(terminal.monitor_open_count) && count(terminal.watch_only_monitor_count) &&
     terminal.monitor_open_count === terminal.watch_only_monitor_count &&
+    terminal.monitor_open_count === monitors.length &&
     terminal.successor_gap_count === 0 && terminal.route_replan_count === 0 &&
     count(terminal.no_followup_count) && terminal.derived === true;
   const intent = jsonObject(source.closure_intent);
