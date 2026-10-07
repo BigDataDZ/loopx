@@ -67,18 +67,20 @@ def _linked_scope_context(
     _, graph, gate = _policy(source_registry, goal_id)
     if not (graph or gate["enabled"]):
         raise ValueError("Explore result attachment requires enabled Explore evidence or planning mode")
-    rows = list_goal_todos(
+    detail = list_goal_todos(
         registry_path=source_registry, runtime_root_arg=str(source_runtime),
         goal_id=goal_id, todo_id=todo_id,
-    ).get("todos", [])
-    if len(rows) != 1 or rows[0].get("claimed_by") != agent_id:
+    )
+    todo = detail.get("todo")
+    if (not detail.get("matched") or detail.get("ambiguous")
+            or not isinstance(todo, dict) or todo.get("claimed_by") != agent_id):
         raise ValueError("Explore result attachment must belong to the caller's claimed Todo")
     projection = build_explore_result_projection(
         load_explore_result_events_strict(
             explore_result_log_path(source_runtime, goal_id), goal_id=goal_id
         ), goal_id=goal_id,
     )
-    return {"requested_node_refs": rows[0].get("explore_result_node_refs", []),
+    return {"requested_node_refs": todo.get("explore_result_node_refs", []),
             "nodes": [node for node in projection.get("nodes", [])
                       if node.get("node_id") in node_ids]}
 
