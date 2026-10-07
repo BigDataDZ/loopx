@@ -707,11 +707,13 @@ def render_quota_should_run_markdown(payload: dict[str, Any]) -> str:
     channel = as_dict(interaction.get("agent_channel"))
     context = as_dict(channel.get("work_context"))
     if context:
-        if set(context) <= {"complete", "selected_todo_ref", "instruction"}:
+        if set(context) <= {"complete", "selected_todo_ref", "selected_todo_authority", "instruction"}:
             lines.append(
                 "- work_context: "
                 f"complete={context.get('complete')} "
                 f"selected_todo_ref={context.get('selected_todo_ref')}"
+                + (f" selected_todo_authority={context['selected_todo_authority']}"
+                    if context.get("selected_todo_authority") else "")
             )
         else:
             from .turn_envelope_markdown import work_context_lines

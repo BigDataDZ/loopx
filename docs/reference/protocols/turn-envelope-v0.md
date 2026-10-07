@@ -119,12 +119,16 @@ Ordinary product heartbeat consumes current task/acceptance/User sources from
 carrier; the CLI channel carries transitions. TurnEnvelope consumes and signs
 both as `work_context` and `required_reads`; it never independently synthesizes
 another policy. Already delivered content requires no second CLI invocation.
-When admitted selected-Todo text exactly matches its detail read,
-`work_context.selected_todo_ref` points to the full body already carried by the
-selected action; otherwise the full detail record remains in
-`work_context.sources`. When the exact selected body is already in the action and the work context contains
-only its reference and completeness, TurnEnvelope may omit that duplicate context;
-all exact commands remain in `required_reads`.
+The selected-Todo display body is display-only and may be bounded; the typed
+owner validates the exact read against selected identity, lifecycle, claim and
+source revision. A supplied full-body snapshot must match before fulfilling the read. If the full body is already
+in the selected action, `work_context.selected_todo_ref` reuses that body while
+the source retains unique continuation, relation and authority metadata. If the
+selected view is bounded, the full canonical detail stays in
+`work_context.sources`. TurnEnvelope must preserve those unique fields and may
+omit only an actually duplicate body; if there are no other fields to retain,
+`work_context.selected_todo_authority` carries the source and revision. All exact
+commands remain in `required_reads`.
 The mixed Goal document remains an exact progressive full read; quota checks
 source availability rather than automatically copying unrelated tasks/history.
 No heading heuristic replaces Goal intent. `work_context.complete` does not

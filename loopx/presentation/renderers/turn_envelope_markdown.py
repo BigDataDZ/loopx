@@ -6,11 +6,13 @@ import json
 
 def work_context_lines(context: dict[str, Any]) -> list[str]:
     """Complete source content once; arbitrary source text stays JSON-escaped."""
-    if set(context) <= {"complete", "selected_todo_ref", "instruction"}:
+    if set(context) <= {"complete", "selected_todo_ref", "selected_todo_authority", "instruction"}:
         return [
             "- work_context: "
             f"complete={context.get('complete')} "
             f"selected_todo_ref={context.get('selected_todo_ref')}"
+            + (f" selected_todo_authority={context['selected_todo_authority']}"
+                if context.get("selected_todo_authority") else "")
         ]
     return ["", "## Current work context", "", context.get("instruction", ""),
         "", "```json", json.dumps(context, ensure_ascii=False, indent=2), "```", ""]

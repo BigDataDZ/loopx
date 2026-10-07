@@ -1,5 +1,6 @@
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
 import {projectTurnStartUnavailableContext} from "../capability_hooks.ts";
+import { createHash } from "node:crypto";
 import {
   requireBoolean,
   requireJsonObject,
@@ -242,6 +243,7 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
   const selected = jsonObject(request.selected_todo) ?? {};
   const pending: JsonObject[] = [], sources: JsonObject[] = [], failures: JsonObject[] = [];
   let selectedTodoRef = false;
+  let selectedTodoAuthority: string | null = null;
   for (const value of request.required_reads) {
     const read = requireJsonObject(value, "required read");
     const matches = results.filter(result => result.command === read.command);
@@ -253,6 +255,14 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
     if (valid && read.source === "selected_todo") {
       const todo = jsonObject(content!.todo) ?? {};
       selectedTodoRecord = todo;
+      const bodyMatches = typeof selected.text === "string" && todo.text === selected.text;
+      const hasSnapshot = typeof selected._context_text_sha256 === "string";
+      const snapshotMatches = hasSnapshot
+        && typeof todo.text === "string"
+        && selected._context_text_sha256 === createHash("sha256").update(todo.text, "utf8").digest("hex");
+      const sourceMatchesSelection = hasSnapshot
+        ? snapshotMatches
+        : bodyMatches || selected._context_text_display_only === true;
       valid = content!.matched === true && content!.ambiguous !== true
         && todo.todo_id === selected.todo_id && todo.archive_state !== "archive"
         && todo.status !== "done"
@@ -260,7 +270,7 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
         && typeof selected.content_revision === "string"
         && ENVELOPED_SHA256_PATTERN.test(selected.content_revision)
         && selected.content_revision === todo.content_revision
-        && (selected.text === undefined || (typeof selected.text === "string" && todo.text === selected.text));
+        && sourceMatchesSelection;
     }
     if (valid && read.source === "goal_acceptance") {
       valid = jsonObject(content!.goal_acceptance_contract)?.enabled === true;
@@ -276,10 +286,38 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
       pending.push(read);
     } else {
       if (read.source === "selected_todo" && typeof selected.text === "string"
+          && selectedTodoRecord?.text === selected.text
           && selectedTodoRecord?.todo_id === selected.todo_id) {
-        // The exact detail read validates the current body and lifecycle, while
-        // the admitted packet already carries that body at selected_todo.text.
+        // Reuse only the duplicate body. The exact canonical record may carry
+        // continuation, relations and authority metadata absent from the hot view.
         selectedTodoRef = true;
+        const sourceTodo = Object.fromEntries(Object.entries(selectedTodoRecord)
+          .filter(([key, value]) => {
+            if (key === "text" || key === "todo_id" || value === null || value === undefined) return false;
+            const selectedRole = selected.role;
+            const roleSection = selectedRole === "agent" ? "Agent Todo"
+              : selectedRole === "user" ? "User Todo" : null;
+            if ((key === "archive_state" && value === "active")
+                || (key === "done" && value === false)
+                || (key === "source_section" && value === roleSection)) return false;
+            const selectedValue = selected[key];
+            return selectedValue === undefined
+              || JSON.stringify(selectedValue) !== JSON.stringify(value);
+          })) as JsonObject;
+        const fullAuthorityRead = jsonObject(content!.authority_read);
+        const authorityRead = fullAuthorityRead && typeof fullAuthorityRead.source_authority === "string"
+          ? `${fullAuthorityRead.source_authority}@${String(fullAuthorityRead.provider_revision ?? "unknown")}`
+          : fullAuthorityRead;
+        if (Object.keys(sourceTodo).length === 0) {
+          selectedTodoAuthority = typeof authorityRead === "string"
+            ? authorityRead
+            : JSON.stringify(authorityRead ?? {}) ?? "{}";
+        } else {
+          sources.push({source: read.source ?? "selected_todo", content: {
+            todo: sourceTodo,
+            ...(fullAuthorityRead ? {authority_read: fullAuthorityRead} : {}),
+          }});
+        }
       } else {
         sources.push({...read, content: content!});
       }
@@ -292,11 +330,11 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
     instruction: "Recover current User obligations and rerun the guard."});
   const includeUserTodos = users && !users.error_code
     && (!Array.isArray(users.todos) || users.todos.length > 0 || users.authority_read != null);
-  const selectedTodoReferenceOnly = selectedTodoRef && sources.length === 0
-    && failures.length === 0 && !unavailable && !includeUserTodos;
   return {required_reads: pending, work_context: {complete: failures.length === 0,
-    ...(selectedTodoReferenceOnly ? {selected_todo_ref: "selected_todo"} : {sources}),
+    ...(selectedTodoRef ? {selected_todo_ref: "selected_todo"} : {}),
+    ...(selectedTodoAuthority ? {selected_todo_authority: selectedTodoAuthority} : {}),
+    ...(sources.length ? {sources} : {}),
     ...(unavailable ? {unavailable_context: unavailable} : {}),
     ...(includeUserTodos ? {user_todos: users} : {}), ...(failures.length ? {failures} : {}),
-    instruction: "Read current sources and remaining required_reads before work; do not repeat reads fulfilled for this guard's pre-work checks. Follow source-specific freshness obligations before later actions. Unavailable context holds dependent actions until recovery. Source changes require a fresh guard; context grants no authority."}};
+    instruction: "Read current sources and pending required_reads before work. Do not repeat this guard's fulfilled pre-work reads. Recheck freshness before later actions; unavailable or changed sources need recovery and a fresh guard. Context grants no authority."}};
 }

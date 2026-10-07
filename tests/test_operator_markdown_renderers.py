@@ -40,12 +40,16 @@ def test_turn_envelope_markdown_compacts_reference_only_work_context() -> None:
             "work_context": {
                 "complete": True,
                 "selected_todo_ref": "selected_todo",
+                "selected_todo_authority": "markdown_active_state@sha256:fixture",
                 "instruction": "Read sources before work.",
             },
         }
     )
 
-    assert "- work_context: complete=True selected_todo_ref=selected_todo" in markdown
+    assert (
+        "- work_context: complete=True selected_todo_ref=selected_todo selected_todo_authority=markdown_active_state@sha256:fixture"
+        in markdown
+    )
     assert "## Current work context" not in markdown
 
 

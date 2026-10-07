@@ -33,8 +33,8 @@ test("only participating hooks add unavailable context; generic guidance has no 
   const inactive = projectInteractionWorkContext(request).work_context as JsonObject;
   assert.equal(inactive.unavailable_context, undefined);
   assert.doesNotMatch(String(inactive.instruction), /preference|empty view|empty observations/);
-  assert.match(String(inactive.instruction), /this guard's pre-work checks/);
-  assert.match(String(inactive.instruction), /source-specific freshness obligations/);
+  assert.match(String(inactive.instruction), /this guard's fulfilled pre-work reads/);
+  assert.match(String(inactive.instruction), /Recheck freshness before later actions/);
   const denied = projectInteractionWorkContext({...request, hook_dispatch: {results: [{
     hook_id: "optional.context", capability_id: "optional-context",
     status: "unavailable", error_code: "source_denied"}], failures: []}}).work_context as JsonObject;
@@ -161,18 +161,51 @@ test("failed, ambiguous or changed work never fulfills a pre-work read", () => {
 
 test("selected Todo references its admitted body only after an exact detail read", () => {
   const read = {command: "read-todo", source: "selected_todo"};
-  const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a", text: "Keep full acceptance."};
-  const projected = projectInteractionWorkContext({required_reads: [read], selected_todo: task,
+  const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a",
+    text: "Keep full acceptance.", note: "Do not publish before the final review."};
+  const selected = {todo_id: task.todo_id, status: task.status, text: task.text};
+  const projected = projectInteractionWorkContext({required_reads: [read], selected_todo: selected,
     source_results: [{command: read.command, content: {matched: true, todo: task}}]});
   const context = projected.work_context as JsonObject;
   assert.equal(context.complete, true);
   assert.equal(context.selected_todo_ref, "selected_todo");
-  assert.equal(context.sources, undefined);
+  const sources = context.sources as JsonObject[];
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].source, "selected_todo");
+  const sourceContent = sources[0].content as JsonObject;
+  const sourceTodo = sourceContent.todo as JsonObject;
+  assert.equal(sourceTodo.text, undefined);
+  assert.equal(sourceTodo.claimed_by, task.claimed_by);
+  assert.equal(sourceTodo.note, task.note);
 
-  const changedBody = projectInteractionWorkContext({required_reads: [read], selected_todo: task,
+  const changedBody = projectInteractionWorkContext({required_reads: [read], selected_todo: selected,
     source_results: [{command: read.command, content: {matched: true, todo: {...task, text: "Changed body"}}}]});
   assert.deepEqual(changedBody.required_reads, [read]);
   assert.equal((changedBody.work_context as JsonObject).complete, false);
+});
+
+test("bounded selected text validates its full source snapshot and preserves exact detail", () => {
+  const read = {command: "read-todo", source: "selected_todo"};
+  const body = "Keep every query result and its final acceptance condition.";
+  const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a", text: body,
+    note: "The final condition is to retain cancellation behavior."};
+  const selected = {...task, text: "Keep every query result", _context_text_sha256:
+    "2b6ebbd1992bdcaea446043078139f3c4d9044ec487f01ab39806f75a78a5dec"};
+  const projected = projectInteractionWorkContext({required_reads: [read], selected_todo: selected,
+    source_results: [{command: read.command, content: {matched: true, todo: task}}]});
+  const context = projected.work_context as JsonObject;
+  assert.equal(context.complete, true);
+  assert.equal(context.selected_todo_ref, undefined);
+  const source = (context.sources as JsonObject[])[0];
+  const sourceContent = source.content as JsonObject;
+  assert.equal((sourceContent.todo as JsonObject).text, body);
+  assert.equal((sourceContent.todo as JsonObject).note, task.note);
+
+  const changed = projectInteractionWorkContext({required_reads: [read], selected_todo: selected,
+    source_results: [{command: read.command, content: {matched: true,
+      todo: {...task, text: body + " Updated after selection."}}}]});
+  assert.equal((changed.work_context as JsonObject).complete, false);
+  assert.deepEqual(changed.required_reads, [read]);
 });
 
 test("mixed Goal document remains a full progressive read without dropping task requirements", () => {
@@ -184,12 +217,14 @@ test("mixed Goal document remains a full progressive read without dropping task 
   const projected = projectInteractionWorkContext({required_reads: [goalRead, taskRead],
     selected_todo: task, source_results: [
       {command: goalRead.command, content: {text: "Goal intent, other tasks and historical evidence."}},
-      {command: taskRead.command, content: {matched: true, todo: task}},
+      {command: taskRead.command, content: {matched: true, todo: task,
+        authority_read: {source_authority: "markdown_active_state", provider_revision: "sha256:revision"}}},
     ]});
   assert.deepEqual(projected.required_reads, [goalRead]);
   const context = projected.work_context as JsonObject;
   assert.equal(context.complete, true); // No source failure; pending reads still apply.
   assert.equal(context.selected_todo_ref, "selected_todo");
+  assert.equal(context.selected_todo_authority, "markdown_active_state@sha256:revision");
   assert.equal(context.sources, undefined);
   assert.equal(task.text, "Preserve every requirement. ".repeat(400) + "Stop before deployment.");
   const failed = projectInteractionWorkContext({required_reads: [goalRead],
