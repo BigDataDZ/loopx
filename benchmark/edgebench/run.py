@@ -18,6 +18,7 @@ from sforge.harness.config import SForgeConfig
 from sforge.harness.run_agent import run_agent
 from sforge.harness.task_spec import make_task_spec
 
+from benchmark.runtime.codex import TASK_ENTRIES
 from benchmark.runtime.sforge import DEFAULT_TIMEOUT_SECONDS, PROFILES, SForgeWorker
 from benchmark.runtime.sforge_backend import RecordingDockerBackend
 from benchmark.runtime.source import source_pins
@@ -67,6 +68,17 @@ def _write_native_final_result(trial, result, *, status, agent, task, run_id, mo
     pending.replace(trial / "final_result.json")
 
 
+def _task_default(task_id: str, key: str, explicit: int | None, fallback: int) -> int:
+    """Resolve EdgeBench task settings; explicit values retain runtime semantics."""
+    if explicit is not None:
+        return explicit
+    defaults = json.loads(Path(__file__).with_name("task-defaults.json").read_text())
+    value = defaults.get(task_id, {}).get(key, fallback)
+    if type(value) is not int or value <= 0:
+        raise ValueError(f"Invalid EdgeBench {key} default for {task_id}: {value!r}")
+    return value
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--task", required=True)
@@ -75,16 +87,28 @@ def main(argv=None):
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--worker", choices=PROFILES, required=True)
     parser.add_argument("--feedback", choices=("native", "blind"), default="native")
+    parser.add_argument("--turn-envelope", action="store_true",
+                        help="Opt-in short heartbeat context with same-invocation full captures")
     parser.add_argument("--model", required=True)
     parser.add_argument("--effort", choices=("low", "medium", "high", "xhigh"), required=True)
-    parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
+    parser.add_argument("--timeout", type=int,
+                        help="Total trial seconds; task-defaults.json overrides the 18h fallback")
+    parser.add_argument("--task-entry", choices=TASK_ENTRIES,
+                        help="Heartbeat default: loopx-planned; seeded-todo is an explicit ablation")
     parser.add_argument("--replan-after-turns", type=int, choices=range(1, 6),
                         help="Opt in to settled work Turn cadence for heartbeat profiles")
-    parser.add_argument("--eval-interval", type=int, default=300)
+    parser.add_argument("--eval-interval", type=int,
+                        help="Auto-evaluation seconds; task-defaults.json overrides the 300s fallback; 0 disables")
     parser.add_argument("--submission-cooldown", type=int, default=120)
     parser.add_argument("--judge-url", required=True)
     parser.add_argument("--api-proxy-url", help="Operator-owned, OpenAI-only CONNECT proxy")
     args = parser.parse_args(argv)
+    args.timeout = _task_default(args.task, "timeout_seconds", args.timeout, DEFAULT_TIMEOUT_SECONDS)
+    args.eval_interval = _task_default(args.task, "eval_interval_seconds", args.eval_interval, 300)
+    if args.task_entry == "loopx-planned" and not args.worker.startswith("heartbeat-"):
+        parser.error("--task-entry loopx-planned requires a heartbeat worker")
+    if args.turn_envelope and args.worker not in {"heartbeat-resume", "heartbeat-explore"}:
+        parser.error("--turn-envelope requires a heartbeat worker")
     if args.replan_after_turns is not None and not args.worker.startswith("heartbeat-"):
         parser.error("--replan-after-turns requires a heartbeat worker")
     # One directory is one attempt: never reuse native registration or overwrite
@@ -122,6 +146,8 @@ def main(argv=None):
         }
     agent = SForgeWorker(config, profile=args.worker, cwd=task.cwd,
                          timeout_seconds=args.timeout, blind_prompt=blind_prompt,
+                         task_entry=args.task_entry,
+                         turn_envelope=args.turn_envelope,
                          replan_after_turns=args.replan_after_turns)
     if args.api_proxy_url:
         agent.default_api_base_url = args.api_proxy_url
@@ -134,8 +160,10 @@ def main(argv=None):
             raise RuntimeError(f"Missing native image: {image}")
     receipt = {
         "run_id": args.run_id, "task": args.task, "worker": args.worker,
+        "task_entry": agent.task_entry,
         "model": args.model, "effort": args.effort, "timeout_seconds": args.timeout,
         "loopx_commit": pins[0], "runner_commit": pins[1],
+        **({"turn_envelope": True} if args.turn_envelope else {}),
         "task_sha256": hashlib.sha256(task_file.read_bytes()).hexdigest(),
         "feedback": args.feedback, "internet": task.internet,
         "eval_interval": args.eval_interval, "submission_cooldown": args.submission_cooldown,

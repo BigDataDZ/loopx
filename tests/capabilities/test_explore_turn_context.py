@@ -55,6 +55,54 @@ def registry(tmp_path, *, graph=False, planning=False):
     return path
 
 
+@pytest.mark.parametrize("command", ["turn-context", "summary", "worker-branch-plan", "graph"])
+@pytest.mark.parametrize("damage", ["truncated", "foreign-goal", "invalid-status"])
+def test_decision_reads_reject_incomplete_evidence_and_recover(tmp_path, command, damage):
+    path = registry(tmp_path, graph=True, planning=True)
+    root = tmp_path / "runtime"
+    log = explore_result_log_path(root, "research")
+    node = build_explore_node_event(
+        goal_id="research", agent_id="worker", node_id="route",
+        title="Candidate route", status="open",
+    )
+    finding = build_explore_finding_event(
+        goal_id="research", agent_id="worker", node_id="route",
+        finding_id="counterexample", title="Counterexample", status="refuted",
+        summary="Applies only to the tested inputs.",
+    )
+    append_explore_result_event(log, node)
+    append_explore_result_event(log, finding)
+    healthy = log.read_bytes()
+    if damage == "truncated":
+        damaged = json.dumps(node) + '\n{"event_kind":'
+    else:
+        altered = {**finding, **({"goal_id": "foreign"} if damage == "foreign-goal"
+                                else {"status": "invented"})}
+        damaged = json.dumps(node) + "\n" + json.dumps(altered) + "\n"
+    log.write_text(damaged)
+    args = [sys.executable, "-m", "loopx.cli", "--registry", str(path),
+            "--runtime-root", str(root), "--format", "json", "explore", command,
+            "--goal-id", "research"]
+    if command in {"turn-context", "worker-branch-plan"}:
+        args += ["--agent-id", "worker"]
+    output = tmp_path / "graph.json"
+    if command == "graph":
+        output.write_text("previous export")
+        args += ["--graph-format", "json", "--out", str(output)]
+    rejected = subprocess.run(args, capture_output=True, text=True)
+    assert rejected.returncode != 0, rejected.stdout
+    packet = json.loads(rejected.stdout)
+    assert packet["ok"] is False and "Explore result" in packet["error"]
+    assert log.read_text() == damaged
+    if command == "graph":
+        assert output.read_text() == "previous export"
+    log.write_bytes(healthy)
+    recovered = subprocess.run(args, capture_output=True, text=True)
+    assert recovered.returncode == 0, recovered.stdout
+    assert json.loads(recovered.stdout)["ok"] is True
+    assert log.read_bytes() == healthy
+
+
 @pytest.mark.parametrize(
     "mode,graph,planning",
     [("off", False, False), ("evidence", True, False), ("planning", True, True)],
@@ -126,7 +174,7 @@ def test_disabled_hook_keeps_packet_and_does_not_read_evidence(tmp_path, monkeyp
         pytest.fail("disabled Explore read evidence")
 
     monkeypatch.setattr(
-        "loopx.capabilities.explore.turn_context.load_explore_result_events", unexpected
+        "loopx.capabilities.explore.turn_context.load_explore_result_events_strict", unexpected
     )
     assert (
         extend_turn_start_dispatch(
@@ -304,7 +352,7 @@ def test_legacy_planning_does_not_grant_existing_sink_publication(tmp_path):
     assert observed == [False]
 
 
-def test_real_quota_packet_exposes_replayable_read_without_admitting_unhealthy_goal(
+def test_real_quota_delivers_replayable_context_without_admitting_unhealthy_goal(
     tmp_path,
 ):
     import subprocess
@@ -337,16 +385,26 @@ def test_real_quota_packet_exposes_replayable_read_without_admitting_unhealthy_g
     )
     packet = json.loads(packet_run.stdout)
     assert packet["ok"] is False  # This fixture deliberately has no healthy adapter.
-    required = next(
-        r for r in packet["required_reads"] if r["kind"] == "explore_turn_context"
+    channel = packet["interaction_contract"]["agent_channel"]
+    assert packet["should_run"] is False
+    assert channel["delivery_allowed"] is False
+    assert "required_reads" not in packet
+    source = next(
+        r for r in channel["work_context"]["sources"]
+        if r["kind"] == "explore_turn_context"
     )
+    assert not any(r.get("kind") == "explore_turn_context" for r in channel["required_reads"])
     read = subprocess.run(
-        [sys.executable, "-m", "loopx.cli", *shlex.split(required["command"])[1:]],
+        [sys.executable, "-m", "loopx.cli", *shlex.split(source["command"])[1:]],
         capture_output=True,
         text=True,
         check=True,
     )
     result = json.loads(read.stdout)
+    # The CLI adds its route receipt; the registered reader returns the same
+    # canonical context without transport diagnostics.
+    assert result.pop("source_runtime_route")["routed_to_source_registry"] is False
+    assert result == source["content"]
     assert result["graph_enabled"] is True
     assert result["harness"] is None
 
@@ -401,3 +459,99 @@ def test_real_cli_recent_context_includes_revisited_old_node(tmp_path):
     assert canonical["ok"] is True
     assert [row["node_id"] for row in canonical["nodes"]] == [f"route-{i}" for i in range(5)]
     assert log.read_bytes() == before
+
+
+def test_linked_evidence_hazards_survive_detail_caps(tmp_path):
+    from loopx.capabilities.explore.result_log import build_explore_edge_event
+    from loopx.capabilities.explore.todo_evidence import build_todo_typed_evidence_audit
+
+    path = registry(tmp_path, planning=True)
+    root = tmp_path / "runtime"
+    log = explore_result_log_path(root, "research")
+    todo = {"explore_result_node_refs": ["route"]}
+    add_goal_todo(
+        registry_path=path, runtime_root_arg=str(root), goal_id="research",
+        role="agent", text="Test changed conditions", task_class="advancement_task",
+        claimed_by="worker", **todo,
+    )
+    append_explore_result_event(log, build_explore_node_event(
+        goal_id="research", node_id="route", title="Route", status="exploring",
+    ))
+    for i in range(25):
+        append_explore_result_event(log, build_explore_finding_event(
+            goal_id="research", node_id="route", title=f"Result {i}",
+            status="refuted" if i == 0 else "confirmed",
+            recorded_at=f"2026-01-01T00:00:{i:02d}+00:00",
+        ))
+        append_explore_result_event(log, build_explore_node_event(
+            goal_id="research", node_id=f"input-{i}", title=f"Input {i}",
+        ))
+        append_explore_result_event(log, build_explore_edge_event(
+            goal_id="research", from_node=f"input-{i}", to_node="route",
+            edge_type="refutes" if i == 0 else "supports",
+            recorded_at=f"2026-01-01T00:00:{i:02d}+00:00",
+        ))
+    hook = extend_turn_start_dispatch(
+        {}, registry_path=path, runtime_root=root, goal_id="research", agent_id="worker"
+    )
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    command = shlex.split(hook["required_reads"][0]["command"])
+    result = subprocess.run(
+        [sys.executable, "-m", "loopx.cli", *command[1:]],
+        check=True, capture_output=True, text=True,
+    )
+    packet = json.loads(result.stdout)
+    audit = packet["harness"]["selected_branches"][0]["typed_evidence_audit"]
+    assert "linked_finding_refuted" in audit["hazards"]
+    assert "refute_edge_present" in audit["hazards"]
+    assert len(audit["findings"]) == len(audit["relevant_edges"]) == 3
+    assert audit["omitted_audit_findings"] == audit["omitted_audit_edges"] == 22
+    assert audit["score_delta"] == 0
+    assert packet["harness"]["orchestration_gate"]["state"] == "analysis_only"
+    assert {p: p.read_bytes() for p in before} == before
+
+    # Audit classifications must not depend on the detail ordering or its cap.
+    projection = {
+        "nodes": [{"node_id": "route"}],
+        "findings": [
+            {"node_id": "route", "status": "confirmed"} for _ in range(24)
+        ] + [{"node_id": "route", "status": "refuted"}],
+        "edges": [
+            {"to_node": "route", "edge_type": "supports"} for _ in range(24)
+        ] + [{"to_node": "route", "edge_type": "refutes"}],
+    }
+    full = build_todo_typed_evidence_audit(todo, projection)
+    assert full["status_counts"]["findings"] == {"confirmed": 24, "refuted": 1}
+    assert full["status_counts"]["edges"] == {"refutes": 1, "supports": 24}
+    assert len(full["findings"]) == len(full["relevant_edges"]) == 24
+    assert full["hazards"] == ["linked_finding_refuted", "refute_edge_present"]
+    assert build_todo_typed_evidence_audit({}, projection) is None
+
+
+@pytest.mark.parametrize("counts,omitted", [(None, 1), ({"confirmed": 25}, 22)])
+def test_turn_context_audit_count_compatibility(counts, omitted):
+    audit = {"findings": [{"status": "confirmed"}] * 4}
+    if counts is not None:
+        audit["status_counts"] = {"findings": counts}
+    packet = effect_runtime_result("explore.turn_context", {
+        "goal_id": "research", "agent_id": "worker", "route": ["loopx"],
+        "harness_gate": {"enabled": True}, "graph_enabled": False,
+        "projection": {}, "plan": {"selected_branches": [{"typed_evidence_audit": audit}]},
+    })
+    result = packet["harness"]["selected_branches"][0]["typed_evidence_audit"]
+    assert result["omitted_audit_findings"] == omitted
+    assert len(result["findings"]) == 3
+
+
+@pytest.mark.parametrize("kind", ["findings", "edges"])
+def test_turn_context_rejects_negative_evidence_count(kind):
+    with pytest.raises(EffectRuntimeRejected, match=f"Explore {kind} count must be nonnegative") as rejected:
+        effect_runtime_result("explore.turn_context", {
+            "goal_id": "research", "agent_id": "worker", "route": ["loopx"],
+            "harness_gate": {"enabled": True}, "graph_enabled": False,
+            "projection": {}, "plan": {"selected_branches": [{
+                "typed_evidence_audit": {"status_counts": {kind: {"unknown": -1}}},
+            }]},
+        })
+    assert rejected.value.error_kind == "request_rejected"
+    assert rejected.value.diagnostic_code == "invalid_request"

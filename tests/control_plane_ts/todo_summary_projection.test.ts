@@ -33,10 +33,10 @@ function fused(rows: JsonObject[], facts: JsonObject[], evaluations = evaluateTo
 test("fused summary preserves legacy decisions and full-source inferred edges through filtering", () => {
   const facts = [{todo_id: "todo_source", status: "done", active: true, advancement: true,
     no_followup: false, successors: [], superseded_by: null, unblocks: null, resumes: null,
-    handoff: true, context_fields: ["claimed_by"]},
+    handoff: true, done: true, route_flag: null, legacy_route_label: "", context_fields: ["claimed_by"]},
   {todo_id: "todo_archived", status: "done", active: false, advancement: true,
     no_followup: true, successors: [], superseded_by: null, unblocks: "todo_source", resumes: null,
-    handoff: false, context_fields: []}];
+    handoff: false, done: true, route_flag: null, legacy_route_label: "", context_fields: []}];
   const evaluations = evaluateTodoSuccession(facts);
   const rows = [done({todo_id: "todo_source", no_followup: false, handoff_state: "cleared_with_successor"})];
   const carrier = fused(rows, facts.slice(0, 1), evaluations.slice(0, 1));
@@ -50,7 +50,7 @@ test("fused summary preserves legacy decisions and full-source inferred edges th
 test("fused summary refuses missing, stale, reordered and contradictory evidence before closure", () => {
   const facts = ["todo_first", "todo_second"].map(todo_id => ({todo_id, status: "done", active: true,
     advancement: true, no_followup: true, successors: [], superseded_by: null, unblocks: null,
-    resumes: null, handoff: false, context_fields: ["claimed_by"]}));
+    resumes: null, handoff: false, done: true, route_flag: null, legacy_route_label: "", context_fields: ["claimed_by"]}));
   const rows = facts.map(fact => done({todo_id: fact.todo_id}));
   const carrier = fused(rows, facts);
   assert.ok(projectTodoSummary(carrier).fields.terminal_closure_proof);
@@ -62,6 +62,7 @@ test("fused summary refuses missing, stale, reordered and contradictory evidence
     (value: JsonObject) => { (value.rows as unknown[][])[0][TODO_SUMMARY_PROJECTION_COLUMNS.indexOf("successor_gap")] = true; },
     (value: JsonObject) => { (value.rows as unknown[][])[0][TODO_SUMMARY_PROJECTION_COLUMNS.indexOf("handoff_state")] = "blocking"; },
     (value: JsonObject) => { (value.rows as unknown[][])[0][TODO_SUMMARY_PROJECTION_COLUMNS.indexOf("no_followup")] = false; },
+    (value: JsonObject) => { (value.rows as unknown[][])[0][TODO_SUMMARY_PROJECTION_COLUMNS.indexOf("replan")] = true; },
   ]) {
     const changed = structuredClone(carrier); mutate(changed);
     assert.throws(() => projectTodoSummary(changed));
@@ -83,6 +84,32 @@ test("one whole-source projection computes counts, visibility and closure before
     assert.equal(result.fields.terminal_closure_proof, undefined);
     assert.deepEqual(rows, before);
   }
+});
+
+test("succession diagnostics guide continuation without authorizing terminal closeout", () => {
+  const facts = [{todo_id: "todo_stage", status: "done", active: true, advancement: true,
+    no_followup: false, successors: [], superseded_by: null, unblocks: null, resumes: null,
+    handoff: false, done: true, route_flag: null, legacy_route_label: "", context_fields: ["claimed_by"]}];
+  const stage = done({todo_id: "todo_stage", no_followup: false, successor_gap: true});
+  for (const limit of [null, 0, 1]) {
+    const carrier = fused([stage], facts);
+    const source = structuredClone(carrier);
+    const result = projectTodoSummary({...carrier, item_limit: limit});
+    assert.deepEqual(result, projectTodoSummary(request([stage], {item_limit: limit})));
+    assert.equal(result.fields.completed_without_successor_count, 1);
+    assert.equal(result.fields.terminal_closure_proof, undefined);
+    const warning = result.fields.todo_succession_warning as JsonObject;
+    assert.equal(warning.count, 1);
+    assert.match(String(warning.recommended_action), /Review remaining authorized Goal acceptance/);
+    assert.match(String(warning.recommended_action), /runnable frontier/);
+    assert.match(String(warning.recommended_action), /ordinary Todo completion needs no artificial successor/);
+    assert.match(String(warning.recommended_action), /only for final scope closeout.*current settlement contract/);
+    assert.deepEqual(carrier, source, "read guidance must not add successor or terminal facts");
+  }
+  const continuing = projectTodoSummary(request([stage, row({todo_id: "todo_next"})]));
+  assert.equal(continuing.fields.completed_without_successor_count, 1);
+  assert.deepEqual(continuing.lanes.first_executable_items.indices, [1]);
+  assert.equal(continuing.fields.terminal_closure_proof, undefined);
 });
 
 test("recent completion orders true microsecond instants and ignores later edits", () => {

@@ -2098,6 +2098,21 @@ actual callers have moved. [Operator contract](../../reference/reviewed-coordina
 
 ### Todo summary decision ownership
 
+Adjacent deadline correction: projected Agent/User frontier waits must compare
+UTC instants rather than ISO spelling, preserving the pre-compaction evidence
+and three live callers (quota compaction, monitor wait, scheduler continuation).
+An isolated typed read crossing previously made the measured warm scheduler
+consumer slower, despite preserving its semantics. The existing quota-planning
+batch now discovers addressed gate and Monitor deadlines before display caps,
+correcting earliest-gate loss without an additional crossing. It shares v3
+Monitor due/gap selection and the same observation instant, while preserving
+older planning wire versions. It removes Python's second gate-list filter.
+Keep the remaining Python current-time/raw-summary rule: bounded resume/handoff
+sources and scheduler freshness still need a cohesive already-needed batch,
+with same-load cost and installed File/SQLite negative cases before retirement.
+Do not open a duplicate follow-up or treat rule relocation as optimization.
+Default SQLite, full T4 and live host wait qualification remain open.
+
 One TS summary batch now owns selected-source counts, display allocation,
 recent-completion chronology, orchestration candidate positions and closure
 proofs. Python retains decoding, public field allowlists and rendering. The

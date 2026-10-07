@@ -1323,6 +1323,140 @@ def test_scheduler_cache_misses_after_todo_state_changes_without_run(
     assert "selected_todo" not in refreshed
 
 
+def test_scheduler_malformed_cached_todo_rebuilds_without_authority_write(
+    tmp_path: Path,
+) -> None:
+    from canonical_authority_fixture import initialize_canonical_authority
+    from loopx.control_plane.coordination.runtime_shadow import (
+        build_todo_runtime_shadow_projection,
+    )
+
+    project, runtime, registry_path = _write_fixture(tmp_path)
+    state_path = project / ".codex" / "goals" / GOAL_ID / "ACTIVE_GOAL_STATE.md"
+    listed_rc, listed = _run_cli(
+        registry_path, runtime, "todo", "list", "--goal-id", GOAL_ID
+    )
+    assert listed_rc == 0, listed
+    seeded = initialize_canonical_authority(
+        runtime,
+        GOAL_ID,
+        build_todo_runtime_shadow_projection(
+            goal_id=GOAL_ID,
+            todos=listed["todos"],
+            handoff_mode="soft_claim",
+            leases=[],
+        ),
+        state_path=state_path,
+    )
+    guard = (
+        "quota",
+        "should-run",
+        "--codex-app",
+        "--goal-id",
+        GOAL_ID,
+        "--agent-id",
+        AGENT_ID,
+        "--scan-path",
+        str(project),
+    )
+    initial_rc, initial = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--write-projection-cache",
+        cwd=project,
+    )
+    assert initial_rc == 0, initial
+    cache_path = Path(initial["status_projection_cache"]["path"])
+    cache_record = json.loads(cache_path.read_text(encoding="utf-8"))
+    cached_todo = cache_record["payload"]["attention_queue"]["items"][0][
+        "agent_todos"
+    ]["items"][0]
+    assert cached_todo.pop("schema_version") == "todo_item_v0"
+    cache_path.write_text(
+        json.dumps(cache_record, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    rebuilt_rc, rebuilt = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        "--use-projection-cache",
+        cwd=project,
+    )
+    fresh_rc, fresh = _run_cli(
+        registry_path,
+        runtime,
+        *guard,
+        cwd=project,
+    )
+
+    assert rebuilt_rc == fresh_rc == 0, rebuilt
+    assert rebuilt["status_projection_cache"]["hit"] is False
+    assert (
+        rebuilt["status_projection_cache"]["miss_reason"]
+        == "invalid_goal_todo_projection"
+    )
+    parity_fields = (
+        "should_run",
+        "decision",
+        "effective_action",
+        "selected_todo",
+        "todo_summary_projection",
+        "open_count",
+        "agent_todo_summary",
+    )
+    assert {field: rebuilt.get(field) for field in parity_fields} == {
+        field: fresh.get(field) for field in parity_fields
+    }
+    after_rc, after = _run_cli(
+        registry_path, runtime, "todo", "list", "--goal-id", GOAL_ID
+    )
+    assert after_rc == 0, after
+    assert after["authority_read"]["provider_revision"] == seeded["provider_revision"]
+
+
+def test_scheduler_cache_freshness_keeps_authoritative_decode_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from loopx.cli_commands import quota_cache_freshness
+    from loopx.history import goal_registry_digest
+
+    _, runtime, registry_path = _write_fixture(tmp_path)
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    payload = {
+        "run_history": {
+            "goals": [
+                {
+                    "id": GOAL_ID,
+                    "registry_goal_digest": goal_registry_digest(
+                        registry["goals"][0]
+                    ),
+                }
+            ]
+        },
+        "attention_queue": {"items": [{"goal_id": GOAL_ID}]},
+    }
+
+    def reject_authoritative_source(*_args: object, **_kwargs: object) -> object:
+        raise ValueError("malformed authoritative Todo source")
+
+    monkeypatch.setattr(
+        quota_cache_freshness,
+        "active_state_todo_fields",
+        reject_authoritative_source,
+    )
+    with pytest.raises(ValueError, match="malformed authoritative Todo source"):
+        quota_cache_freshness.cached_goal_projection_miss_reason(
+            payload,
+            registry_path=registry_path,
+            runtime_root=runtime,
+            goal_id=GOAL_ID,
+        )
+
+
 def test_scheduler_cache_misses_after_goal_is_stopped_without_run(
     tmp_path: Path,
 ) -> None:
@@ -4469,8 +4603,18 @@ def test_pending_selection_preserves_workspace_repair_then_reenters_same_turn(
     assert resumed["workspace_repair_allowed"] is False
     assert resumed["selected_todo"]["todo_id"] == ALTERNATIVE_TODO_ID
     assert resumed["selected_todo"]["selection_binding"] == "heartbeat_receipt"
-    assert resumed["heartbeat_receipt"]["status"] == "replayed"
-    assert _heartbeat_receipt_count(runtime, turn_instance_id) == 2
+    # Workspace recovery admits work on the already selected identity. Keep
+    # the repair receipt intact and append qualification rather than replaying
+    # its stale negative delivery facts to downstream admission readers.
+    assert resumed["heartbeat_receipt"]["status"] == "upgraded"
+    assert resumed["heartbeat_receipt"]["settlement_identity"] == repair["heartbeat_receipt"]["settlement_identity"]
+    assert resumed["heartbeat_receipt"]["event_id"] != repair["heartbeat_receipt"]["event_id"]
+    assert _heartbeat_receipt_count(runtime, turn_instance_id) == 3
+    replay_rc, replay = _run_cli(registry_path, runtime, *guard_args,
+        "--todo-id", ALTERNATIVE_TODO_ID, cwd=linked_worktree)
+    assert replay_rc == 0 and replay["heartbeat_receipt"]["status"] == "replayed", replay
+    assert replay["heartbeat_receipt"]["event_id"] == resumed["heartbeat_receipt"]["event_id"]
+    assert _heartbeat_receipt_count(runtime, turn_instance_id) == 3
 
 
 def test_boundary_projection_repair_keeps_same_turn_alternative_selectable(

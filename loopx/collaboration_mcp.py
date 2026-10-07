@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import hashlib
 import json
 import os
 import signal
@@ -73,7 +72,10 @@ from .control_plane.collaboration.peers import (
     request,
     require_operation_id,
 )
-from .presentation.answer_instruction import conversation_answer_instruction
+from .presentation.answer_instruction import (
+    collaboration_answer_instruction,
+    conversation_answer_instruction,
+)
 
 
 _PINNED_MODULE_LAUNCHER = (
@@ -258,7 +260,7 @@ def register_collaboration_tools(server: FastMCP, root: Path, registry: Path, go
         Follow next_cursor for later requests. Omit cursor to start a fresh scan.
         Pages are live; reading all pages does not complete outstanding work.
         """
-        return read_inbox(
+        result = read_inbox(
             root,
             registry,
             goal_id,
@@ -267,6 +269,8 @@ def register_collaboration_tools(server: FastMCP, root: Path, registry: Path, go
             cursor=cursor,
             caller_goal_ref=caller_goal_ref,
         )
+        result["instruction"] += " " + collaboration_answer_instruction()
+        return result
 
     @server.tool()
     def assess_request(
@@ -1341,28 +1345,7 @@ class Delegations:
         return delegation_validation.validate(self, binding)
 
     def _accepted(self, binding: dict) -> dict:
-        validation = self._validate(binding)
-        if not validation["plan"]["canonical_done"]:
-            raise ValueError("delegation requires current canonical completion")
-        workspace = Path(binding["workspace"]).resolve()
-        artifacts = []
-        for ref in binding["output_refs"]:
-            path = workspace / ref
-            if not path.resolve().is_relative_to(workspace) or path.is_symlink() or not path.is_file():
-                raise ValueError("delegation artifact unavailable or outside workspace")
-            if path.stat().st_size > 128_000:
-                raise ValueError("delegation artifact exceeds bounded return size")
-            with os.fdopen(os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0)), "rb") as stream:
-                if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
-                    raise ValueError("delegation artifact must be a regular file")
-                content = stream.read(128_001)
-            if len(content) > 128_000:
-                raise ValueError("delegation artifact exceeds bounded return size")
-            artifacts.append({"ref": ref, "sha256": hashlib.sha256(content).hexdigest(),
-                              "text": content.decode("utf-8")})
-        if len(json.dumps(artifacts).encode()) > 64_000:
-            raise ValueError("delegation aggregate return exceeds limit")
-        return {"artifacts": artifacts, "validation": validation["plan"]["observation"]}
+        return delegation_results.accepted_result(self, binding)
 
     def execute(self, operation_id: str) -> None:
         path = self.path(operation_id)

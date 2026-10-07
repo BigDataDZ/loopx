@@ -5,7 +5,7 @@ import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from .quota_capture import capture_decision, prepare_decision_capture
+from .quota_capture import bind_capture_selection_transport, capture_decision, prepare_decision_capture
 from ..usage_goal import observe_quota_result
 
 from ..capabilities.explore.composition_frontier import (
@@ -322,7 +322,9 @@ def _dispatch_quota_turn_start_hooks(
         context_dispatch = extend_preferences(context_dispatch, runtime_root=root, registry_path=registry_path,
             goal_id=args.goal_id, agent_id=args.agent_id)
         dispatch = dict(dispatch)
-        for key in ("results", "required_reads", "failures"):
+        for key in ("results", "required_reads", "failures", "contexts"):
+            if key == "contexts" and not context_dispatch.get(key):
+                continue
             dispatch[key] = list(dispatch.get(key) or []) + list(context_dispatch.get(key) or [])
         for key in ("registered_count", "invoked_count"):
             dispatch[key] = int(dispatch.get(key) or 0) + int(context_dispatch.get(key) or 0)
@@ -377,7 +379,9 @@ def _attach_turn_start_hook_dispatch(
     dispatch: Mapping[str, object] | None,
 ) -> None:
     if dispatch and (dispatch.get("registered_count") or dispatch.get("failures")):
-        payload["turn_start_capability_hook_dispatch"] = dict(dispatch)
+        payload["turn_start_capability_hook_dispatch"] = {
+            key: value for key, value in dispatch.items() if key != "contexts"
+        }
 
 
 
@@ -437,12 +441,22 @@ def _emit_quota_result(
     print_payload: PrintPayload,
 ) -> int:
     """Capture the full decision before projecting and printing the CLI view."""
+    # Compose optional capability guidance after recovery has chosen the plan,
+    # before capture/compaction. The quota decision owner stays capability-neutral.
+    from ..capabilities.explore.turn_context import project_settlement_attachment
+
+    cli = (payload.get("interaction_contract") or {}).get("cli_channel")
+    if isinstance(cli, dict) and isinstance(cli.get("settlement_plan"), Mapping):
+        cli["settlement_plan"] = project_settlement_attachment(
+            cli["settlement_plan"], registry_path=registry_path,
+        )
     if context is not None:
         observe_quota_result(
             args, payload, registry_path=registry_path, runtime_root=context.runtime_root,
             turn_id=_effective_spend_turn_instance_id(payload, heartbeat_turn_id=heartbeat_turn_id),
             started_at=usage_quota_started,
         )
+    bind_capture_selection_transport(payload, args)
     capture_decision(capture_directory, payload)
     payload = _project_quota_cli_payload(
         payload, args, detail_sections,
@@ -485,7 +499,10 @@ def handle_quota_command(
     context: QuotaCommandContext | None = None
     goal_ref: dict[str, str] | None = None
     try:
-        if capture_directory is None and getattr(args, "decision_output_dir", None) is not None:
+        if capture_directory is None and (
+            getattr(args, "decision_output_dir", None) is not None
+            or getattr(args, "decision_output_root", None) is not None
+        ):
             validate_quota_command_context_request(args)
             capture_directory = prepare_decision_capture(args)
         goal_ref, turn_start_hook_dispatch, context = (

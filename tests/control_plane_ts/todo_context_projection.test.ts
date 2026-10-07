@@ -32,7 +32,9 @@ test("overview retains declared relationships without changing their meaning", (
 });
 
 test("overview loss is visible and an exact read recovers the original constraint", () => {
-  const record = {todo_id: "report", status: "open", text: "研究报告😀".repeat(90),
+  const fullText = "研究报告😀".repeat(150) + "Only publish after owner acceptance.";
+  const record = {todo_id: "report", status: "open", text: fullText,
+    title: Array.from(fullText).slice(0, 500).join("") + "...",
     note: "背景。".repeat(120) + "只写草稿，不要发布。", private_provider_payload: "excluded"};
   const overview = (page([record]).todos as JsonObject[])[0];
   assert.equal(overview.content_truncated, true);
@@ -44,6 +46,9 @@ test("overview loss is visible and an exact read recovers the original constrain
   assert.equal(exact.private_provider_payload, undefined);
   const external = (page([record], {owner_scope: false, todo_id: "report"}).todos as JsonObject[])[0];
   assert.equal(external.continuation, undefined);
+  const titleOnly = (page([{todo_id: "title-only", title: "Original title", status: "open"}],
+    {todo_id: "title-only"}).todos as JsonObject[])[0];
+  assert.equal(titleOnly.title, "Original title");
 });
 
 test("exact completed or missing records remain observations, never runnable work", () => {
@@ -53,4 +58,33 @@ test("exact completed or missing records remain observations, never runnable wor
   for (const options of [{owner_scope: "true"}, {offset: -1}, {limit: 49}, {todo_id: ""}]) {
     assert.throws(() => page(records, options));
   }
+});
+
+test("default exact detail removes duplicate views without truncating or granting authority", () => {
+  const body = "Retain each independent acceptance clause. ".repeat(80) + "TAIL: no publication";
+  const todo = {todo_id: "todo_one", text: body, status: "blocked", resume_ready: false};
+  const payload = {todo_id_filter: "todo_one", matched: true, todos: [todo],
+    agent_todos: {items: [todo]}, user_todos: {items: []},
+    authority_read: {provider_revision: "file:17", source_authority: "file_v0"},
+    relations: {required_write_scopes: ["docs/**"], resume_ready: false}};
+  const before = structuredClone(payload);
+  const result = projectTodoContextPage({detail_payload: payload});
+  assert.deepEqual(result.todo, todo);
+  assert.deepEqual(result.authority_read, payload.authority_read);
+  assert.deepEqual(result.relations, payload.relations);
+  for (const key of ["todos", "agent_todos", "user_todos", "execution_authorized"]) {
+    assert.equal(result[key], undefined);
+  }
+  assert.deepEqual(payload, before);
+  assert.equal(JSON.stringify(result).split(body).length - 1, 1);
+  for (const changed of [
+    {todo_id_filter: ""}, {todos: [todo, todo]}, {todos: [{...todo, todo_id: "other"}]},
+    {matched: false}, {todos: [{...todo, text: 42}]},
+  ]) assert.throws(() => projectTodoContextPage({detail_payload: {...payload, ...changed}}));
+  assert.throws(() => projectTodoContextPage({detail_payload: payload, records: []}));
+  const missing = projectTodoContextPage({detail_payload: {
+    todo_id_filter: "todo_missing", matched: false, not_found: true, todos: [],
+  }});
+  assert.equal(missing.not_found, true);
+  assert.equal((missing.todo_detail_projection as JsonObject).source_complete, false);
 });

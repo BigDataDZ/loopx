@@ -18,8 +18,8 @@ from .chat_manager import (
     manager_answer_readback,
     manager_session_model_allocation,
 )
-from .chat_coordination import PROJECT_COORDINATION_GUIDANCE, PROJECT_CONTEXT_VERSION
-from .capabilities.native_chat.project_context import ChatProjectContexts
+from .chat_coordination import PROJECT_COORDINATION_GUIDANCE, PROJECT_CONTEXT_VERSION, apply_context_handoff
+from .capabilities.native_chat import project_context as project_context_policy
 from .control_plane.collaboration import conversation_scope
 from .capabilities.manager_runtime import (
     load_effective_manager_runtime_profile, manager_runtime_session_fields,
@@ -300,14 +300,14 @@ class ChatRuntimeController:
         endpoint_registry: AgentEndpointRegistry | None = None,
         registry_path: Path | None = None,
         manager_scope_resolver: Callable[[dict[str, Any]], list[str] | None] | None = None,
-        project_contexts: ChatProjectContexts | None = None,
+        project_contexts: project_context_policy.ChatProjectContexts | None = None,
     ) -> None:
         self.store = store
         self.registry_path = registry_path
         from .capabilities.native_chat.project_context import coordination_runtime_root
         self.coordination_runtime_root = coordination_runtime_root(registry_path, store.root.parent)
         self.manager_scope_resolver = manager_scope_resolver
-        self.project_contexts = project_contexts or ChatProjectContexts([])
+        self.project_contexts = project_contexts or project_context_policy.ChatProjectContexts([])
         self.codex_bin = codex_bin
         # Capture once; the service's startup environment is not session identity.
         self.codex_home = Path(
@@ -416,8 +416,8 @@ class ChatRuntimeController:
         executor_model: Mapping[str, str | None] | None = None,
         project_context: dict[str, str] | None = None,
     ) -> ChatRuntimeAdapter:
-        if project_context is not None and project_context.get("grant") == "workspace_write" and agent_id != "codex":
-            raise ValueError("the selected executor cannot enforce workspace write authorization")
+        if project_context is not None:
+            project_context_policy.validate_project_native_executor(agent_id, project_context)
         if (
             manager_runtime is not None
             and manager_runtime.get("runtime_profile") == "trusted_owner"
@@ -568,6 +568,7 @@ class ChatRuntimeController:
         mode: str,
         channel_id: str | None = None,
         agent_goal_id: str | None = None,
+        goal_instance_id: str | None = None,
         manager_executor_allocation: Mapping[str, Any] | None = None,
         project_ref: str | None = None,
         conversation_binding_id: str | None = None,
@@ -602,6 +603,8 @@ class ChatRuntimeController:
             work_dir, objective = context["project"], context["objective"]
         elif goal_id is None:
             raise ValueError("goal_id or an authorized project_ref is required")
+        if project_context is not None:
+            project_context_policy.validate_project_executor_scope(agent_id, project_context, self.capabilities, capability)
         manager_runtime = (
             self.manager_runtime_profile(selected_channel)
             if is_manager_channel(selected_channel)
@@ -653,6 +656,8 @@ class ChatRuntimeController:
                 # starts a new Session while the old context and history remain intact.
                 if latest is not None and project_context is not None and latest.get("project_context") != project_context:
                     latest = None
+                if latest is not None and goal_instance_id is not None and latest.get("goal_instance_id") != goal_instance_id:
+                    latest = None
                 if latest is not None and latest.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
                     return latest, True
             if capability is None:
@@ -678,6 +683,7 @@ class ChatRuntimeController:
             )
             persisted = self.store.create_session(
                 goal_id=goal_id,
+                goal_instance_id=goal_instance_id,
                 agent_id=agent_id,
                 executor_endpoint_id=agent_id,
                 adapter_kind=str(capability["adapter_kind"]),
@@ -753,6 +759,7 @@ class ChatRuntimeController:
             self.project_contexts.session_context(session)
         if session.get("project_context") is not None:
             context = self.project_contexts.session_context(session)
+            project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             work_dir, objective = context["project"], context["objective"]
         manager_runtime = (
             self.manager_runtime_profile(str(session.get("channel_id") or "manager"))
@@ -1012,6 +1019,7 @@ class ChatRuntimeController:
             if session["project_context"].get("audience") == "bound_owner":
                 raise ValueError("bound project Chat requires its external source admission")
             context = self.project_contexts.session_context(session)
+            project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             work_dir, objective = context["project"], context["objective"]
             if loopx_execution:
                 raise ValueError("ordinary project conversations do not authorize LoopX execution")
@@ -1286,6 +1294,7 @@ class ChatRuntimeController:
             if conversation_scope(session, origin=origin)["kind"] != "project_workspace":
                 raise ValueError("project grant does not authorize this external audience or source")
             context = self.project_contexts.session_context(session)
+            project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             work_dir, objective = context["project"], context["objective"]
         if session.get("session_mode") == CHAT_SESSION_MODE_ATTACHED:
             if attachments:
@@ -1577,6 +1586,7 @@ class ChatRuntimeController:
             session = self.store.load_session(session_id) or {}
             if session.get("project_context") is not None:
                 self.project_contexts.session_context(session)
+                project_context_policy.validate_project_executor_scope(str(session["agent_id"]), session["project_context"], self.capabilities)
             from .chat_coordination import prepare_turn_context
             scope = conversation_scope(session, origin=str((self.store.load_turn(session_id, turn_id) or {}).get("origin") or "unknown"))
             if isinstance(adapter, CodexAppServerAdapter):
@@ -1653,14 +1663,9 @@ class ChatRuntimeController:
                 event_buffer.close()
                 return
             if response.get("context_handoff") is not None:
-                from .capabilities.manager_context.execution import handoff_response
-                if scope["kind"] == "unavailable":
-                    raise ValueError("context handoff requires a scoped conversation")
-                response = handoff_response(
-                    self.coordination_runtime_root, self.registry_path, session=session,
-                    turn=self.store.load_turn(session_id, turn_id) or {}, response=response,
-                    source_authorized=lambda: scope["kind"] != "external_audience" or bool(
-                        self.manager_scope_resolver and self.manager_scope_resolver(session)),
+                response = apply_context_handoff(
+                    self, scope, session,
+                    self.store.load_turn(session_id, turn_id) or {}, response, context,
                     execution_allowed=lambda: not execution_ended())
             response = offer_team_plan_confirmation(
                 store=self.store,

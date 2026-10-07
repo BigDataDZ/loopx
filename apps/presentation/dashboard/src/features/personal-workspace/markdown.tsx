@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import LinkifyIt from "linkify-it";
+import { LinkifyIt } from "linkify-it";
 
 /**
  * Minimal, safe Markdown renderer for visible Agent prose.
@@ -11,8 +11,19 @@ import LinkifyIt from "linkify-it";
 
 const INLINE_PATTERN = /(`[^`\n]+`)|(\*\*[^*\n]+(\*[^*\n]*)?\*\*)|(\[[^\]\n]{1,120}\]\(https?:\/\/[^)\s]+\))/g;
 const webLinks = new LinkifyIt({
-  fuzzyLink: false, fuzzyEmail: false,
+  fuzzyLink: false, fuzzyEmail: false, urlAuth: true,
 }).add("ftp:", null).add("mailto:", null).add("//", null);
+
+/**
+ * linkify-it bounds how far it scans userinfo, so an automatic match can
+ * stop before the `@` that still belongs to the same address. The matched
+ * prefix then has the userinfo as its host, and linking it would silently open
+ * a different site than the text the reader sees. Only a match that ends the
+ * address it started is turned into a link; an incomplete one stays inert text.
+ */
+function completeWebMatch(part: string, match: { lastIndex: number }): boolean {
+  return !part.slice(match.lastIndex).startsWith("@");
+}
 
 function renderPlainText(text: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = [];
@@ -22,8 +33,10 @@ function renderPlainText(text: string, keyPrefix: string): ReactNode[] {
     let last = 0;
     for (const match of webLinks.match(part) ?? []) {
       if (match.index > last) nodes.push(part.slice(last, match.index));
-      nodes.push(<a className="personal-md-link" href={match.url}
-        key={`${keyPrefix}-p${partIndex}-${match.index}`} rel="noreferrer" target="_blank">{match.text}</a>);
+      nodes.push(completeWebMatch(part, match)
+        ? <a className="personal-md-link" href={match.url}
+          key={`${keyPrefix}-p${partIndex}-${match.index}`} rel="noreferrer" target="_blank">{match.text}</a>
+        : match.text);
       last = match.lastIndex;
     }
     if (last < part.length) nodes.push(part.slice(last));

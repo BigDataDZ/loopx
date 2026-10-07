@@ -78,13 +78,17 @@ def cached_goal_projection_miss_reason(
         "registry_goal_digest"
     ) != goal_registry_digest(current_goal):
         return "goal_registry_changed"
+    try:
+        cached_projection = _todo_source_projection(
+            _goal_attention_item(payload, goal_id)
+        )
+    except ValueError:
+        return "invalid_goal_todo_projection"
     current_fields = active_state_todo_fields(
         current_goal,
         runtime_root=runtime_root,
         registry_path=registry_path,
     )
-    if _todo_source_projection(
-        _goal_attention_item(payload, goal_id)
-    ) != _todo_source_projection(current_fields):
+    if cached_projection != _todo_source_projection(current_fields):
         return "goal_todo_projection_changed"
     return None
