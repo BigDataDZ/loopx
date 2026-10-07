@@ -13,6 +13,9 @@ import pytest
 
 from loopx import global_registry
 from loopx import project_uninstall as project_uninstall_module
+from loopx.control_plane.coordination.shadow_management import (
+    shadow_maintenance_lock_target,
+)
 from loopx.file_lock import exclusive_cross_runtime_file_lock, fcntl
 from loopx.global_registry import (
     global_registry_path,
@@ -225,6 +228,7 @@ def test_retire_reads_and_writes_inside_the_global_registry_lock(
         path.unlink()
 
     held: list[Path] = []
+    acquired: list[Path] = []
     events: list[str] = []
     real_write = global_registry.write_json
     real_load = global_registry._load_global_registry
@@ -232,6 +236,7 @@ def test_retire_reads_and_writes_inside_the_global_registry_lock(
     @contextmanager
     def recording_lock(path: Path, **kwargs: Any) -> Iterator[Path]:
         held.append(path)
+        acquired.append(path)
         try:
             yield path
         finally:
@@ -262,6 +267,13 @@ def test_retire_reads_and_writes_inside_the_global_registry_lock(
     assert result["ok"] is True, result
     assert result["wrote"] is True, result
     assert held == []
+    assert acquired == [
+        shadow_maintenance_lock_target(
+            runtime_root,
+            "goal-alpha",
+        ),
+        global_path,
+    ]
     assert "read:locked" in events, events
     assert "backup:locked" in events, events
     assert "write:locked" in events, events
