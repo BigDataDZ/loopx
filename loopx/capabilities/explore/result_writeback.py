@@ -120,13 +120,13 @@ def prepare_result_attachment(
         raise ValueError(
             "Explore result attachment requires enabled Explore evidence or planning mode"
         )
-    rows = list_goal_todos(
+    detail = list_goal_todos(
         registry_path=registry_path,
         runtime_root_arg=str(runtime_root),
         goal_id=goal_id,
         todo_id=todo_id,
-    ).get("todos", [])
-    if len(rows) != 1 or rows[0].get("claimed_by") != agent_id:
+    ).get("todo")
+    if not isinstance(detail, dict) or detail.get("claimed_by") != agent_id:
         raise ValueError(
             "Explore result attachment must belong to the caller's claimed Todo"
         )
@@ -230,16 +230,16 @@ def deliver_result_attachment(
             source_id=intent["idempotency_key"],
             recorded_at=committed_at,
         )
-        rows = list_goal_todos(
+        detail = list_goal_todos(
             registry_path=registry_path,
             runtime_root_arg=str(runtime_root),
             goal_id=goal_id,
             todo_id=todo_id,
-        ).get("todos", [])
+        ).get("todo")
         if (
             expected[1] in existing_events
-            and len(rows) == 1
-            and attachment["node_id"] in (rows[0].get("explore_result_node_refs") or [])
+            and isinstance(detail, dict)
+            and attachment["node_id"] in (detail.get("explore_result_node_refs") or [])
         ):
             return {
                 **result,

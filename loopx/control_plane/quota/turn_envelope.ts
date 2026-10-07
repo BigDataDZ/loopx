@@ -210,26 +210,6 @@ function compactFields(
   return compact;
 }
 
-function sameActionText(left: unknown, right: unknown): boolean {
-  const leftText = text(left, 2_000);
-  const rightText = text(right, 2_000);
-  if (!leftText || !rightText) return false;
-  // JS has no native casefold. Upper-then-lower preserves the Python v0
-  // behavior for multi-character folds such as German sharp-s and ligatures.
-  const leftFolded = leftText.toUpperCase().toLowerCase();
-  const rightFolded = rightText.toUpperCase().toLowerCase();
-  if (leftFolded === rightFolded) return true;
-  if (leftFolded.endsWith("...")) {
-    const prefix = leftFolded.slice(0, -3).trimEnd();
-    return prefix.length >= 80 && rightFolded.startsWith(prefix);
-  }
-  if (rightFolded.endsWith("...")) {
-    const prefix = rightFolded.slice(0, -3).trimEnd();
-    return prefix.length >= 80 && leftFolded.startsWith(prefix);
-  }
-  return false;
-}
-
 function selectedTodo(payload: JsonObject, recommendedAction: string | null): JsonObject | null {
   const source = object(payload.selected_todo);
   if (Object.keys(source).length === 0) return null;
@@ -242,8 +222,10 @@ function selectedTodo(payload: JsonObject, recommendedAction: string | null): Js
   ]) {
     if (source[field] !== null && source[field] !== undefined) compact[field] = source[field];
   }
-  const rendered = text(source.text, 360);
-  if (rendered && sameActionText(source.text, recommendedAction)) {
+  // Work declarations can end in acceptance/stop conditions. Keep their exact
+  // text; a display prefix or case-folded recommendation cannot stand in for it.
+  const rendered = scalarString(source.text, "selected_todo.text");
+  if (rendered && rendered === recommendedAction) {
     compact.text_ref = "action.recommended_action";
   } else if (rendered) {
     compact.text = rendered;
@@ -297,10 +279,10 @@ function responsePlan(interaction: JsonObject): JsonObject | null {
 }
 
 function requiredReads(interaction: JsonObject, payload: JsonObject): JsonObject[] {
-  const raw = interaction.required_reads || payload.required_reads;
-  if (!Array.isArray(raw)) return [];
+  const raw = object(interaction.agent_channel).required_reads
+    ?? interaction.required_reads ?? payload.required_reads;
   const result: JsonObject[] = [];
-  for (const value of raw) {
+  for (const value of Array.isArray(raw) ? raw : []) {
     const item = object(value);
     const promptBudget = item.source === "turn_start_capability_hook"
       ? turnStartPromptBudgetBytes(item.prompt_budget_bytes) : 0;
@@ -313,6 +295,12 @@ function requiredReads(interaction: JsonObject, payload: JsonObject): JsonObject
     for (const field of ["kind", "reason", "source"]) {
       const rendered = text(item[field], 240);
       if (rendered) compact[field] = rendered;
+    }
+    // These are existing obligation coordinates, not provider diagnostics.
+    // Keep identity and ordering intact, just like the executable command.
+    for (const field of ["ordering", "hook_id", "capability_id"]) {
+      const value = scalarString(item[field], `required read ${field}`);
+      if (value) compact[field] = value;
     }
     result.push(compact);
   }
@@ -831,9 +819,11 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-function commandPrefix(runtimeRoot: unknown): string {
+function commandPrefix(runtimeRoot: unknown, registry?: unknown): string {
   const runtimeRootText = scalarString(runtimeRoot, "quota payload runtime_root").trim();
-  return runtimeRootText ? `loopx --runtime-root ${shellQuote(runtimeRootText)}` : "loopx";
+  const registryText = scalarString(registry, "quota payload registry").trim();
+  return "loopx" + (registryText ? ` --registry ${shellQuote(registryText)}` : "") +
+    (runtimeRootText ? ` --runtime-root ${shellQuote(runtimeRootText)}` : "");
 }
 
 function coldPath(
@@ -844,7 +834,7 @@ function coldPath(
 ): JsonObject {
   const goalId = scalarString(payload.goal_id, "quota payload goal_id", "<goal-id>");
   const agentArg = agentId ? ` --agent-id ${agentId}` : "";
-  const prefix = commandPrefix(payload.runtime_root);
+  const prefix = commandPrefix(payload.runtime_root, payload.registry);
   return {
     full_decision: capturedDecisionPath ? `cat -- ${shellQuote(capturedDecisionPath)}` : schedulerExecutionArgs
       ? `${prefix} --format json quota should-run --goal-id ${goalId}${agentArg}${schedulerExecutionArgs}`
