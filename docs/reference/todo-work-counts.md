@@ -85,6 +85,38 @@ lane and closure RPC calls; it does not change persisted Todo or public summary
 schemas. Python decodes legacy input, validates source ordinals and materializes
 public fields, with no independent summary count, cap or claimant-allocation rule.
 
+Route-continuation visibility also uses the existing typed quota planning batch.
+It shares the normal claim/exclusion rule; eligibility, first-identity deduplication,
+sorting and counts precede the display cap. Disabled candidates do not hide later
+eligible copies. Historical unclaimed visibility may include excluded records,
+but the current-Agent lane excludes them and the execution consumer rechecks
+eligibility. A route hint never grants execution or clears a handoff gate.
+Python retains legacy field decoding and display formatting. There is no new
+RPC, persisted field, provider default or forced migration; supported old planning
+requests and legacy/File/SQLite records retain their behavior.
+
+Handoff visibility uses the same batch and gate snapshot. `excluded_agents`
+addresses the review lane for these gates, independently of ordinary execution
+claims; exclusion still denies execution. Full-source counts precede display
+limits, while projected source order, duplicates and historical display states
+are retained. Only `cleared_without_successor` contributes to that named gap
+count; no-follow-up, superseded and deferred states are distinct. An explicitly
+empty projected gate list suppresses legacy reconstruction. Python retains the
+legacy renderer and downstream execution checks, with no separate handoff lane
+decision or repeated gate reconstruction for route visibility.
+
+重规划候选的展示也复用既有 TS quota planning 批处理与 claim/exclusion 规则。
+资格、首个有效身份去重、排序和计数先于展示裁剪；显式关闭的副本不遮挡后续有效
+副本。历史 unclaimed 展示可包含被排除的记录，current-Agent 分组会排除它们，
+执行方仍重新校验资格。建议不授予执行权限或清除 handoff 阻塞。Python 保留旧字段
+解码和展示；不新增 RPC、持久字段、provider 默认值或强制迁移。
+
+handoff 展示也使用同一批次与 gate 快照。此处 `excluded_agents` 定向其复核分组，
+执行仍受排除限制；它不按普通工作 claim 授予资格。完整计数先于裁剪，保留来源顺序、
+重复行和历史展示状态；仅 `cleared_without_successor` 计入对应后继缺口，不能混同
+no-follow-up、superseded 或 deferred。显式空 gate 投影不重建旧来源。Python 保留旧
+格式展示和下游执行检查，删除独立 handoff 分组判断及 route 展示的重复 gate 重建。
+
 ## 中文说明
 
 `work_counts` 由完整来源计算，随后才裁剪展示。Agent quota 先按原有归属、排除、

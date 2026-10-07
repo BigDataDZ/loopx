@@ -7,6 +7,8 @@ import { projectTodoResumePlanning } from "./resume_planning.ts";
 import { gateAddressesAgent, actionAddressesAgent, claimAllowsAgent } from "./agent_scope.ts";
 import { missingRequiredCapabilities } from "../agents/capability_gate.ts";
 import {claimedAdvancementCountFromIndex} from "./frontier_revision.ts";
+import {authorityUnicodeCompare} from "../coordination/authority_store_codec.ts";
+import type {HandoffState} from "./succession.ts";
 import {validateTodoClosureSource} from "./succession.ts";
 
 interface Row {
@@ -189,15 +191,100 @@ export function projectQuotaSelection(value: unknown): JsonObject {
   }, claim_visibility: claimVisibility};
 }
 
-/** One quota read boundary composes scope/claim, resume and source closure rules. */
+/** Route hints are read visibility, never a grant to execute or clear a gate.
+ * Reuse the ordinary claim/exclusion owner within the same planning crossing. */
+function routeContinuationLanes(value: unknown, agent: string | null, limit: number): JsonObject {
+  if (!Array.isArray(value)) throw new EffectRuntimeRequestError("route items must be an array");
+  const seen = new Set<string>();
+  const selected = value.flatMap(value => {
+    const row = requireJsonObject(value, "route item");
+    const display = requireJsonObject(row.display, "route display");
+    if (typeof row.identity !== "string" || (row.replan !== null && typeof row.replan !== "boolean") ||
+        (row.task_class !== null && typeof row.task_class !== "string")) {
+      throw new EffectRuntimeRequestError("invalid route identity or classification facts");
+    }
+    const gate = requireBoolean(row.gate, "route gate");
+    const scope = {claim: optionalNonEmptyString(row.claim, "route claim"),
+      excluded: requireStringArray(row.excluded, "route excluded")};
+    const sort = row.sort;
+    if (!Array.isArray(sort) || sort.length !== 4 ||
+        !Number.isSafeInteger(sort[0]) || !Number.isSafeInteger(sort[1]) ||
+        typeof sort[2] !== "string" || typeof sort[3] !== "string") {
+      throw new EffectRuntimeRequestError("invalid route presentation coordinates");
+    }
+    if (row.replan === false || (gate && row.replan !== true) ||
+        (row.task_class !== null && row.task_class !== "advancement_task") ||
+        !row.identity || seen.has(row.identity)) return [];
+    seen.add(row.identity);
+    return [{scope, sort: sort as [number, number, string, string],
+      display: {...display, route_continuation_replan_required: true}}];
+  });
+  selected.sort((a, b) => a.sort[0] - b.sort[0] || a.sort[1] - b.sort[1] ||
+    authorityUnicodeCompare(a.sort[2], b.sort[2]) || authorityUnicodeCompare(a.sort[3], b.sort[3]));
+  if (!selected.length) return {};
+  const compact = (rows: typeof selected) => rows.slice(0, limit).map(row => row.display);
+  const result: JsonObject = {route_continuation_replan_count: selected.length,
+    route_continuation_replan_candidates: compact(selected)};
+  if (agent) {
+    const current = selected.filter(row => claimAllowsAgent(row.scope, agent));
+    // Historical unclaimed visibility includes excluded rows; only the current
+    // lane permits a wake, and its consumer rechecks execution eligibility.
+    const unclaimed = selected.filter(row => !row.scope.claim);
+    const other = selected.filter(row => !claimAllowsAgent(row.scope, agent));
+    Object.assign(result, {
+      current_agent_route_continuation_replan_count: current.length,
+      current_agent_route_continuation_replan_candidates: compact(current),
+      unclaimed_route_continuation_replan_count: unclaimed.length,
+      unclaimed_route_continuation_replan_candidates: compact(unclaimed),
+      other_agent_route_continuation_replan_count: other.length,
+      other_agent_route_continuation_replan_candidates: compact(other),
+      route_continuation_replan_selection_policy: "quota may wake the current peer for route continuation replan " +
+        "candidates claimed by that agent or unclaimed; other-agent route candidates remain diagnostic visibility",
+    });
+  }
+  return result;
+}
+
+/** Exclusion addresses a handoff review lane; it is not execution eligibility.
+ * Preserve projected source order, duplicates and unknown historical display states. */
+function handoffGateLanes(value: unknown, agent: string | null, limit: number): JsonObject {
+  if (!Array.isArray(value)) throw new EffectRuntimeRequestError("handoff items must be an array");
+  const rows = value.map(value => {
+    const row = requireJsonObject(value, "handoff item");
+    return {display: requireJsonObject(row.display, "handoff display"),
+      excluded: requireStringArray(row.excluded, "handoff excluded")};
+  });
+  if (!rows.length) return {};
+  const compact = (items: typeof rows) => items.slice(0, limit).map(row => row.display);
+  const result: JsonObject = {handoff_gate_count: rows.length, handoff_gates: compact(rows)};
+  if (agent) {
+    const current = rows.filter(row => row.excluded.includes(agent));
+    const needsSuccessor: HandoffState = "cleared_without_successor";
+    const cleared = current.filter(row => row.display.gate_state === needsSuccessor);
+    Object.assign(result, {current_agent_handoff_gate_count: current.length,
+      current_agent_handoff_gates: compact(current),
+      current_agent_cleared_without_successor_handoff_count: cleared.length,
+      current_agent_cleared_without_successor_handoff_gates: compact(cleared)});
+  }
+  return result;
+}
+
+/** One quota read boundary composes scope/claim selection, resume, hint
+ * visibility and the typed source closure rules. */
 export function projectTodoQuotaPlanning(value: unknown): JsonObject {
   const request = requireJsonObject(value, "quota planning");
   if (!["todo_quota_planning_request_v0", "todo_quota_planning_request_v1", "todo_quota_planning_request_v2"].includes(String(request.schema_version))) throw new EffectRuntimeRequestError("quota planning schema mismatch");
   if (request.schema_version !== "todo_quota_planning_request_v0") {
     requireStringArray(requireJsonObject(request.selection, "selection").available, "available");
   }
+  const selection = requireJsonObject(request.selection, "selection");
   const closure = request.schema_version === "todo_quota_planning_request_v2"
     ? validateTodoClosureSource(request.source_contract) : {};
   return {schema_version: "todo_quota_planning_v0", resume_planning: projectTodoResumePlanning(request.resume),
-    ...projectQuotaSelection(request.selection), ...closure};
+    ...projectQuotaSelection(selection), ...closure,
+    ...(request.schema_version === "todo_quota_planning_request_v2" ? {handoff_lanes:
+      handoffGateLanes(request.handoff_items, optionalNonEmptyString(selection.agent_id, "agent_id"),
+        requireInteger(selection.backlog_limit, "backlog_limit")), route_lanes:
+      routeContinuationLanes(request.route_items, optionalNonEmptyString(selection.agent_id, "agent_id"),
+        requireInteger(selection.backlog_limit, "backlog_limit"))} : {})};
 }

@@ -11,14 +11,12 @@ from .contract import (
 )
 from .quota_selection import project_quota_planning
 from .frontier_deadline import todo_summary_frontier_deadline
-from .handoff_gate import build_todo_handoff_gate_lanes
 from .todo_semantics import (
     todo_item_task_class,
     todo_presentation_sort_key,
     todo_summary_monitor_schedule_gap_items,
     todo_summary_monitor_writeback_contract,
 )
-from .route_continuation import build_todo_route_continuation_lanes
 from .succession_warning import build_todo_succession_warning_lanes
 from .summary_item import (
     compact_todo_summary_item,
@@ -315,20 +313,8 @@ def summarize_user_todos_for_quota(
     summary.update(planning["claim_visibility"])
     summary.update(resume_planning["deferred_lanes"])
     summary.update(resume_planning["resume_blocked_lanes"])
-    summary.update(
-        build_todo_handoff_gate_lanes(
-            value,
-            agent_identity=agent_identity,
-            item_limit=TODO_BACKLOG_ITEM_LIMIT,
-        )
-    )
-    summary.update(
-        build_todo_route_continuation_lanes(
-            value,
-            agent_identity=agent_identity,
-            item_limit=TODO_BACKLOG_ITEM_LIMIT,
-        )
-    )
+    summary.update(planning["handoff_lanes"])
+    summary.update(planning["route_lanes"])
     summary.update(
         build_todo_succession_warning_lanes(
             value,
@@ -712,20 +698,8 @@ def summarize_project_asset_todos_for_quota(
         summary["monitor_writeback"] = monitor_writeback
     summary.update(planning["claim_visibility"])
     summary.update(resume_planning["deferred_lanes"])
-    summary.update(
-        build_todo_handoff_gate_lanes(
-            value,
-            agent_identity=agent_identity,
-            item_limit=TODO_BACKLOG_ITEM_LIMIT,
-        )
-    )
-    summary.update(
-        build_todo_route_continuation_lanes(
-            value,
-            agent_identity=agent_identity,
-            item_limit=TODO_BACKLOG_ITEM_LIMIT,
-        )
-    )
+    summary.update(planning["handoff_lanes"])
+    summary.update(planning["route_lanes"])
     source_claimed_open_count = None if filter_user_gate_blocks_agent else value.get("claimed_open_count")
     if lanes.claimed_open_items or source_claimed_open_count:
         summary["claimed_open_count"] = source_claimed_open_count or len(lanes.claimed_open_items)
