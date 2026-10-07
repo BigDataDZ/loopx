@@ -30,6 +30,8 @@ DECISION_TEXT_ASSESSMENT = {
         "and settlement. Reuse observable_semantics comparison_rows/execution_receipts and validation_matrix "
         "through evidence_refs. Exercise concrete counterfactuals that distinguish lost or widened clauses "
         "through the real caller; compare emitted instructions against an independent obligation. "
+        "Derive that obligation from the accepted caller contract, not a size fixture or budget "
+        "decision: those measure cost and cannot define meaning or authorize its removal. "
         "Equal enums, legal outcomes, fields, signatures or green size tests do not prove instruction "
         "equivalence or model comprehension. Record model adoption as unverified unless tested. "
         "Unproven equivalence is not_yet_proven; a removed/widened requirement is unintended_drift. "
