@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import errno
 import json
+import select
 import subprocess
 import sys
 import threading
@@ -13,6 +14,9 @@ import pytest
 
 from loopx import global_registry
 from loopx import project_uninstall as project_uninstall_module
+from loopx.control_plane.coordination.shadow_management import (
+    shadow_maintenance_lock_target,
+)
 from loopx.file_lock import exclusive_cross_runtime_file_lock, fcntl
 from loopx.global_registry import (
     global_registry_path,
@@ -497,6 +501,121 @@ def test_project_uninstall_preserves_a_goal_committed_after_preview(
     assert result["global_registry_goal_count_after"] == 1
     remaining = json.loads(global_path.read_text(encoding="utf-8"))["goals"]
     assert [goal.get("id") for goal in remaining] == ["goal-beta"]
+
+
+_HOLD_CANONICAL_WRITER_GUARD = """
+import {once} from "node:events";
+import {mkdir} from "node:fs/promises";
+import {dirname} from "node:path";
+
+const input = JSON.parse(process.argv[1]);
+const {withFileMutationLock} = await import(input.lock_module);
+await mkdir(dirname(input.lock_path), {recursive: true});
+await withFileMutationLock(input.lock_path, async () => {
+  process.stdout.write("BARRIER lock-held\\n");
+  await once(process.stdin, "data");
+});
+"""
+
+
+def test_project_uninstall_waits_for_canonical_writer_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    registry_path = _project_registry(tmp_path, "alpha", runtime_root)
+    sync_project_registry_to_global(
+        registry_path=registry_path,
+        runtime_root_override=str(runtime_root),
+        dry_run=False,
+    )
+    lock_path = shadow_maintenance_lock_target(runtime_root, "goal-alpha")
+    holder = subprocess.Popen(
+        [
+            "node",
+            "--no-warnings",
+            "--experimental-strip-types",
+            "--input-type=module",
+            "-e",
+            _HOLD_CANONICAL_WRITER_GUARD,
+            json.dumps(
+                {
+                    "lock_module": (
+                        Path("loopx/control_plane/effect_runtime_io.ts")
+                        .resolve()
+                        .as_uri()
+                    ),
+                    "lock_path": str(lock_path),
+                }
+            ),
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    uninstall_preflight_finished = threading.Event()
+    uninstall_finished = threading.Event()
+    results: list[dict[str, Any]] = []
+    errors: list[BaseException] = []
+    actual_copy_backup = project_uninstall_module._copy_backup
+
+    def observed_copy_backup(
+        path: Path,
+        *,
+        label: str,
+        dry_run: bool,
+    ) -> str | None:
+        result = actual_copy_backup(path, label=label, dry_run=dry_run)
+        if path == registry_path:
+            uninstall_preflight_finished.set()
+        return result
+
+    monkeypatch.setattr(
+        project_uninstall_module,
+        "_copy_backup",
+        observed_copy_backup,
+    )
+
+    def uninstall() -> None:
+        try:
+            results.append(
+                uninstall_project(
+                    registry_path=registry_path,
+                    runtime_root_override=str(runtime_root),
+                    goal_ids=["goal-alpha"],
+                    archive_state=False,
+                    remove_empty_registry=False,
+                    execute=True,
+                )
+            )
+        except BaseException as error:
+            errors.append(error)
+        finally:
+            uninstall_finished.set()
+
+    worker = threading.Thread(target=uninstall)
+    try:
+        assert holder.stdout is not None
+        ready, _, _ = select.select([holder.stdout], [], [], 10)
+        assert ready and holder.stdout.readline().strip() == "BARRIER lock-held"
+        worker.start()
+        assert uninstall_preflight_finished.wait(timeout=5)
+        assert not uninstall_finished.wait(timeout=0.2), (
+            "project uninstall completed while the canonical writer guard was held"
+        )
+        stdout, stderr = holder.communicate("continue\n", timeout=10)
+        assert holder.returncode == 0, stdout + stderr
+        worker.join(timeout=10)
+        assert not worker.is_alive()
+        assert errors == []
+        assert results and results[0]["ok"] is True
+    finally:
+        if holder.poll() is None:
+            holder.terminate()
+            holder.communicate(timeout=5)
+        if worker.ident is not None:
+            worker.join(timeout=10)
 
 
 _CONCURRENT_SYNC_SCRIPT = """
