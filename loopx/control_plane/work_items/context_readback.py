@@ -115,3 +115,6 @@ def attach_work_context(payload: dict[str, Any], *, registry_path: Path,
     # Bodies have one carrier. Historical pointers are not another instruction
     # to execute the same read; explicit diagnostics retain hook metadata only.
     payload.pop("required_reads", None)
+    # The Goal path is needed while constructing the exact progressive read,
+    # but is local routing metadata rather than public packet content.
+    payload.pop("goal_state_file", None)

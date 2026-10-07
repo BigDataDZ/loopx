@@ -241,6 +241,7 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
   const results = request.source_results.map(value => requireJsonObject(value, "context source"));
   const selected = jsonObject(request.selected_todo) ?? {};
   const pending: JsonObject[] = [], sources: JsonObject[] = [], failures: JsonObject[] = [];
+  let selectedTodoRef = false;
   for (const value of request.required_reads) {
     const read = requireJsonObject(value, "required read");
     const matches = results.filter(result => result.command === read.command);
@@ -248,15 +249,18 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
     const result = matches[0];
     const content = jsonObject(result.content);
     let valid = matches.length === 1 && content !== null && content.ok !== false && !result.error_code;
+    let selectedTodoRecord: JsonObject | null = null;
     if (valid && read.source === "selected_todo") {
       const todo = jsonObject(content!.todo) ?? {};
+      selectedTodoRecord = todo;
       valid = content!.matched === true && content!.ambiguous !== true
         && todo.todo_id === selected.todo_id && todo.archive_state !== "archive"
         && todo.status !== "done"
         && ["status", "claimed_by"].every(field => selected[field] === undefined || selected[field] === todo[field])
         && typeof selected.content_revision === "string"
         && ENVELOPED_SHA256_PATTERN.test(selected.content_revision)
-        && selected.content_revision === todo.content_revision;
+        && selected.content_revision === todo.content_revision
+        && (selected.text === undefined || (typeof selected.text === "string" && todo.text === selected.text));
     }
     if (valid && read.source === "goal_acceptance") {
       valid = jsonObject(content!.goal_acceptance_contract)?.enabled === true;
@@ -271,7 +275,14 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
       // full read instead of guessing which prose is current Goal authority.
       pending.push(read);
     } else {
-      sources.push({...read, content: content!});
+      if (read.source === "selected_todo" && typeof selected.text === "string"
+          && selectedTodoRecord?.todo_id === selected.todo_id) {
+        // The exact detail read validates the current body and lifecycle, while
+        // the admitted packet already carries that body at selected_todo.text.
+        selectedTodoRef = true;
+      } else {
+        sources.push({...read, content: content!});
+      }
     }
   }
   const dispatch = jsonObject(request.hook_dispatch);
@@ -279,9 +290,13 @@ export function projectInteractionWorkContext(request: JsonObject): JsonObject {
   const users = jsonObject(request.user_todos);
   if (users?.error_code) failures.push({source: "user_todos", error_code: users.error_code,
     instruction: "Recover current User obligations and rerun the guard."});
+  const includeUserTodos = users && !users.error_code
+    && (!Array.isArray(users.todos) || users.todos.length > 0 || users.authority_read != null);
+  const selectedTodoReferenceOnly = selectedTodoRef && sources.length === 0
+    && failures.length === 0 && !unavailable && !includeUserTodos;
   return {required_reads: pending, work_context: {complete: failures.length === 0,
-    sources,
+    ...(selectedTodoReferenceOnly ? {selected_todo_ref: "selected_todo"} : {sources}),
     ...(unavailable ? {unavailable_context: unavailable} : {}),
-    ...(users && !users.error_code ? {user_todos: users} : {}), failures,
+    ...(includeUserTodos ? {user_todos: users} : {}), ...(failures.length ? {failures} : {}),
     instruction: "Read current sources and remaining required_reads before work; do not repeat reads fulfilled for this guard's pre-work checks. Follow source-specific freshness obligations before later actions. Unavailable context holds dependent actions until recovery. Source changes require a fresh guard; context grants no authority."}};
 }

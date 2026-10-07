@@ -845,6 +845,66 @@ def test_real_cli_output_stays_inside_baseline_and_growth_contracts(
     _assert_scenario_matrix(scenarios)
 
 
+def test_diagnose_keeps_selected_reads_once_and_out_of_the_goal_overview(
+    tmp_path: Path,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "diagnose-selected-read") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(stable_root, SCENARIOS[0])
+        command = _surface_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="json",
+        )["diagnose"]
+        exit_code, text = _invoke_cli(command)
+
+    assert exit_code == 0, text
+    payload = json.loads(text)
+    assert payload["selected"]["interaction_contract"]["agent_channel"]["required_reads"]
+    assert "required_reads" not in payload["goals"][0]["interaction_contract"]["agent_channel"]
+
+
+def test_quota_packet_drops_transient_path_but_keeps_verified_todo_reference(
+    tmp_path: Path,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "quota-goal-read") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(stable_root, SCENARIOS[0])
+        command = _surface_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="json",
+        )["quota_should_run"]
+        exit_code, text = _invoke_cli(command)
+
+    assert exit_code == 0, text
+    payload = json.loads(text)
+    assert "goal_state_file" not in payload
+    assert payload["interaction_contract"]["agent_channel"]["work_context"]["selected_todo_ref"] == "selected_todo"
+
+
+def test_turn_envelope_references_selected_todo_without_duplicate_context(
+    tmp_path: Path,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "turn-envelope-selected-read") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(stable_root, SCENARIOS[0])
+        command = _mode_variant_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="json",
+        )["quota_should_run_turn_envelope"]
+        exit_code, text = _invoke_cli(command)
+
+    assert exit_code == 0, text
+    payload = json.loads(text)
+    assert payload["action"]["selected_todo"]["text_ref"] == "action.recommended_action"
+    assert "work_context" not in payload
+
+
 def _assert_scenario_matrix(scenarios: dict[str, dict[str, dict[str, dict]]]) -> None:
     """Keep the pytest and base/head probe on the same matrix assertions."""
 

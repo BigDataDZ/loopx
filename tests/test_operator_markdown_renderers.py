@@ -33,6 +33,22 @@ def test_turn_envelope_markdown_keeps_hot_path_contract() -> None:
     assert "- within_budget: `True`" in markdown
 
 
+def test_turn_envelope_markdown_compacts_reference_only_work_context() -> None:
+    markdown = render_turn_envelope_markdown(
+        {
+            "ok": True,
+            "work_context": {
+                "complete": True,
+                "selected_todo_ref": "selected_todo",
+                "instruction": "Read sources before work.",
+            },
+        }
+    )
+
+    assert "- work_context: complete=True selected_todo_ref=selected_todo" in markdown
+    assert "## Current work context" not in markdown
+
+
 def test_turn_envelope_markdown_tolerates_malformed_nested_values() -> None:
     markdown = render_turn_envelope_markdown(
         {

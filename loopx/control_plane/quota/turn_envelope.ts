@@ -713,7 +713,15 @@ function actionProjection(payload: JsonObject, protocolActionFields: JsonObject)
   const context = object(interaction.agent_context);
   if (Object.keys(context).length > 0) projection.agent_context = context;
   const workContext = object(object(interaction.agent_channel).work_context);
-  if (Object.keys(workContext).length > 0) projection.work_context = workContext;
+  const selectedTodoContextIsAlreadyInAction = workContext.complete === true
+    && workContext.selected_todo_ref === "selected_todo"
+    && Object.keys(workContext).every(field =>
+      ["complete", "selected_todo_ref", "instruction"].includes(field))
+    && (typeof object(action.selected_todo).text === "string"
+      || object(action.selected_todo).text_ref === "action.recommended_action");
+  if (Object.keys(workContext).length > 0 && !selectedTodoContextIsAlreadyInAction) {
+    projection.work_context = workContext;
+  }
   const orchestration = object(payload.task_orchestration_contract);
   if (Object.keys(orchestration).length > 0) projection.task_orchestration_contract = orchestration;
   const plan = responsePlan(interaction);

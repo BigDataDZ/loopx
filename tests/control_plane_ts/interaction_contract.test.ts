@@ -159,6 +159,22 @@ test("failed, ambiguous or changed work never fulfills a pre-work read", () => {
   assert.equal((revisionMissing.work_context as JsonObject).complete, false);
 });
 
+test("selected Todo references its admitted body only after an exact detail read", () => {
+  const read = {command: "read-todo", source: "selected_todo"};
+  const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a", text: "Keep full acceptance."};
+  const projected = projectInteractionWorkContext({required_reads: [read], selected_todo: task,
+    source_results: [{command: read.command, content: {matched: true, todo: task}}]});
+  const context = projected.work_context as JsonObject;
+  assert.equal(context.complete, true);
+  assert.equal(context.selected_todo_ref, "selected_todo");
+  assert.equal(context.sources, undefined);
+
+  const changedBody = projectInteractionWorkContext({required_reads: [read], selected_todo: task,
+    source_results: [{command: read.command, content: {matched: true, todo: {...task, text: "Changed body"}}}]});
+  assert.deepEqual(changedBody.required_reads, [read]);
+  assert.equal((changedBody.work_context as JsonObject).complete, false);
+});
+
 test("mixed Goal document remains a full progressive read without dropping task requirements", () => {
   const goalRead = {command: "cat -- state.md", source: "goal_state", ordering: "before_work"};
   const taskRead = {command: "read-todo", source: "selected_todo"};
@@ -173,7 +189,9 @@ test("mixed Goal document remains a full progressive read without dropping task 
   assert.deepEqual(projected.required_reads, [goalRead]);
   const context = projected.work_context as JsonObject;
   assert.equal(context.complete, true); // No source failure; pending reads still apply.
-  assert.deepEqual(context.sources, [{...taskRead, content: {matched: true, todo: task}}]);
+  assert.equal(context.selected_todo_ref, "selected_todo");
+  assert.equal(context.sources, undefined);
+  assert.equal(task.text, "Preserve every requirement. ".repeat(400) + "Stop before deployment.");
   const failed = projectInteractionWorkContext({required_reads: [goalRead],
     source_results: [{command: goalRead.command, error_code: "unavailable"}]});
   assert.deepEqual(failed.required_reads, [goalRead]);
