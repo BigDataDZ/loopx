@@ -548,7 +548,7 @@ The current source checkpoint is qualified separately. The merged calibration
 at `a855a547e7a3fc4f9b5c3e02e1ea73cf0f591f95` updates the existing regression
 guards, with its matched workload and bounded headroom recorded in the
 [budget decision guide](../../development/testing-and-quality.md#budget-failure-decisions).
-An independent real CLI rerun at `afd99a292892d411d950f3286016f0b054ed611f`
+An independent real CLI rerun at `0cd547b0c442a5c0ec7f608827b02dce7aeb0aac`
 passes all 96 producer rows with candidate budget enforcement. Its immutable
 `2244b96f1e2e5c90bef43ae4c140c0994bfcc07a` comparison passes the existing
 semantic differential with 96 rows on each side, no candidate-only rows and

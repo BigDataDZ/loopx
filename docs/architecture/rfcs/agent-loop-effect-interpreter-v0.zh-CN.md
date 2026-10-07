@@ -388,7 +388,7 @@ multi-subagent 的 runner 超过 9,000 字符 envelope 上限。后者因嵌套 
 当前源码资格另列。已合并的
 `a855a547e7a3fc4f9b5c3e02e1ea73cf0f591f95` 校准既有回归检查，同口径负载与
 有界余量见[预算决策指南](../../development/testing-and-quality.md#budget-failure-decisions)。
-在 `afd99a292892d411d950f3286016f0b054ed611f` 独立重跑真实 CLI，candidate
+在 `0cd547b0c442a5c0ec7f608827b02dce7aeb0aac` 独立重跑真实 CLI，candidate
 执行全部预算检查，96 行均通过；与不可变
 `2244b96f1e2e5c90bef43ae4c140c0994bfcc07a` 的既有语义差分两侧各 96 行，
 无 candidate-only 行或待复核变化。fixture 保留 1/36/18 个 Todo、1/12/12 个
