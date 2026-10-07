@@ -241,6 +241,21 @@ def test_thin_markdown_diagnostics_only_show_the_selected_prompt_command() -> No
     assert "- brief_prompt_command:" not in rendered
 
 
+def test_brief_diagnostics_keep_only_the_selected_prompt_command() -> None:
+    payload = build_heartbeat_prompt(goal_id="loopx-meta", brief=True)
+    rendered = render_heartbeat_prompt_markdown(payload)
+
+    assert payload["brief_prompt_command"]
+    assert "compact_prompt_command" not in payload
+    assert "expanded_prompt_command" not in payload
+    assert "thin_prompt_command" not in payload
+    assert "heartbeat-prompt --compact" in payload["task_body"]
+    assert "- brief_prompt_command:" in rendered
+    assert "- expanded_prompt_command:" not in rendered
+    assert "- compact_prompt_command:" not in rendered
+    assert "- thin_prompt_command:" not in rendered
+
+
 @pytest.mark.parametrize(
     ("mode", "base_budget"),
     [("full", 12000), ("compact", 6500), ("brief", 4300), ("thin", 3000)],

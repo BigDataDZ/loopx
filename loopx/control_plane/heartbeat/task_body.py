@@ -746,6 +746,10 @@ def render_heartbeat_generator_inputs_markdown(payload: dict[str, Any]) -> str:
         lines.append(
             f"- thin_prompt_command: `{payload.get('thin_prompt_command')}`"
         )
+    elif payload.get("brief") is True:
+        lines.append(
+            f"- brief_prompt_command: `{payload.get('brief_prompt_command')}`"
+        )
     else:
         lines.extend(
             [
