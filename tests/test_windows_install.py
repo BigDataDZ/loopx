@@ -81,6 +81,43 @@ def _restore_windows_user_path(pwsh: str, encoded_path: str) -> None:
     )
 
 
+def test_windows_candidate_failure_reports_required_doctor_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "checks": [
+            {
+                "id": "typescript_control_plane_ready",
+                "required": True,
+                "ok": False,
+                "detail": "runtime unavailable",
+            }
+        ],
+        "release_candidate": {
+            "checks": [
+                {
+                    "id": "representative_cli_commands",
+                    "required": True,
+                    "ok": True,
+                }
+            ]
+        },
+        "diagnostics": "x" * 2500,
+    }
+    monkeypatch.setattr(
+        windows_install.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 1, stdout=json.dumps(payload), stderr=""
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match=r"doctor\.typescript_control_plane_ready"):
+        windows_install._validate_candidate(
+            tmp_path / "release", python=Path(sys.executable), skills_dir=tmp_path / "skills"
+        )
+
+
 def test_chat_bundle_preflight_preserves_stdout_with_legacy_pointer(
     tmp_path: Path,
     capfd: pytest.CaptureFixture[str],

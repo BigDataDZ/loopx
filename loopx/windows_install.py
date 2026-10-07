@@ -98,6 +98,33 @@ def _entry_command(release_root: Path, python: Path, args: Sequence[str]) -> lis
     return [str(python), "-I", str(release_root / "scripts" / "loopx_entry.py"), *args]
 
 
+def _doctor_failure_summary(stdout: str) -> str | None:
+    try:
+        payload = json.loads(stdout)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    failed: list[str] = []
+    scopes = [("doctor", payload.get("checks"))]
+    release_candidate = payload.get("release_candidate")
+    if isinstance(release_candidate, dict):
+        scopes.append(("release candidate", release_candidate.get("checks")))
+    for scope, checks in scopes:
+        if not isinstance(checks, list):
+            continue
+        failed.extend(
+            f"{scope}.{item['id']}"
+            for item in checks
+            if isinstance(item, dict)
+            and item.get("required")
+            and not item.get("ok")
+            and isinstance(item.get("id"), str)
+        )
+    return ", ".join(sorted(failed)) or "no failed required checks reported"
+
+
 def _validate_candidate(
     release_root: Path,
     *,
@@ -134,6 +161,12 @@ def _validate_candidate(
     finally:
         candidate_pointer.unlink(missing_ok=True)
     if result.returncode != 0:
+        summary = _doctor_failure_summary(result.stdout)
+        if summary is not None:
+            raise RuntimeError(
+                "release candidate doctor failed: "
+                f"failed checks={summary}, stderr={result.stderr[-2000:]!r}"
+            )
         raise RuntimeError(
             "release candidate doctor failed: "
             f"stdout={result.stdout[-2000:]!r}, stderr={result.stderr[-2000:]!r}"
