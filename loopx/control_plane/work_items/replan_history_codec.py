@@ -31,25 +31,8 @@ def effective_turn_cadence_context(
     goal_ref: dict[str, str] | None = None,
     source_admission: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
+    """Encode a Goal whose live cadence was resolved by the caller."""
     profile = goal.get("execution_profile") or {}
-    if not ({"replan_after_effective_turns", "replan_after_completed_todos"} & profile.keys()):
-        # Raw-registry writeback callers must resolve the same live policy as
-        # history/quota. An already resolved Goal avoids another device read.
-        from ...capabilities.machine_configuration.builtins import (
-            build_builtin_machine_configuration_registry,
-        )
-        from ...capabilities.machine_configuration.store import read_machine_configuration
-        from ...capabilities.todo_replan_cadence.machine_defaults import (
-            apply_todo_replan_cadence_machine_default,
-        )
-
-        machine = (
-            read_machine_configuration(
-                runtime_root, registry=build_builtin_machine_configuration_registry(),
-            )
-            if runtime_root is not None else None
-        )
-        profile = apply_todo_replan_cadence_machine_default(goal, machine)["execution_profile"]
     threshold = profile.get("replan_after_effective_turns")
     if threshold is None:
         return None

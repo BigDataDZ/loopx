@@ -19,6 +19,7 @@ from loopx.capabilities.machine_configuration.store import (
     configure_machine_configuration,
 )
 from loopx.capabilities.todo_replan_cadence.machine_defaults import (
+    resolve_todo_replan_cadence_goal,
     normalize_todo_replan_cadence_machine_defaults,
 )
 from loopx.configure_goal import configure_goal
@@ -247,7 +248,9 @@ def test_effective_turn_machine_default_migration_and_override_readback(tmp_path
     assert "replan_after_completed_todos" not in profile
     from loopx.control_plane.work_items.replan_history_codec import effective_turn_cadence_context
     raw = json.loads(registry_path.read_text())["goals"][0]
-    assert effective_turn_cadence_context(raw, runtime_root)["threshold"] == 2
+    assert effective_turn_cadence_context(
+        resolve_todo_replan_cadence_goal(raw, runtime_root), runtime_root,
+    )["threshold"] == 2
 
     options = _goal_capability_options("todo_replan_cadence", {"count_unit": "effective_turns", "count": 3})
     configure_goal(registry_path=registry_path, goal_id=GOAL_ID, execute=True, **options)
@@ -304,7 +307,9 @@ def test_product_default_and_namespace_removal_use_five_settled_turns(tmp_path, 
     assert "replan_after_effective_turns" not in raw["execution_profile"]
     projected = _history_goal(registry_path, runtime_root)
     assert projected["execution_profile"]["replan_after_effective_turns"] == 5
-    assert effective_turn_cadence_context(raw, runtime_root)["threshold"] == 5
+    assert effective_turn_cadence_context(
+        resolve_todo_replan_cadence_goal(raw, runtime_root), runtime_root,
+    )["threshold"] == 5
     inspected = inspect_goal_capabilities(registry_path=registry_path,
         runtime_root=runtime_root, goal_id=GOAL_ID)["configuration"]
     cadence = next(c for c in inspected["capability_catalog"]["capabilities"]

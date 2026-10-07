@@ -7,6 +7,9 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from loopx.capabilities.todo_replan_cadence.machine_defaults import resolve_todo_replan_cadence_goal
+from loopx.capabilities.machine_configuration.builtins import build_builtin_machine_configuration_registry
+from loopx.capabilities.machine_configuration.store import configure_machine_configuration
 from tests.control_plane.test_quota_settlement_cli import (
     _write_fixture,
     _run_cli,
@@ -25,15 +28,33 @@ from loopx.control_plane.work_items.semantic_replan_writeback import (
 )
 
 
-@pytest.mark.parametrize("threshold_override", [None, 2])
+@pytest.mark.parametrize("threshold_override,device_count,threshold", [
+    (None, None, 5), (2, 3, 2), (None, 3, 3),
+])
 def test_open_todo_settled_turn_cadence_and_evidence_linked_review(
-    tmp_path: Path, threshold_override: int | None,
+    tmp_path: Path, threshold_override: int | None, device_count: int | None,
+    threshold: int,
 ) -> None:
     project, runtime, registry = _write_fixture(tmp_path)
     fixture = json.loads(registry.read_text())
-    threshold = threshold_override or 5
     fixture["goals"][0]["quota"]["allowed_slots"] = threshold + 2
     registry.write_text(json.dumps(fixture))
+    if device_count is not None:
+        machine_registry = build_builtin_machine_configuration_registry()
+        configuration = {
+            "schema_version": "loopx_machine_configuration_v0",
+            "namespaces": {"todo_replan_cadence": {
+                "schema_version": "todo_replan_cadence_machine_defaults_v1",
+                "count_unit": "effective_turns", "count": device_count,
+            }},
+        }
+        preview = configure_machine_configuration(
+            runtime_root=runtime, registry=machine_registry, configuration=configuration,
+        )
+        configure_machine_configuration(
+            runtime_root=runtime, registry=machine_registry, configuration=configuration,
+            execute=True, expected_plan_revision=preview["plan_revision"],
+        )
     rc, configured = _run_cli(
         registry,
         runtime,
@@ -49,7 +70,9 @@ def test_open_todo_settled_turn_cadence_and_evidence_linked_review(
         assert goal["execution_profile"]["replan_after_effective_turns"] == threshold_override
     else:
         assert "replan_after_effective_turns" not in goal.get("execution_profile", {})
-    context = effective_turn_cadence_context(goal, runtime)
+    context = effective_turn_cadence_context(
+        resolve_todo_replan_cadence_goal(goal, runtime), runtime,
+    )
 
     def periodic():
         path = runtime / "goals" / GOAL_ID / "runs" / "index.jsonl"
@@ -258,9 +281,11 @@ def test_open_todo_settled_turn_cadence_and_evidence_linked_review(
     assert rc == 0, cleared
     assert (
         effective_turn_cadence_context(
-            json.loads(registry.read_text())["goals"][0], runtime
+            resolve_todo_replan_cadence_goal(
+                json.loads(registry.read_text())["goals"][0], runtime,
+            ), runtime,
         )["threshold"]
-        == 5
+        == (device_count or 5)
     )
 
 

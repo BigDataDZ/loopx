@@ -105,7 +105,8 @@ quota evaluation creates `periodic_review_due` through the existing replan path.
 An evidence-linked review may retain the current approach; it does not require
 inventing a new plan, completing the open Todo, or declaring the Goal achieved.
 The cadence does not interrupt a host, schedule a Turn, spend quota or grant
-authority. The executor must settle work and re-enter quota for it to take effect.
+authority. The executor must settle work and re-enter quota before starting the
+next work Turn for the review obligation to take effect.
 
 ```bash
 # Preview, apply, and read back an explicit Goal threshold (supported: 1–5).
@@ -148,13 +149,16 @@ projection has five recent completions. It counts same-Agent advancement Todos
 with valid completion timestamps after the latest qualified outcome checkpoint.
 Open Todos, other Agents' work and protocol steps do not count. At the threshold
 it contributes `vision_outcome_checkpoint_required` with the completion count
-and threshold. Generic refreshes or unqualified ACKs do not reset this window.
+and threshold. A checkpoint must satisfy the existing material-outcome and
+acceptance-evidence rules; generic refreshes or unqualified ACKs do not reset
+this window.
 The closed-vision rule and existing lane arbitration remain in effect.
 
 Only one counting unit applies to a Goal. The explicit legacy unit preserves
 its completion/checkpoint semantics; it does not simultaneously trigger the
 effective-Turn cadence. Other review causes remain independent: small-delivery
-streaks, long-open-Todo chains and Monitor-specific thresholds. The former
+streaks (two small deliveries in standard mode and five in fine mode),
+long-open-Todo chains and Monitor-specific thresholds. The former
 20-material-run periodic fallback remains on the explicit completed-Todo path;
 the effective-Turn path uses verified settlements instead.
 
