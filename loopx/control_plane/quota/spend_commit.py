@@ -6,7 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from ...file_lock import exclusive_cross_runtime_file_lock
-from ..coordination.shadow_management import shadow_maintenance_lock_target
+from ..coordination.shadow_management import (
+    runtime_artifact_lock_target,
+    shadow_maintenance_lock_target,
+)
 from ..effect_runtime import (
     EffectRuntimeConflict,
     EffectRuntimeRejected,
@@ -227,8 +230,13 @@ def record_quota_slot_spend_from_preview(
     ):
         raise ValueError("quota spend preview index basis must be a string or null")
     if execute:
+        resolved_runtime_root = runtime_root.resolve()
+        artifact_target = runtime_artifact_lock_target(
+            resolved_runtime_root,
+            safe_goal_id,
+        )
         maintenance_target = shadow_maintenance_lock_target(
-            runtime_root.expanduser().resolve(),
+            resolved_runtime_root,
             safe_goal_id,
         )
 
@@ -244,34 +252,38 @@ def record_quota_slot_spend_from_preview(
                 source_admission=source_admission,
             )
 
-        # Legacy commits have no source-lifetime guard, so maintenance must be
-        # outermost. Exact commits preserve the established index -> source -> M order.
-        if goal_ref is None:
-            with exclusive_cross_runtime_file_lock(
-                maintenance_target,
-                operation="quota_spend_runtime_artifact_commit",
-            ):
-                with quota_accounting_admission(
-                    runtime_root=runtime_root,
-                    registry_path=registry_path,
-                    goal_id=safe_goal_id,
-                    goal_ref=None,
-                    operation="quota_spend_commit",
-                ) as source_admission:
-                    result = commit(source_admission)
-        else:
-            with quota_accounting_admission(
-                runtime_root=runtime_root,
-                registry_path=registry_path,
-                goal_id=safe_goal_id,
-                goal_ref=goal_ref,
-                operation="quota_spend_commit",
-            ) as source_admission:
+        with exclusive_cross_runtime_file_lock(
+            artifact_target,
+            operation="quota_spend_runtime_artifact_guard",
+        ):
+            # Legacy commits have no source-lifetime guard, so maintenance must
+            # precede their index lock. Exact commits retain index -> source -> M.
+            if goal_ref is None:
                 with exclusive_cross_runtime_file_lock(
                     maintenance_target,
                     operation="quota_spend_runtime_artifact_commit",
                 ):
-                    result = commit(source_admission)
+                    with quota_accounting_admission(
+                        runtime_root=runtime_root,
+                        registry_path=registry_path,
+                        goal_id=safe_goal_id,
+                        goal_ref=None,
+                        operation="quota_spend_commit",
+                    ) as source_admission:
+                        result = commit(source_admission)
+            else:
+                with quota_accounting_admission(
+                    runtime_root=runtime_root,
+                    registry_path=registry_path,
+                    goal_id=safe_goal_id,
+                    goal_ref=goal_ref,
+                    operation="quota_spend_commit",
+                ) as source_admission:
+                    with exclusive_cross_runtime_file_lock(
+                        maintenance_target,
+                        operation="quota_spend_runtime_artifact_commit",
+                    ):
+                        result = commit(source_admission)
     else:
         result = _quota_spend_commit_result(
             preview,

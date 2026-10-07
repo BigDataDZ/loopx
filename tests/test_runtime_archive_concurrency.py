@@ -16,12 +16,17 @@ from loopx.control_plane.coordination.shadow_management import (
 from loopx.control_plane.effect_runtime import (
     effect_runtime_result as actual_effect_runtime_result,
 )
+from loopx.control_plane import effect_runtime as effect_runtime_module
+from loopx.control_plane.goals.first_party_host_admission import (
+    FirstPartyHostGoalAdmission,
+)
 from loopx.control_plane.projects.registry_codec import (
     source_session_registry_transaction,
 )
 from loopx.control_plane.quota import spend_commit
 from loopx.control_plane.turn_driver import journal_store
 from loopx.file_lock import (
+    LockAcquireTimeoutError,
     exclusive_cross_runtime_file_lock as actual_cross_runtime_file_lock,
 )
 
@@ -71,6 +76,46 @@ def _preview() -> dict[str, Any]:
         "safe_bypass_spend": False,
         "delivery_workspace_validated": False,
         "expected_index_digest": None,
+    }
+
+
+def _turn_journal() -> dict[str, Any]:
+    turn_key = f"sha256:{'a' * 64}"
+    goal_ref = {
+        "goal_id": GOAL_ID,
+        "goal_instance_id": GOAL_INSTANCE_ID,
+    }
+    return {
+        "schema_version": "loopx_turn_journal_v0",
+        "goal_id": GOAL_ID,
+        "turn_key": turn_key,
+        "status": "in_progress",
+        "completed_phases": [],
+        "plan": {
+            "goal_ref": goal_ref,
+            "turn_envelope": {
+                "goal_id": GOAL_ID,
+                "agent_id": "codex-main-control",
+                "action": {"selected_todo": {"todo_id": "todo_archive_race"}},
+            },
+            "transaction": {
+                "turn_key": turn_key,
+                "goal_ref": goal_ref,
+                "settlement_plan": {
+                    "schema_version": "quota_settlement_plan_v1",
+                    "identity": {
+                        "schema_version": "quota_settlement_identity_v0",
+                        "effect_id": (
+                            f"{GOAL_ID}:codex-main-control:todo_archive_race:{turn_key}"
+                        ),
+                        "goal_id": GOAL_ID,
+                        "agent_id": "codex-main-control",
+                        "todo_id": "todo_archive_race",
+                        "turn_instance_id": turn_key,
+                    },
+                },
+            },
+        },
     }
 
 
@@ -175,11 +220,16 @@ def _run_archive_race(
     return writer_results[0], archive_results[0]
 
 
-@pytest.mark.parametrize("exact_source", [False, True], ids=["legacy", "exact"])
+@pytest.mark.parametrize(
+    ("exact_source", "global_route"),
+    [(False, False), (True, True), (True, False)],
+    ids=["legacy", "exact-routed", "exact-unrouted"],
+)
 def test_archive_waits_for_quota_writer_before_moving_goal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     exact_source: bool,
+    global_route: bool,
 ) -> None:
     runtime_root = tmp_path / "runtime"
     source = runtime_root / "goals" / GOAL_ID
@@ -199,12 +249,16 @@ def test_archive_waits_for_quota_writer_before_moving_goal(
                     "schema_version": "0.1",
                     "registry_role": "global-local",
                     "common_runtime_root": str(runtime_root),
-                    "goals": [
-                        {
-                            "id": GOAL_ID,
-                            "source_registry": str(source_registry),
-                        }
-                    ],
+                    "goals": (
+                        [
+                            {
+                                "id": GOAL_ID,
+                                "source_registry": str(source_registry),
+                            }
+                        ]
+                        if global_route
+                        else []
+                    ),
                 }
             ),
             encoding="utf-8",
@@ -219,6 +273,10 @@ def test_archive_waits_for_quota_writer_before_moving_goal(
             path: Path,
             **kwargs: Any,
         ) -> Iterator[Path]:
+            if path != shadow_maintenance_lock_target(runtime_root, GOAL_ID):
+                with actual_cross_runtime_file_lock(path, **kwargs) as lock_path:
+                    yield lock_path
+                return
             writer_paused.set()
             if not continue_writer.wait(timeout=10):
                 raise TimeoutError("exact quota writer barrier was not released")
@@ -255,7 +313,7 @@ def test_archive_waits_for_quota_writer_before_moving_goal(
         ),
         writer_paused=writer_paused,
         continue_writer=continue_writer,
-        allow_registered=exact_source,
+        allow_registered=exact_source and global_route,
     )
 
     assert writer_result["appended"] is True
@@ -263,7 +321,125 @@ def test_archive_waits_for_quota_writer_before_moving_goal(
     archive_path = Path(archive_result["archive_path"])
     assert not source.exists()
     assert (archive_path / "before.txt").read_text(encoding="utf-8") == "before"
-    assert (archive_path / "runs" / "index.jsonl").is_file()
+    rows = [
+        json.loads(line)
+        for line in (archive_path / "runs" / "index.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(rows) == 1
+    assert rows[0]["classification"] == "quota_slot_spent"
+    assert rows[0].get("goal_ref") == (
+        {
+            "goal_id": GOAL_ID,
+            "goal_instance_id": GOAL_INSTANCE_ID,
+        }
+        if exact_source
+        else None
+    )
+
+
+def test_archive_timeout_keeps_unrouted_exact_quota_settlement_together(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    source = runtime_root / "goals" / GOAL_ID
+    (source / "runs").mkdir(parents=True)
+    source_registry = tmp_path / "project" / ".loopx" / "registry.json"
+    _write_source_registry(source_registry, runtime_root)
+    registry_path = runtime_root / "registry.global.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "registry_role": "global-local",
+                "common_runtime_root": str(runtime_root),
+                "goals": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    writer_paused = threading.Event()
+    continue_writer = threading.Event()
+    writer_results: list[dict[str, Any]] = []
+    writer_errors: list[BaseException] = []
+
+    @contextmanager
+    def paused_maintenance_lock(
+        path: Path,
+        **kwargs: Any,
+    ) -> Iterator[Path]:
+        if path != shadow_maintenance_lock_target(runtime_root, GOAL_ID):
+            with actual_cross_runtime_file_lock(path, **kwargs) as lock_path:
+                yield lock_path
+            return
+        writer_paused.set()
+        if not continue_writer.wait(timeout=10):
+            raise TimeoutError("exact quota writer barrier was not released")
+        with actual_cross_runtime_file_lock(path, **kwargs) as lock_path:
+            yield lock_path
+
+    monkeypatch.setattr(
+        spend_commit,
+        "exclusive_cross_runtime_file_lock",
+        paused_maintenance_lock,
+    )
+    monkeypatch.setattr(
+        effect_runtime_module,
+        "CANONICAL_AUTHORITY_WRITE_TIMEOUT_SECONDS",
+        0.0,
+    )
+
+    def write() -> None:
+        try:
+            writer_results.append(
+                spend_commit.record_quota_slot_spend_from_preview(
+                    _preview(),
+                    {"runtime_root": str(runtime_root)},
+                    goal_id=GOAL_ID,
+                    execute=True,
+                    registry_path=source_registry,
+                    goal_ref={
+                        "goal_id": GOAL_ID,
+                        "goal_instance_id": GOAL_INSTANCE_ID,
+                    },
+                )
+            )
+        except BaseException as error:
+            writer_errors.append(error)
+
+    writer = threading.Thread(target=write)
+    writer.start()
+    try:
+        assert writer_paused.wait(timeout=5), "writer did not reach maintenance"
+        with pytest.raises(LockAcquireTimeoutError):
+            runtime_module.archive_runtime_goal(
+                registry_path=registry_path,
+                runtime_root_override=None,
+                goal_id=GOAL_ID,
+                archive_root=None,
+                allow_registered=False,
+                execute=True,
+            )
+        assert source.is_dir()
+        assert not (runtime_root / "archived-goals").exists()
+    finally:
+        continue_writer.set()
+        writer.join(timeout=20)
+
+    assert not writer.is_alive()
+    assert writer_errors == []
+    assert len(writer_results) == 1
+    assert writer_results[0]["appended"] is True
+    rows = [
+        json.loads(line)
+        for line in (source / "runs" / "index.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert len(rows) == 1
+    assert rows[0]["classification"] == "quota_slot_spent"
 
 
 def test_archive_waits_for_turn_journal_writer_before_moving_goal(
@@ -308,6 +484,85 @@ def test_archive_waits_for_turn_journal_writer_before_moving_goal(
     assert json.loads(
         (archive_path / "turns" / journal_path.name).read_text(encoding="utf-8")
     )["goal_id"] == GOAL_ID
+
+
+def test_archive_waits_for_unrouted_exact_turn_journal_writer(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime_root = tmp_path / "runtime"
+    source = runtime_root / "goals" / GOAL_ID
+    source.mkdir(parents=True)
+    journal_path = source / "turns" / f"{'a' * 64}.json"
+    source_registry = tmp_path / "project" / ".loopx" / "registry.json"
+    _write_source_registry(source_registry, runtime_root)
+    registry_path = runtime_root / "registry.global.json"
+    registry_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1",
+                "registry_role": "global-local",
+                "common_runtime_root": str(runtime_root),
+                "goals": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    admission = FirstPartyHostGoalAdmission.for_plan(
+        registry_path=source_registry,
+        goal_id=GOAL_ID,
+        planned_goal_ref={
+            "goal_id": GOAL_ID,
+            "goal_instance_id": GOAL_INSTANCE_ID,
+        },
+    )
+    writer_paused = threading.Event()
+    continue_writer = threading.Event()
+
+    @contextmanager
+    def paused_maintenance_lock(
+        path: Path,
+        **kwargs: Any,
+    ) -> Iterator[Path]:
+        writer_paused.set()
+        if not continue_writer.wait(timeout=10):
+            raise TimeoutError("exact Turn writer barrier was not released")
+        with actual_cross_runtime_file_lock(path, **kwargs) as lock_path:
+            yield lock_path
+
+    monkeypatch.setattr(
+        journal_store,
+        "exclusive_cross_runtime_file_lock",
+        paused_maintenance_lock,
+    )
+
+    def write() -> None:
+        with admission.source_journal_admission(
+            runtime_root=runtime_root,
+        ) as source_admission:
+            assert source_admission is not None
+            journal_store.write_turn_journal_checkpoint(
+                journal_path,
+                _turn_journal(),
+                source_admission=source_admission,
+            )
+
+    _, archive_result = _run_archive_race(
+        registry_path=registry_path,
+        writer=write,
+        writer_paused=writer_paused,
+        continue_writer=continue_writer,
+        allow_registered=False,
+    )
+
+    archive_path = Path(archive_result["archive_path"])
+    assert not source.exists()
+    assert (
+        json.loads(
+            (archive_path / "turns" / journal_path.name).read_text(encoding="utf-8")
+        )["goal_id"]
+        == GOAL_ID
+    )
 
 
 def test_archive_rechecks_registry_membership_after_waiting_for_writer(

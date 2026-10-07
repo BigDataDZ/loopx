@@ -9,7 +9,10 @@ from pathlib import Path
 from typing import Any
 
 from ...file_lock import exclusive_cross_runtime_file_lock, exclusive_file_lock
-from ..coordination.shadow_management import shadow_maintenance_lock_target
+from ..coordination.shadow_management import (
+    runtime_artifact_lock_target,
+    shadow_maintenance_lock_target,
+)
 from ..effect_runtime import EffectRuntimeConflict, effect_runtime_result
 from .turn_journal_runtime import (
     write_turn_journal,
@@ -87,11 +90,22 @@ def write_turn_journal_checkpoint(
         write()
         return
     runtime_root, goal_id = route
+
+    def write_under_maintenance() -> None:
+        with exclusive_cross_runtime_file_lock(
+            shadow_maintenance_lock_target(runtime_root, goal_id),
+            operation="turn_journal_runtime_artifact_commit",
+        ):
+            write()
+
+    if source_admission is not None:
+        write_under_maintenance()
+        return
     with exclusive_cross_runtime_file_lock(
-        shadow_maintenance_lock_target(runtime_root, goal_id),
-        operation="turn_journal_runtime_artifact_commit",
+        runtime_artifact_lock_target(runtime_root, goal_id),
+        operation="turn_journal_runtime_artifact_guard",
     ):
-        write()
+        write_under_maintenance()
 
 
 def load_loopx_turn_plan_from_journal(

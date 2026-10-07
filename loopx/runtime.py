@@ -85,6 +85,7 @@ def archive_runtime_goal(
 
     if execute:
         from .control_plane.coordination.shadow_management import (
+            runtime_artifact_lock_target,
             shadow_maintenance_lock_target,
         )
         from .control_plane.effect_runtime import (
@@ -94,6 +95,17 @@ def archive_runtime_goal(
         from .file_lock import exclusive_cross_runtime_file_lock
 
         with ExitStack() as locks:
+            resolved_runtime_root = runtime_root.resolve()
+            locks.enter_context(
+                exclusive_cross_runtime_file_lock(
+                    runtime_artifact_lock_target(
+                        resolved_runtime_root,
+                        safe_goal_id,
+                    ),
+                    operation="archive_runtime_goal_artifacts",
+                    timeout_seconds=CANONICAL_AUTHORITY_WRITE_TIMEOUT_SECONDS,
+                )
+            )
             # Exact writers enter source before maintenance. Match that order so
             # archive cannot overtake a writer between its admission locks.
             for source_registry in _archive_source_registry_paths(
@@ -110,7 +122,7 @@ def archive_runtime_goal(
             locks.enter_context(
                 exclusive_cross_runtime_file_lock(
                     shadow_maintenance_lock_target(
-                        runtime_root.resolve(),
+                        resolved_runtime_root,
                         safe_goal_id,
                     ),
                     operation="archive_runtime_goal",
