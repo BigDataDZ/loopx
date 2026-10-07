@@ -44,7 +44,6 @@ QUOTA_PAYLOAD_ITEM_FIELDS = (
     "text",
     "title",
     "todo_id",
-    "content_revision",
     "status",
     "priority",
     "task_class",
