@@ -42,6 +42,11 @@ def _stable_iso_timestamp_text(text: str) -> str | None:
         hour, separator, minute, second, fraction = parsed.groups()
         if local and hour == "24":
             return None
+        if not local and hour == "00" and minute in (None, "00") and second in (None, "00"):
+            # CPython 3.11–3.13 canonicalize a zero-hour offset to UTC even
+            # when a fractional component follows it. Keep that wire meaning
+            # on 3.14 too, matching the TypeScript codec's zero-offset rule.
+            return "00:00:00"
         if fraction is None or second is not None:
             return component
         return f"{hour}:{minute or '00'}:00{fraction}"

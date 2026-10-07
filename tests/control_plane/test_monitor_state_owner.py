@@ -103,6 +103,9 @@ def test_monitor_timestamp_input_matches_retained_python_iso_codec(value):
     ("2030-01-01T00.1", "2030-01-01T00:00:00.100000+00:00"),
     ("2030-01-01T00:00.1", "2030-01-01T00:00:00.100000+00:00"),
     ("2030-01-01T00:00:00+01.1", "2029-12-31T22:59:59.900000+00:00"),
+    ("2030-01-01T00:00:00+00.1", "2030-01-01T00:00:00+00:00"),
+    ("2030-01-01T00:00:00-00.1", "2030-01-01T00:00:00+00:00"),
+    ("2030-01-01T00:00:00+00:00:00.1", "2030-01-01T00:00:00+00:00"),
 ])
 def test_monitor_timestamp_codec_is_stable_across_supported_python_versions(value, expected_utc):
     parsed = parse_timestamp(value)
