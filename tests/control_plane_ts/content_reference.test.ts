@@ -64,3 +64,24 @@ test("capture rejects unsupported raw fields, invalid counters and credentialed 
   }
   assert.throws(() => draft({library: {entries: [reference()]}, reference_id: "source-demo", expected_source_revision: "read:1", subject: "X", facts: []}), /caller-supplied facts/);
 });
+
+
+test("metrics correction retains backing but replaces the observed counter set atomically", () => {
+  const old = {...reference(), metrics: {observed_at: "2026-09-01T10:00:00Z", counts: {views: 100, likes: 9}, source_evidence: {ref: "evidence:original"}}};
+  const library = {entries: [old]};
+  const update = {...reference(), source_revision: "read:2", metrics: {observed_at: old.metrics.observed_at, counts: {views: 120}}};
+  const corrected = capture({library, reference: update, expected_source_revision: "read:1"});
+  assert.deepEqual((corrected.library.entries as typeof old[])[0]!.metrics, {...old.metrics, ...update.metrics});
+  assert.deepEqual(corrected.reference.engagement!.counts, {views: 120});
+  assert.equal(library.entries[0]!.metrics.counts.views, 100);
+  const later = capture({library, reference: {...update, metrics: {...update.metrics, observed_at: "2026-09-02T10:00:00Z"}}, expected_source_revision: "read:1"});
+  assert.deepEqual(later.reference.engagement, {observed_at: "2026-09-02T10:00:00Z", counts: {views: 120}});
+});
+
+test("blank filters mean all matches; malformed filters retain actionable errors", () => {
+  const library = {entries: [reference()]};
+  assert.equal(search({library, query: " ", structure: "\t "}).references.length, 1);
+  assert.throws(() => search({library, query: "invalid\0query"}), /query/);
+  assert.throws(() => search({library, query: "x".repeat(2001)}), /query/);
+  assert.equal(search({library, query: "release"}).references.length, 1);
+});

@@ -76,3 +76,24 @@ def test_real_cli_correction_preserves_nested_backing(tmp_path: Path) -> None:
     style = json.loads(output.read_text())["library"]["entries"][0]["style"]
     assert style == {**old["style"], **reference["style"]}
     assert catalog.read_bytes() == before
+
+
+def test_real_cli_metrics_backing_and_blank_filter(tmp_path: Path) -> None:
+    reference = {"id": "demo", "title": "Demo", "author": "Example", "source_url": "https://example.org/demo",
+        "source_revision": "read:2", "captured_at": "2026-09-01T10:00:00Z",
+        "style": {"opening": "Opening", "tone": "Tone"}, "structure": ["result"],
+        "caveats": ["Synthetic fixture"], "reuse_boundary": "Structure only", "reading_boundary": "Metadata only",
+        "metrics": {"observed_at": "2026-09-01T10:00:00Z", "counts": {"views": 120}}}
+    old = {**reference, "source_revision": "read:1", "metrics": {**reference["metrics"], "counts": {"views": 100, "likes": 9}, "source_evidence": {"ref": "evidence:original"}}}
+    catalog, correction, output = (tmp_path / name for name in ("catalog.json", "correction.json", "output.private.json"))
+    catalog.write_text(json.dumps({"entries": [old]}))
+    before = catalog.read_bytes()
+    correction.write_text(json.dumps({"reference": reference, "expected_source_revision": "read:1"}))
+    base = [sys.executable, "-c", "from loopx.entrypoint import main; raise SystemExit(main())", "--format", "json", "content-ops", "reference"]
+    result = subprocess.run(base + ["capture", "--library-json", str(catalog), "--input-json", str(correction), "--output-json", str(output)], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(output.read_text())["library"]["entries"][0]["metrics"] == {**old["metrics"], **reference["metrics"]}
+    assert catalog.read_bytes() == before
+    search = subprocess.run(base + ["search", "--library-json", str(catalog), "--query", " ", "--structure", "\t "], capture_output=True, text=True, check=False)
+    assert search.returncode == 0, search.stdout + search.stderr
+    assert len(json.loads(search.stdout)["references"]) == 1

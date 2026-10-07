@@ -103,8 +103,10 @@ function result() {
 export function searchContentReferences(input: unknown) {
   const request = object(input, "request");
   const {references} = readContentReferenceLibrary(request.library);
-  const query = request.query == null || request.query === "" ? "" : text(request.query, "query")!.toLocaleLowerCase();
-  const structure = request.structure == null || request.structure === "" ? "" : text(request.structure, "structure")!.toLocaleLowerCase();
+  const filter = (value: unknown, field: string) => value == null ||
+    (typeof value === "string" && value.length <= 2000 && !value.trim()) ? "" : text(value, field)!.toLocaleLowerCase();
+  const query = filter(request.query, "query");
+  const structure = filter(request.structure, "structure");
   const selected = references.filter(reference => reference.lifecycle_state !== "archived" &&
     [reference.title, ...reference.tags, ...reference.uses, ...reference.structure].join(" ").toLocaleLowerCase().includes(query) &&
     reference.structure.join(" ").toLocaleLowerCase().includes(structure));
@@ -135,7 +137,8 @@ export function captureContentReference(input: unknown) {
   const entries = library.entries as ObjectValue[];
   const prepared: ObjectValue = {...candidate, source_url: next.source_url};
   const nextEntries = previous ? entries.map(entry => entry.id === next.id ?
-    {...entry, ...prepared, style: {...object(entry.style ?? {}, "style"), ...style}} : entry) : [...entries, prepared];
+    {...entry, ...prepared, style: {...object(entry.style ?? {}, "style"), ...style},
+      ...(candidate.metrics != null ? {metrics: {...object(entry.metrics ?? {}, "metrics"), ...object(candidate.metrics, "metrics")}} : {})} : entry) : [...entries, prepared];
   const preparedReference = readContentReference(nextEntries.find(entry => entry.id === next.id));
   return {...result(), reference: preparedReference, library: {...library, entries: nextEntries},
     material_ref: next.id, previous_source_revision: previous?.source_revision ?? null,

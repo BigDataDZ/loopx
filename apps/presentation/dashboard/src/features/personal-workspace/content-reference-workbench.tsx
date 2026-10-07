@@ -20,7 +20,12 @@ export function ContentReferenceWorkbench() {
   const [captureResult, setCaptureResult] = useState<ReturnType<typeof captureContentReference> | null>(null);
   const importGeneration = useRef(0);
   const fileInput = useRef<HTMLInputElement>(null);
-  const found = useMemo(() => library ? searchContentReferences({library, query, structure}) : null, [library, query, structure]);
+  const retrieval = useMemo(() => {
+    if (!library) return {found: null, error: ""};
+    try {return {found: searchContentReferences({library, query, structure}), error: ""};}
+    catch (reason) {return {found: null, error: reason instanceof Error ? reason.message : String(reason)};}
+  }, [library, query, structure]);
+  const found = retrieval.found;
 
   function download(value: unknown, name: string) {
     const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2) + "\n"], {type: "application/json"}));
@@ -58,9 +63,12 @@ export function ContentReferenceWorkbench() {
     <label>{copy("导入原目录 JSON", "Import original catalog JSON")}<input ref={fileInput} accept=".json,application/json" type="file" onChange={event => void importCatalog(event.target.files?.[0])} /></label>
     <p>{copy("收录仅生成待审文件。原目录、素材状态和来源权限仍由原 owner 管理；当前页面不执行写入、恢复或发布。", "Capture creates a review artifact. The original owner retains catalog, lifecycle and source permissions; this page cannot apply, restore or publish.")}</p>
     {error ? <p role="alert" className="personal-machine-error">{error}</p> : null}
-    {found ? <>
+    {library ? <>
       <label>{copy("主题或用途", "Topic or use case")}<input maxLength={2000} value={query} onChange={event => {setQuery(event.target.value); setSelected(null); setDraft(null);}} /></label>
       <label>{copy("表达结构", "Structure")}<input maxLength={2000} value={structure} onChange={event => {setStructure(event.target.value); setSelected(null); setDraft(null);}} /></label>
+    </> : null}
+    {retrieval.error ? <p role="alert" className="personal-machine-error">{retrieval.error}</p> : null}
+    {found ? <>
       <p aria-live="polite">{found.references.length} / {found.total_count} · {copy("状态未知", "Unknown lifecycle")}: {found.unknown_lifecycle_count}</p>
       {!found.references.length ? <p>{copy("没有匹配素材；可修改检索词或导入更新后的目录。", "No matching reference. Change the filters or import the updated catalog.")}</p> : null}
       {found.references.map(reference => <article key={reference.id} className="personal-capability-linked-setting">
