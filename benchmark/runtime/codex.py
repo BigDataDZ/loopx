@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Benchmarks deliberately review earlier than the product default of five.
 DEFAULT_REPLAN_AFTER_TURNS = 3
 
 
