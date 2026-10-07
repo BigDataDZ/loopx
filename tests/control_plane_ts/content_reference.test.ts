@@ -26,7 +26,8 @@ test("capture -> query -> attributed outline is a real metadata route without ef
 });
 
 test("identity collisions and changed revisions fail; corrections preserve legacy backing", () => {
-  const old = {...reference(), source_revision: undefined, card: "cards/demo.md", evidence: ["evidence/demo.json"], lifecycle_state: "candidate"};
+  const old = {...reference(), source_revision: undefined, card: "cards/demo.md", evidence: ["evidence/demo.json"], lifecycle_state: "candidate",
+    style: {opening: "Old opening", tone: "Old tone", legacy_pattern: {retain: ["sentinel", {version: 1}]}}};
   const library = {description: "Existing owner catalog", entries: [old]};
   assert.throws(() => capture({library, reference: reference()}), /provide expected_source_revision/);
   assert.throws(() => capture({library, reference: {...reference(), id: "new-id"}}), /reuse that identity/);
@@ -36,6 +37,8 @@ test("identity collisions and changed revisions fail; corrections preserve legac
   assert.deepEqual((corrected.library.entries as typeof old[])[0]!.evidence, old.evidence);
   assert.equal((corrected.library.entries as typeof old[])[0]!.lifecycle_state, "candidate");
   assert.equal(corrected.reference.lifecycle_state, "candidate");
+  assert.deepEqual((corrected.library.entries as typeof old[])[0]!.style, {...old.style, ...reference().style});
+  assert.equal(library.entries[0]!.style.opening, "Old opening");
   assert.equal(library.entries[0]!.source_revision, undefined);
   assert.throws(() => draft({library: corrected.library, reference_id: "source-demo", expected_source_revision: null, subject: "X", facts: ["Y"]}), /revision changed/);
   assert.throws(() => search({library: {entries: [reference(), {...reference(), id: "duplicate"}]}}), /duplicate/);

@@ -134,7 +134,8 @@ export function captureContentReference(input: unknown) {
   if (previous && request.expected_source_revision !== previous.source_revision) throw new EffectRuntimeRequestError("source revision changed or unknown; read it and provide expected_source_revision, including null for legacy data");
   const entries = library.entries as ObjectValue[];
   const prepared: ObjectValue = {...candidate, source_url: next.source_url};
-  const nextEntries = previous ? entries.map(entry => entry.id === next.id ? {...entry, ...prepared} : entry) : [...entries, prepared];
+  const nextEntries = previous ? entries.map(entry => entry.id === next.id ?
+    {...entry, ...prepared, style: {...object(entry.style ?? {}, "style"), ...style}} : entry) : [...entries, prepared];
   const preparedReference = readContentReference(nextEntries.find(entry => entry.id === next.id));
   return {...result(), reference: preparedReference, library: {...library, entries: nextEntries},
     material_ref: next.id, previous_source_revision: previous?.source_revision ?? null,

@@ -57,3 +57,22 @@ def test_real_cli_exit_and_private_failure(tmp_path: Path) -> None:
     catalog.write_text('{}')
     failure = subprocess.run(command, capture_output=True, text=True, check=False)
     assert failure.returncode == 1 and json.loads(failure.stdout)["ok"] is False
+
+
+def test_real_cli_correction_preserves_nested_backing(tmp_path: Path) -> None:
+    reference = {"id": "demo", "title": "Demo", "author": "Example", "source_url": "https://example.org/demo",
+        "source_revision": "read:2", "captured_at": "2026-09-01T10:00:00Z",
+        "style": {"opening": "New opening", "tone": "New tone"}, "structure": ["result"],
+        "caveats": ["Synthetic fixture"], "reuse_boundary": "Structure only", "reading_boundary": "Metadata only"}
+    old = {**reference, "source_revision": "read:1", "style": {"opening": "Old", "tone": "Old", "legacy_pattern": {"retain": ["sentinel"]}}}
+    catalog, correction, output = (tmp_path / name for name in ("catalog.json", "correction.json", "output.private.json"))
+    catalog.write_text(json.dumps({"entries": [old]}))
+    before = catalog.read_bytes()
+    correction.write_text(json.dumps({"reference": reference, "expected_source_revision": "read:1"}))
+    command = [sys.executable, "-c", "from loopx.entrypoint import main; raise SystemExit(main())", "--format", "json",
+        "content-ops", "reference", "capture", "--library-json", str(catalog), "--input-json", str(correction), "--output-json", str(output)]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    style = json.loads(output.read_text())["library"]["entries"][0]["style"]
+    assert style == {**old["style"], **reference["style"]}
+    assert catalog.read_bytes() == before

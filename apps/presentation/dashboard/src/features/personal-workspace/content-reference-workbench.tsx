@@ -19,15 +19,20 @@ export function ContentReferenceWorkbench() {
   const [captureText, setCaptureText] = useState("");
   const [captureResult, setCaptureResult] = useState<ReturnType<typeof captureContentReference> | null>(null);
   const importGeneration = useRef(0);
+  const fileInput = useRef<HTMLInputElement>(null);
   const found = useMemo(() => library ? searchContentReferences({library, query, structure}) : null, [library, query, structure]);
 
   function download(value: unknown, name: string) {
     const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2) + "\n"], {type: "application/json"}));
     const link = document.createElement("a"); link.href = url; link.download = name; link.click(); URL.revokeObjectURL(url);
   }
-  function clear() {importGeneration.current += 1; setLibrary(null); setSelected(null); setDraft(null); setCaptureResult(null); setError(""); setCaptureText(""); setFacts(""); setSubject("");}
+  function resetImportState() {importGeneration.current += 1; setLibrary(null); setSelected(null); setDraft(null); setCaptureResult(null); setError(""); setCaptureText(""); setFacts(""); setSubject("");}
+  function clear() {
+    resetImportState(); setQuery(""); setStructure("");
+    if (fileInput.current) fileInput.current.value = "";
+  }
   async function importCatalog(file?: File) {
-    clear();
+    resetImportState();
     const generation = importGeneration.current;
     if (!file) return;
     try {
@@ -50,7 +55,7 @@ export function ContentReferenceWorkbench() {
   }
   return <section aria-label={copy("素材与风格检索", "Reference styles")} className="personal-capability-field-summary personal-content-reference">
     <p>{copy("选择你有权使用的现有素材目录。内容仅在本页内处理；离开或清除后移除。", "Choose an existing catalog you are authorized to use. Contents stay in this page and are removed when you leave or clear it.")}</p>
-    <label>{copy("导入原目录 JSON", "Import original catalog JSON")}<input accept=".json,application/json" type="file" onChange={event => void importCatalog(event.target.files?.[0])} /></label>
+    <label>{copy("导入原目录 JSON", "Import original catalog JSON")}<input ref={fileInput} accept=".json,application/json" type="file" onChange={event => void importCatalog(event.target.files?.[0])} /></label>
     <p>{copy("收录仅生成待审文件。原目录、素材状态和来源权限仍由原 owner 管理；当前页面不执行写入、恢复或发布。", "Capture creates a review artifact. The original owner retains catalog, lifecycle and source permissions; this page cannot apply, restore or publish.")}</p>
     {error ? <p role="alert" className="personal-machine-error">{error}</p> : null}
     {found ? <>
@@ -84,7 +89,7 @@ export function ContentReferenceWorkbench() {
         {captureResult ? <div aria-live="polite"><p>{copy("已准备，尚未写入原目录", "Prepared; original catalog unchanged")}: {captureResult.reference.reference_ref}</p>
           <button type="button" onClick={() => download(captureResult, "reference-capture.private.json")}>{copy("下载私有收录文件", "Download private capture artifact")}</button></div> : null}
       </details>
-      <button onClick={clear} type="button">{copy("清除本页素材", "Clear page materials")}</button>
     </> : null}
+    <button onClick={clear} type="button">{copy("清除本页素材", "Clear page materials")}</button>
   </section>;
 }
