@@ -252,3 +252,94 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
         assert failed.returncode != 0 and not failed.stdout
     finally:
         saved.rename(state)
+
+
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
+def test_selected_todo_body_change_between_selection_and_readback_blocks_delivery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str,
+) -> None:
+    """The exact selected-Todo read must reject a body changed after selection."""
+    if provider == "sqlite":
+        isolate_sqlite_runtime(tmp_path, monkeypatch)
+    runtime, registry, state = tmp_path / "runtime", tmp_path / "registry.json", tmp_path / "state.md"
+    original_text = "[P1] Preserve the selected query contract and its cancellation behavior."
+    changed_text = original_text + " Do not run the stale selection."
+    state.write_text(
+        "---\nstatus: active\n---\n# Goal\n## Objective\nMaintain a query service.\n"
+        "## Agent Todo\n- [ ] " + original_text + "\n"
+        "  <!-- loopx:todo todo_id=todo_selected_work status=open task_class=advancement_task claimed_by=agent-a -->\n",
+        encoding="utf-8",
+    )
+    write_fixture_registry(
+        project=tmp_path, runtime_root=runtime, registry_path=registry,
+        goal_id="selected-race-goal", domain="requirements",
+        adapter_kind="generic_project_goal_v0", state_file=str(state),
+        registered_agents=["agent-a"], quota_allowed_slots=None,
+    )
+    goal = json.loads(registry.read_text())["goals"][0]
+    fields, _archived, _sections = parse_todo_source(state.read_text(), goal=goal, state_path=state)
+    full_items = retained_todo_summary_fields(fields["agent"], rollout_events=[])["agent_todos"]["items"]
+    initialize_canonical_authority(
+        runtime, "selected-race-goal",
+        build_todo_runtime_shadow_projection(
+            goal_id="selected-race-goal", todos=full_items, handoff_mode="soft_claim",
+        ),
+        state_path=state, provider=provider,
+    )
+    from loopx.control_plane.work_items import context_readback
+
+    read_source = context_readback._source_content
+    run_effect = context_readback.effect_runtime_result
+    projected_request = {}
+    changed = False
+
+    def mutate_after_selection(read, **kwargs):
+        nonlocal changed
+        if read.get("source") == "selected_todo" and not changed:
+            update_code, update = run_json_cli_result(
+                "todo", "update", "--goal-id", "selected-race-goal",
+                "--todo-id", "todo_selected_work", "--agent-id", "agent-a",
+                "--text", changed_text, registry_path=registry, runtime_root=runtime,
+            )
+            assert update_code == 0, update
+            changed = True
+        return read_source(read, **kwargs)
+
+    def capture_projection(effect, request, **kwargs):
+        if effect == "work_item.context.project":
+            projected_request.update(request)
+        return run_effect(effect, request, **kwargs)
+
+    monkeypatch.setattr(context_readback, "_source_content", mutate_after_selection)
+    monkeypatch.setattr(context_readback, "effect_runtime_result", capture_projection)
+    from loopx.cli import build_parser
+    from loopx.cli_commands.quota import handle_quota_command
+    from loopx.cli_rollout import append_cli_rollout_event
+
+    args = build_parser().parse_args([
+        "--registry", str(registry), "--runtime-root", str(runtime), "--format", "json",
+        "quota", "should-run", "--goal-id", "selected-race-goal", "--agent-id", "agent-a",
+        "--scan-path", str(tmp_path),
+    ])
+    packet: dict[str, object] = {}
+
+    def capture_payload(payload, *_args):
+        packet.update(payload)
+
+    code = handle_quota_command(
+        args, registry_path=registry, runtime_root_arg=str(runtime),
+        print_payload=capture_payload, append_cli_rollout_event=append_cli_rollout_event,
+    )
+    assert code == 0, json.dumps(packet, indent=2)
+    assert changed
+    assert packet["selected_todo"]["todo_id"] == "todo_selected_work"
+    selected_revision = projected_request["selected_todo"]["content_revision"]
+    readback = next(
+        result for result in projected_request["source_results"]
+        if result.get("content", {}).get("todo", {}).get("todo_id") == "todo_selected_work"
+    )
+    assert selected_revision
+    assert readback["content"]["todo"]["content_revision"] != selected_revision
+    channel = packet["interaction_contract"]["agent_channel"]
+    assert channel["work_context"]["complete"] is False
+    assert channel["delivery_allowed"] is False

@@ -111,6 +111,7 @@ _RETAINED_MONITOR_POLL_SELECTED_TODO_FIELDS = (
     "task_repository",
     "claimed_by",
     "unblocks_todo_id",
+    "content_revision",
     "agent_id",
     "selected_by",
     "selection_binding",
