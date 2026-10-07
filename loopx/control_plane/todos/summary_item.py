@@ -132,7 +132,7 @@ def compact_todo_summary_item(
         "index": item.get("index"),
         "text": text if text is not None else item.get("text"),
     }
-    content_revision = item.get("content_revision") or todo_text_content_revision(item.get("text"))
+    content_revision = item.get("content_revision")
     if content_revision:
         compact["content_revision"] = content_revision
     for key in TODO_SUMMARY_COMPACT_FIELDS:
