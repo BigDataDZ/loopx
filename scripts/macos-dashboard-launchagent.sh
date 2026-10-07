@@ -611,7 +611,7 @@ verify_current_chat_runtime() {
   for attempt in {1..50}; do
     (( SECONDS < deadline )) || break
     request_timeout=$((deadline - SECONDS))
-    (( request_timeout <= 1 )) || request_timeout=1
+    (( request_timeout <= 5 )) || request_timeout=5
     actual="$(chat_runtime_identity "$request_timeout" 2>/dev/null || true)"
     if [[ -n "$actual" && "$actual" == "$expected" ]]; then
       echo "- chat_runtime: current release identity verified"

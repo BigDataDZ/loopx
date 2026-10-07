@@ -111,16 +111,33 @@ def check_real_status_deadline(fake_bin: Path, home: Path) -> None:
 
 
 def check_chat_runtime_verification_deadline(tmp: Path, fake_bin: Path) -> None:
-    """A hung readiness read must share the outer startup deadline."""
+    """A valid slow read succeeds while a hung read shares the outer deadline."""
     real_curl = shutil.which("curl")
     assert real_curl, "curl is required for the Chat runtime deadline regression"
     request_started = threading.Event()
+    request_count = [0]
+    response = {"delay": 1.25}
+    runtime_identity = {"schema_version": "loopx_runtime_identity_v1"}
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             assert self.path == "/api/chat/capabilities", self.path
+            request_count[0] += 1
             request_started.set()
-            time.sleep(10)
+            time.sleep(response["delay"])
+            payload = json.dumps(
+                {
+                    "ok": True,
+                    "schema_version": "loopx_chat_capabilities_v1",
+                    "runtime_identity": runtime_identity,
+                }
+            ).encode()
+            try:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(payload)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
         def log_message(self, *_args: object) -> None:
             pass
@@ -138,12 +155,21 @@ def check_chat_runtime_verification_deadline(tmp: Path, fake_bin: Path) -> None:
         source
         + f"""
 chat_runtime_endpoint=127.0.0.1:{server.server_port}
+expected='{json.dumps(runtime_identity, sort_keys=True, separators=(",", ":"))}'
+timeout_seconds="${{1:?timeout seconds required}}"
+expected_result="${{2:?expected result required}}"
 started="$SECONDS"
-if verify_current_chat_runtime '{{"schema_version":"loopx_runtime_identity_v1"}}' 1; then
-  exit 2
+if verify_current_chat_runtime "$expected" "$timeout_seconds"; then
+  actual_result=success
+else
+  actual_result=failure
 fi
 elapsed=$((SECONDS - started))
-if (( elapsed > 2 )); then
+if [[ "$actual_result" != "$expected_result" ]]; then
+  echo "verification result $actual_result, expected $expected_result" >&2
+  exit 2
+fi
+if (( elapsed > timeout_seconds + 1 )); then
   echo "verification exceeded its shared deadline: ${{elapsed}}s" >&2
   exit 3
 fi
@@ -154,8 +180,28 @@ fi
             part for part in os.environ.get("PATH", "").split(os.pathsep)
             if Path(part or ".").resolve() != fake_bin.resolve()
         )
-        result = subprocess.run(
-            [str(probe)],
+        started = time.monotonic()
+        slow_result = subprocess.run(
+            [str(probe), "5", "success"],
+            env={**os.environ, "PATH": path},
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=7,
+        )
+        assert request_started.is_set(), "Chat verification did not reach the HTTP server"
+        assert slow_result.returncode == 0, (
+            slow_result.stdout,
+            slow_result.stderr,
+        )
+        assert time.monotonic() - started < 3
+        assert request_count[0] == 1
+
+        response["delay"] = 10
+        request_started.clear()
+        started = time.monotonic()
+        hung_result = subprocess.run(
+            [str(probe), "1", "failure"],
             env={**os.environ, "PATH": path},
             check=False,
             capture_output=True,
@@ -163,7 +209,11 @@ fi
             timeout=3,
         )
         assert request_started.is_set(), "Chat verification did not reach the HTTP server"
-        assert result.returncode == 0, (result.stdout, result.stderr)
+        assert hung_result.returncode == 0, (
+            hung_result.stdout,
+            hung_result.stderr,
+        )
+        assert time.monotonic() - started < 2.5
     finally:
         server.shutdown()
         server.server_close()
