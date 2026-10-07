@@ -16,7 +16,6 @@ from .todo_semantics import (
     todo_item_is_watch_only_monitor,
     todo_item_task_class,
     todo_presentation_sort_key,
-    todo_summary_monitor_schedule_gap_items,
     todo_summary_monitor_writeback_contract,
 )
 from .route_continuation import build_todo_route_continuation_lanes
@@ -183,6 +182,7 @@ class _QuotaTodoLanes:
     executable_items: list[dict[str, Any]]
     monitor_items: list[dict[str, Any]]
     monitor_due_items: list[dict[str, Any]]
+    monitor_schedule_gap_items: list[dict[str, Any]]
     watch_only_monitor_items: list[dict[str, Any]]
     watch_only_monitor_due_items: list[dict[str, Any]]
     non_watch_only_monitor_due_items: list[dict[str, Any]]
@@ -361,12 +361,6 @@ def summarize_user_todos_for_quota(
     lanes = _QuotaTodoLanes(**planning["lanes"])
     resume_planning = planning["resume_planning"]
     value = {**value, **(resume_planning["capacity_fields"] or {})}
-    monitor_schedule_gap_items = todo_summary_monitor_schedule_gap_items(
-        {
-            "monitor_open_items": lanes.monitor_items,
-            "monitor_writeback": value.get("monitor_writeback"),
-        }
-    )
     gate_items = [
         item
         for item in lanes.open_items
@@ -420,8 +414,8 @@ def summarize_user_todos_for_quota(
         "monitor_capability_blocked_due_items": (
             lanes.monitor_capability_blocked_due_items
         ),
-        "monitor_schedule_gap_count": len(monitor_schedule_gap_items),
-        "monitor_schedule_gap_items": monitor_schedule_gap_items[:MONITOR_DUE_ITEM_LIMIT],
+        "monitor_schedule_gap_count": len(lanes.monitor_schedule_gap_items),
+        "monitor_schedule_gap_items": lanes.monitor_schedule_gap_items[:MONITOR_DUE_ITEM_LIMIT],
         "active_next_action_items": lanes.active_next_action_items,
         "active_next_action_executable_items": lanes.active_next_action_executable_items,
         "backlog_items": lanes.display_open_items[:TODO_BACKLOG_ITEM_LIMIT],

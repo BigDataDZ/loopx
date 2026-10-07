@@ -1,4 +1,5 @@
-import {countTodoWork} from "./summary_lanes.ts";
+import {countTodoWork, decodeMonitorSchedule, monitorIsDue, monitorHasScheduleGap,
+  type MonitorSchedule} from "./summary_lanes.ts";
 import type { JsonObject } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
 import { requireJsonObject, requireBoolean, requireInteger, requireStringArray,
@@ -14,19 +15,22 @@ interface Row {
   global: boolean; gate: boolean; removed: boolean; actionable: boolean;
   due: boolean; watchOnly: boolean; taskClass: string; priority: number; index: number;
   profileRank: number; missing: readonly string[]; rawClaimed: boolean;
+  schedule: MonitorSchedule | null;
 }
 
-function decodeRow(value: unknown, available?: readonly string[]): Row {
+function decodeRow(value: unknown, available: readonly string[] | undefined, observedAt: number | null): Row {
   const raw = requireJsonObject(value, "quota selection row");
   const payload = requireJsonObject(raw.payload, "payload");
   const boolean = (key: string) => requireBoolean(raw[key], key);
   const integer = (key: string) => requireInteger(raw[key], key);
   const optional = (key: string) => optionalNonEmptyString(raw[key], key);
+  const schedule = observedAt === null ? null : decodeMonitorSchedule(raw);
   return {payload, display: raw.display == null ? payload : requireJsonObject(raw.display, "display"),
     claim: optional("claim"), bound: optional("bound"), blocks: optional("blocks"),
     excluded: requireStringArray(raw.excluded, "excluded"), global: boolean("global"),
     gate: boolean("gate"), removed: boolean("removed"), actionable: boolean("actionable"),
-    due: boolean("due"), watchOnly: raw.watch_only === undefined ? false : boolean("watch_only"),
+    schedule, due: schedule && observedAt !== null ? monitorIsDue(schedule, observedAt) : boolean("due"),
+    watchOnly: raw.watch_only === undefined ? false : boolean("watch_only"),
     taskClass: optional("task_class") ?? "advancement_task",
     priority: integer("priority"), index: integer("index"), profileRank: integer("profile_rank"),
     missing: available === undefined ? requireStringArray(raw.missing, "missing") :
@@ -34,9 +38,9 @@ function decodeRow(value: unknown, available?: readonly string[]): Row {
     rawClaimed: boolean("raw_claimed")};
 }
 
-function rows(value: unknown, available?: readonly string[]): Row[] {
+function rows(value: unknown, available: readonly string[] | undefined, observedAt: number | null): Row[] {
   if (!Array.isArray(value)) throw new EffectRuntimeRequestError("quota rows must be an array");
-  return value.map(row => decodeRow(row, available));
+  return value.map(row => decodeRow(row, available, observedAt));
 }
 const payloads = (items: readonly Row[]) => items.map(row => row.payload);
 const compact = (items: readonly Row[], limit: number) => items.slice(0, limit).map(row => row.display);
@@ -119,10 +123,10 @@ function claimScope(source: readonly Row[], selected: readonly Row[], agent: str
   };
 }
 
-export function projectQuotaSelection(value: unknown): JsonObject {
+export function projectQuotaSelection(value: unknown, observedAt: number | null = null): JsonObject {
   const request = requireJsonObject(value, "quota selection");
   const available = request.available === undefined ? undefined : requireStringArray(request.available, "available");
-  const source = rows(request.items, available), active = rows(request.active_items, available), activeExecutable = rows(request.active_executable_items, available);
+  const source = rows(request.items, available, observedAt), active = rows(request.active_items, available, observedAt), activeExecutable = rows(request.active_executable_items, available, observedAt);
   const agent = optionalNonEmptyString(request.agent_id, "agent_id");
   const userMode = requireBoolean(request.user_gate_scope, "user_gate_scope");
   const supported = requireBoolean(request.monitor_supported, "monitor_supported");
@@ -148,6 +152,12 @@ export function projectQuotaSelection(value: unknown): JsonObject {
   const due = supported ? monitors.filter(row => row.due && executableBy(row, agent)) : [];
   const admittedDue = due.filter(row => !row.missing.length);
   const watchOnlyMonitors = monitors.filter(row => row.watchOnly);
+  // Gap presentation keeps source priority/index order, independent of the
+  // claim/profile buckets used to select executable work.
+  const monitorSet = new Set(monitors);
+  const scheduleGaps = observedAt === null || !supported ? [] : source
+    .filter(row => monitorSet.has(row) && row.schedule !== null && monitorHasScheduleGap(row.schedule, observedAt))
+    .sort((a, b) => a.priority - b.priority || a.index - b.index);
   const activeVisible = (row: Row) => userMode ? (row.gate ? gateApplies(row, agent) : actionAddressesAgent(row, agent)) : executableBy(row, agent);
   const gateFilter = otherGates.length ? {
     schema_version: "agent_scoped_user_gate_filter_v0", agent_id: agent,
@@ -176,6 +186,7 @@ export function projectQuotaSelection(value: unknown): JsonObject {
     agent_scope_filter: gateFilter, open_items: payloads(open), claim_scope: scope,
     executable_items: payloads(open.filter(row => row.actionable && row.taskClass === "advancement_task")),
     monitor_items: payloads(monitors), monitor_due_items: payloads(admittedDue),
+    ...(observedAt === null ? {} : {monitor_schedule_gap_items: payloads(scheduleGaps)}),
     watch_only_monitor_items: payloads(watchOnlyMonitors),
     watch_only_monitor_due_items: payloads(admittedDue.filter(row => row.watchOnly)),
     non_watch_only_monitor_due_items: payloads(admittedDue.filter(row => !row.watchOnly)),
@@ -191,10 +202,18 @@ export function projectQuotaSelection(value: unknown): JsonObject {
 /** One quota read boundary composes scope/claim selection and existing resume rules. */
 export function projectTodoQuotaPlanning(value: unknown): JsonObject {
   const request = requireJsonObject(value, "quota planning");
-  if (!["todo_quota_planning_request_v0", "todo_quota_planning_request_v1"].includes(String(request.schema_version))) throw new EffectRuntimeRequestError("quota planning schema mismatch");
-  if (request.schema_version === "todo_quota_planning_request_v1") {
-    requireStringArray(requireJsonObject(request.selection, "selection").available, "available");
+  if (!["todo_quota_planning_request_v0", "todo_quota_planning_request_v1", "todo_quota_planning_request_v2"].includes(String(request.schema_version))) throw new EffectRuntimeRequestError("quota planning schema mismatch");
+  const selection = requireJsonObject(request.selection, "selection");
+  if (request.schema_version !== "todo_quota_planning_request_v0") {
+    requireStringArray(selection.available, "available");
+  }
+  const observedAt = request.schema_version === "todo_quota_planning_request_v2" ? selection.observed_at : null;
+  if (observedAt !== null && (typeof observedAt !== "number" || !Number.isFinite(observedAt))) {
+    throw new EffectRuntimeRequestError("quota monitor observed_at must be finite");
+  }
+  if (request.schema_version === "todo_quota_planning_request_v2" && observedAt === null) {
+    throw new EffectRuntimeRequestError("quota monitor observed_at is required");
   }
   return {schema_version: "todo_quota_planning_v0", resume_planning: projectTodoResumePlanning(request.resume),
-    ...projectQuotaSelection(request.selection)};
+    ...projectQuotaSelection(selection, observedAt)};
 }

@@ -6,6 +6,7 @@ from typing import Any
 
 from ..agents.profile import agent_profile_candidate_rank
 from ..effect_runtime import EffectRuntimeRejected, effect_runtime_result
+from ..runtime.time import now_utc
 from .contract import (
     normalize_todo_claimed_by, normalize_todo_bound_agent, normalize_todo_blocks_agent,
     normalize_todo_excluded_agents, normalize_todo_global_gate,
@@ -13,7 +14,7 @@ from .contract import (
 )
 from .todo_semantics import (
     todo_item_has_removed_continuation_policy, todo_item_is_actionable_open,
-    todo_item_is_due_monitor, todo_item_is_watch_only_monitor,
+    todo_item_next_due_at, todo_item_expires_at, todo_item_is_watch_only_monitor,
     todo_item_task_class, todo_projection_sort_key,
     todo_summary_monitor_writeback_supported,
 )
@@ -32,10 +33,12 @@ def project_quota_planning(
     profile = identity.get("agent_profile")
     profile = profile if isinstance(profile, dict) and profile else None
     agent = normalize_todo_claimed_by(identity.get("agent_id"))
+    observed_at = now_utc().timestamp()
 
     def encode(item: dict[str, Any]) -> dict[str, Any]:
         priority, index = todo_projection_sort_key(item)
         display = compact_todo_summary_item(item, text=str(item.get("text") or "").strip())
+        due, expires = todo_item_next_due_at(item), todo_item_expires_at(item)
         return {
             "payload": item, **({"display": display} if display != item else {}),
             "claim": normalize_todo_claimed_by(item.get("claimed_by")),
@@ -46,7 +49,8 @@ def project_quota_planning(
             "gate": is_user_gate_todo_item(item),
             "removed": todo_item_has_removed_continuation_policy(item),
             "actionable": todo_item_is_actionable_open(item),
-            "due": todo_item_is_due_monitor(item),
+            "due_at": due.timestamp() if due else None,
+            "expires_at": expires.timestamp() if expires else None,
             "watch_only": todo_item_is_watch_only_monitor(item),
             "task_class": todo_item_task_class(item),
             "priority": priority, "index": index,
@@ -62,10 +66,11 @@ def project_quota_planning(
 
     try:
         result = effect_runtime_result("todo.quota_planning.project", {
-            "schema_version": "todo_quota_planning_request_v1",
+            "schema_version": "todo_quota_planning_request_v2",
             "resume": build_todo_resume_planning_request(value, agent_id=agent, item_limit=8,
                 available_capabilities=(available_capabilities or []) if resolve_capacity else None),
             "selection": {
+                "observed_at": observed_at,
                 "available": normalize_required_capabilities(available_capabilities),
                 "items": [encode(item) for item in all_open_items],
                 "active_items": active("active_next_action_items"),
