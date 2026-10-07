@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
+from ..control_plane.projects.registry_codec import load_registry
 from ..control_plane.todos.todo_summary import canonical_todo_read_record
-from ..history import goal_registry_digest, load_registry
+from ..history import goal_registry_digest
 from ..registry import find_registry_goal
 from ..status import active_state_todo_fields
 
