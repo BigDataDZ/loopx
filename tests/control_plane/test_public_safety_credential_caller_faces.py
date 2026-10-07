@@ -180,6 +180,28 @@ def test_the_named_policy_lists_both_credential_categories() -> None:
 
 _LABEL_WORDS = ("password", "secret", "api", "token", "authorization", "bearer")
 
+# Modules that still decide a credential-text question for themselves, with the
+# number of constructions allowed there and why this slice did not move them.
+# Converting one deletes its entry; an entry whose site is already converted fails.
+DECLARED_OPEN_SITES: dict[str, str] = {
+    # Its rule rejects an assignment with a value as short as one character for the
+    # `api_key` and `access_token` labels. The owner's named arms carry no such
+    # verdict: direction 2 asks for an explicit, tested short-assignment policy and
+    # does not say which way, so this face stays where it is until that is decided.
+    "loopx/extensions/presentation.py": "short-assignment verdict undecided",
+    # Beyond the labels this rule also names vendor forms the owner does not
+    # (`ak`/`sk`, `access_key_id`, `secret_key`). Route those to the owner first,
+    # then this site is a plain policy call.
+    "loopx/control_plane/todos/handoff_note.py": "names vendor forms the owner lacks",
+    # The public-boundary contract is the publication tier: it refuses a label with
+    # no value at all (`Authorization:`, a trailing `Bearer `, `token=`), which is
+    # exactly what the owner's publication helper `find_private_text_match` already
+    # answers. Moving it is one call with the publication categories, but it decides
+    # the tier for every surface that passes the contract, so it needs the corpus
+    # parity evidence behind it rather than two capability faces' tables.
+    "loopx/contract.py": "publication tier, needs its own corpus parity slice",
+}
+
 
 def _fold(node: ast.AST, module_constants: dict[str, str]) -> str | None:
     """Fold a module-level expression to the string it evaluates to."""
@@ -210,8 +232,30 @@ def _fold(node: ast.AST, module_constants: dict[str, str]) -> str | None:
     return None
 
 
+def _is_credential_text_rule(pattern_source: str, label_count: int) -> bool:
+    """A credential alternation that reaches past the word for a value.
+
+    The whitespace test is the discriminator: a rule with no ``\\s`` is matching an
+    environment-variable or field *name*, which is a different decision with a
+    different owner. Its limit is stated in the probe test below -- a word list that
+    never looks past the word is not caught here.
+    """
+
+    return label_count >= 3 and "|" in pattern_source and "\\s" in pattern_source
+
+
 def _credential_alternations_outside_the_owner() -> list[str]:
+    """Name every module that still decides "text carries a credential" itself.
+
+    The criterion is a credential alternation that also reaches for whitespace --
+    three or more labels joined by ``|``, plus ``\\s``. A rule with no ``\\s`` is
+    matching an environment-variable name or a field name, which is a different
+    question with a different owner; three such rules exist today and are named in
+    the PR body rather than silently excluded.
+    """
+
     offenders: list[str] = []
+    seen: set[str] = set()
     for path in sorted(REPO_ROOT.glob("loopx/**/*.py")):
         relative = path.relative_to(REPO_ROOT).as_posix()
         if relative == OWNER_MODULE:
@@ -221,22 +265,97 @@ def _credential_alternations_outside_the_owner() -> list[str]:
         for node in tree.body:
             if not isinstance(node, ast.Assign) or len(node.targets) != 1:
                 continue
-            value = _fold(node.value, constants)
             name = getattr(node.targets[0], "id", "")
-            if value is None or not name:
+            pattern_source = _regex_pattern_source(node.value, constants)
+            if pattern_source is None:
                 continue
-            constants[name] = value
-            if not isinstance(node.value, ast.Call):
-                continue
-            if "compile" not in ast.dump(node.value.func):
-                continue
-            lowered = value.lower()
-            # A credential alternation is a shape list, not a threshold: it names
-            # several credential labels and lets `|` decide between them.
-            if sum(word in lowered for word in _LABEL_WORDS) >= 3 and "|" in value:
-                offenders.append(f"{relative}:{node.lineno}")
+            constants[name] = pattern_source
+            lowered = pattern_source.lower()
+            labels = sum(word in lowered for word in _LABEL_WORDS)
+            if _is_credential_text_rule(pattern_source, labels):
+                seen.add(relative)
+                if relative not in DECLARED_OPEN_SITES:
+                    offenders.append(f"{relative}:{node.lineno}")
+    # A declaration that no longer describes reality is its own failure: the site was
+    # converted, and leaving the entry would hide a reintroduced copy.
+    offenders.extend(
+        f"{item} is declared open but compiles no such rule"
+        for item in sorted(set(DECLARED_OPEN_SITES) - seen)
+    )
     return offenders
+
+
+def _regex_pattern_source(node: ast.AST, constants: dict[str, str]) -> str | None:
+    """Fold the pattern a module-level ``re.compile(...)`` is handed.
+
+    The assignment value is the *call*, so folding it directly would return None
+    for every construction the scan exists to find; the probe test below holds
+    that distinction.
+    """
+
+    if not isinstance(node, ast.Call):
+        return None
+    if "compile" not in ast.dump(node.func):
+        return None
+    for argument in node.args:
+        folded = _fold(argument, constants)
+        if folded is not None:
+            return folded
+    return None
 
 
 def test_no_module_outside_the_owner_keeps_a_credential_alternation_list() -> None:
     assert _credential_alternations_outside_the_owner() == []
+
+
+@pytest.mark.parametrize(
+    ("label", "source", "caught"),
+    [
+        (
+            "the historical spelling, obfuscated labels folded by the scan",
+            'import re\n\n_C = re.compile(\n    "(?i)(" + "|".join(["Author" + "ization:", '
+            '"Bear" + r"er\\s+[A-Za-z0-9._-]+", "api" + r"[_-]?key", "pass" + "word", '
+            '"sec" + "ret"]) + ")"\n)\n',
+            True,
+        ),
+        (
+            "a plain alternation that also tests for a value",
+            'import re\n\n_C = re.compile(r"(?i)(authorization|password|secret)\\s*[:=]\\s*\\S")\n',
+            True,
+        ),
+        (
+            "one label only, which is a field-name decision not a shape list",
+            'import re\n\n_C = re.compile(r"^todo_[A-Za-z0-9_-]{6,80}$")\n',
+            False,
+        ),
+        (
+            "a local path rule that happens to name one label",
+            'import re\n\n_C = re.compile(r"/Users/")\n',
+            False,
+        ),
+        (
+            "stated limit: a word-only list with no whitespace test is not caught",
+            'import re\n\n_C = re.compile(r"(?i)(authorization|password|secret)")\n',
+            False,
+        ),
+    ],
+)
+def test_the_census_finds_the_spelling_it_exists_to_find(
+    label: str, source: str, caught: bool
+) -> None:
+    # A scan that silently folds nothing would report a clean repository forever; the
+    # first row is what the copies deleted by this PR actually looked like.
+    tree = ast.parse(source)
+    constants: dict[str, str] = {}
+    found: list[str] = []
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        pattern_source = _regex_pattern_source(node.value, constants)
+        if pattern_source is None:
+            continue
+        constants[getattr(node.targets[0], "id", "")] = pattern_source
+        lowered = pattern_source.lower()
+        if _is_credential_text_rule(pattern_source, sum(w in lowered for w in _LABEL_WORDS)):
+            found.append(pattern_source)
+    assert bool(found) is caught, label
