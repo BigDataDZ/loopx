@@ -257,7 +257,7 @@ def test_real_cli_inline_validation_precedes_primary_commit(tmp_path, case):
 
 @pytest.mark.parametrize("terminal", [False, True])
 @pytest.mark.parametrize("interrupted", [False, True])
-@pytest.mark.parametrize("source_mode", ["file", "vision", "both", "path_delta", "wide_path_delta"])
+@pytest.mark.parametrize("source_mode", ["file", "vision", "both", "path_delta", "wide_path_delta", "linked_path_delta"])
 def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_retry(
     tmp_path, terminal, interrupted, source_mode, monkeypatch, capsys,
 ):
@@ -294,6 +294,16 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         cwd=project,
     )
     assert rc == 0, claimed
+    if source_mode == "linked_path_delta":
+        from loopx.capabilities.explore.result_log import (
+            append_explore_result_event, build_explore_node_event,
+        )
+        append_explore_result_event(explore_result_log_path(runtime, GOAL_ID),
+            build_explore_node_event(goal_id=GOAL_ID, node_id=ATTACHMENT["node_id"],
+                node_kind="question", title=ATTACHMENT["question"],
+                summary=ATTACHMENT["applicability"], status="open"))
+        update_goal_todo(registry_path=path, goal_id=GOAL_ID, todo_id=TODO_ID,
+            agent_id=AGENT_ID, explore_result_node_refs=[ATTACHMENT["node_id"]])
     terminal_proof = {}
     if terminal:
         from canonical_authority_fixture import initialize_canonical_authority
@@ -369,7 +379,7 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         "vision_patch": {"acceptance_summary": "Require a uniform tail bound."},
         "explore_result": template,
     }
-    if source_mode in {"path_delta", "wide_path_delta"}:
+    if source_mode in {"path_delta", "wide_path_delta", "linked_path_delta"}:
         packet["path_delta"] = {
             "schema_version": "goal_path_delta_v0", "outcome": "continue",
             "prior_assumption": "A finite prefix might establish the bound.",
@@ -382,6 +392,9 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
             ("node_id", "question", "applicability", "input_revision", "status")
         }
         packet["explore_result"]["schema_version"] = "explore_result_from_path_delta_v0"
+        if source_mode == "linked_path_delta":
+            for field in ("question", "applicability"):
+                del packet["explore_result"][field]
         if source_mode == "wide_path_delta":
             # Independent scope/tail oracle, exceeding the old 1200-character
             # stored-summary cap and using all nine legal route entries.
@@ -397,7 +410,7 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
     attachment_args = ()
     if source_mode in {"file", "both"}:
         attachment_args += ("--explore-result-json", str(source))
-    if source_mode in {"vision", "both", "path_delta", "wide_path_delta"}:
+    if source_mode in {"vision", "both", "path_delta", "wide_path_delta", "linked_path_delta"}:
         attachment_args += ("--agent-vision-json", str(vision))
     args = (
         "refresh-state",
@@ -472,7 +485,7 @@ def test_real_cli_normal_writeback_persists_attachment_and_rejects_conflicting_r
         assert len(finding["summary"]) <= 2000
     assert index.read_bytes() == before
     changed = {**ATTACHMENT, "interpretation": "A different conclusion."}
-    if source_mode in {"path_delta", "wide_path_delta"}:
+    if source_mode in {"path_delta", "wide_path_delta", "linked_path_delta"}:
         packet["path_delta"]["observed_reality"] = "A changed observation on retry."
         vision.write_text(json.dumps(packet))
     elif source_mode == "vision":

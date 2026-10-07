@@ -24,7 +24,7 @@ INLINE_VISION_FIELDS = {
 }
 
 
-def split_explore_result_input(vision_packet, result_path):
+def split_explore_result_input(vision_packet, result_path, *, scope_context=None):
     """Transport explicit attachments; the capability owns validation/conflicts.
 
     Keep the generic vision packet separate. No attachment means no capability
@@ -42,7 +42,7 @@ def split_explore_result_input(vision_packet, result_path):
 
     other = {"other_attachment": attachments[1]} if len(attachments) == 2 else {}
     return vision_packet, normalize_result_attachment(
-        attachments[0], vision_packet=vision_packet, **other
+        attachments[0], vision_packet=vision_packet, scope_context=scope_context, **other
     )
 
 

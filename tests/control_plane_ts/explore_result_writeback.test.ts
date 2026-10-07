@@ -107,3 +107,44 @@ test("reused text respects the owning Goal and finding limits", () => {
   assert.throws(() => normalizeExploreResultAttachment({attachment: {...scope, applicability: ""},
     vision_packet: {path_delta: delta}}), /applicability/);
 });
+
+const linkedScope = {
+  requested_node_refs: [attachment.node_id],
+  nodes: [{node_id: attachment.node_id, node_kind: "question",
+    title: attachment.question, summary: attachment.applicability}],
+};
+const linkedCapture = {
+  schema_version: scope.schema_version, node_id: scope.node_id,
+  input_revision: scope.input_revision, status: scope.status,
+};
+
+test("an explicit linked question reuses its entire scope without inferring revision or status", () => {
+  assert.deepEqual(normalizeExploreResultAttachment({attachment: linkedCapture,
+    vision_packet: {path_delta: delta}, linked_scope: linkedScope,
+    other_attachment: resolved}), resolved);
+  for (const field of ["input_revision", "status"]) {
+    const incomplete = {...linkedCapture} as Record<string, unknown>;
+    delete incomplete[field];
+    assert.throws(() => normalizeExploreResultAttachment({attachment: incomplete,
+      vision_packet: {path_delta: delta}, linked_scope: linkedScope}), new RegExp(field === "status" ? "finding status" : field));
+  }
+});
+
+test("scope reuse rejects unknown, unlinked, non-question and incomplete scopes", () => {
+  for (const linked_scope of [undefined, {...linkedScope, requested_node_refs: []},
+    {...linkedScope, nodes: []}, {...linkedScope, nodes: [{...linkedScope.nodes[0], node_kind: "experiment"}]},
+    {...linkedScope, nodes: [{...linkedScope.nodes[0], summary: ""}]}]) {
+    assert.throws(() => normalizeExploreResultAttachment({attachment: linkedCapture,
+      vision_packet: {path_delta: delta}, linked_scope}));
+  }
+  for (const partial of [{...linkedCapture, question: attachment.question},
+    {...linkedCapture, applicability: attachment.applicability}]) {
+    assert.throws(() => normalizeExploreResultAttachment({attachment: partial,
+      vision_packet: {path_delta: delta}, linked_scope: linkedScope}), /question and applicability/);
+  }
+  // Explicit blank or conflicting scope never silently substitutes a stored one.
+  assert.throws(() => normalizeExploreResultAttachment({attachment: {...scope, question: ""},
+    vision_packet: {path_delta: delta}, linked_scope: linkedScope}), /question/);
+  assert.deepEqual(normalizeExploreResultAttachment({attachment: scope,
+    vision_packet: {path_delta: delta}}), resolved);
+});
