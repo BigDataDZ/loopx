@@ -768,8 +768,11 @@ function turnActionProjection(payload: JsonObject, protocolActionFields: JsonObj
   const context = object(projection.agent_context);
   // Guidance must not crowd out the actionable contract. Preserve a signed
   // content reference to the existing full-decision route under budget pressure.
+  // Leave room for the CLI's indented JSON and envelope metadata too: a compact
+  // payload can fit the wire-byte ceiling while its emitted form exceeds the
+  // public TurnEnvelope character budget.
   if (Object.keys(context).length > 0
-    && Buffer.byteLength(JSON.stringify(projection), "utf8") > turnEnvelopeBudgetBytes(projection) - 1_400) {
+    && Buffer.byteLength(JSON.stringify(projection), "utf8") > turnEnvelopeBudgetBytes(projection) - 2_200) {
     projection.agent_context = {
       schema_version: context.schema_version, phase: context.phase, scope: context.scope,
       target: "coordinator", authority: "guidance_only", delivery: "projected",
