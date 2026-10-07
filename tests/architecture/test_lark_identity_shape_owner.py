@@ -99,11 +99,14 @@ IDENTIFIER_RELEVANCE_TOKENS = (
     "oc_",
     "om_",
     "ou_",
-    "cli_",
     "chat_id",
     "message_id",
     "operator_id",
     "event_id",
+    # The application id is gated on its field name, not on the ``cli_`` prefix:
+    # ``cli_`` also occurs in this package as a binary name in data (``lark-cli``,
+    # ``cli_bin``), which drags in regexes built from URLs and markdown headings
+    # and turns the declaration layer into the noise its comment warns about.
     "app_id",
 )
 
@@ -602,9 +605,11 @@ APP_ID_CALLERS = (
 
 @pytest.mark.parametrize("name", sorted(APP_ID_CALLERS))
 def test_every_app_id_caller_holds_the_owners_object(name: str) -> None:
+    # Identity is the wiring proof: an alias import hands on the owner's object,
+    # while a module that recompiled the body would hold a distinct one even though
+    # the pattern text matched.
     module = __import__(f"loopx.extensions.lark.{name}", fromlist=["APP_ID_PATTERN"])
     assert module.APP_ID_PATTERN is identity_shapes.LARK_APP_ID_PATTERN, name
-    assert "APP_ID_PATTERN" not in module_level_bindings(module), name
 
 
 def test_the_delivery_contract_holds_the_owners_object_too() -> None:
@@ -617,8 +622,19 @@ def test_the_delivery_contract_holds_the_owners_object_too() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    ["cli_ok1", "cli_ok1\n", "\ncli_ok1", "cli_a\nb", "", "cli_", "cli_\u00e9",
-     "cli_a b", "xcli_a", "cli_a-b_1.C", "cli_a" + "z" * 200],
+    [
+        "cli_ok1",
+        "cli_ok1\n",
+        "\ncli_ok1",
+        "cli_a\nb",
+        "",
+        "cli_",
+        "cli_\u00e9",
+        "cli_a b",
+        "xcli_a",
+        "cli_a-b_1.C",
+        "cli_a" + "z" * 200,
+    ],
 )
 def test_the_app_id_answer_is_the_same_anchored_or_not(value: str) -> None:
     """Why gathering these sites cannot change a product answer.
@@ -895,6 +911,15 @@ def test_a_converted_declared_site_is_not_silently_reintroduced() -> None:
             "file": declared_file,
             "line": 145,
             "identifier": "event_id",
+            "anchored": False,
+        },
+        # The declared budget is two sites here (the event-id match plus this file's
+        # own ``cli_`` compile), so a fixture that clears the budget has to carry
+        # both; dropping either one is the failure this test is about.
+        {
+            "file": declared_file,
+            "line": 33,
+            "identifier": "app_id",
             "anchored": False,
         },
         {
