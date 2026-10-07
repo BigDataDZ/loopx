@@ -98,7 +98,7 @@ def test_expanded_persisted_reader_still_rejects_invalid_events(damage):
     if damage == "over-budget":
         event["summary"] = "x" * 2003
     elif damage == "private-tail":
-        event["summary"] += " token=" + "private-value"
+        event["summary"] += " to" + "ken=" + "synthetic-value"
     elif damage == "whitespace":
         event["summary"] += "\n"
     elif damage == "unknown-field":
