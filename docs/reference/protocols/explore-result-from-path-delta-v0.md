@@ -42,6 +42,28 @@ No finding status is inferred from the route outcome. The caller must choose
 `tentative`, `confirmed` or `refuted` from the evidence, within the declared scope.
 
 Question identity and applicability remain stable across later observations.
+When the selected Todo already links a stored question, the same schema also
+accepts this shorter explicit reference:
+
+```json
+{
+  "schema_version": "explore_result_from_path_delta_v0",
+  "node_id": "prefix-bound",
+  "input_revision": "fixture-v2",
+  "status": "tentative"
+}
+```
+
+Omit **both** `question` and `applicability` to reuse that question's complete
+canonical title and scope. The hook reads the Goal's source registry/runtime
+and the canonical Todo links, including File/SQLite authority. An unknown,
+unlinked or non-question node fails before primary commit. Supplying only one
+scope field or an explicit blank also fails; stored text never silently replaces
+an explicit override. Full scope remains required for a new question. This
+reduces repeated authoring; it does not initialize an empty graph or automatically
+capture an ordinary path delta. The turn-context and settlement hooks project
+`linked_question_attachment_template` alongside the first-capture template.
+
 `input_revision` identifies the tested input, rather than a guessed source
 revision. Evidence identifiers stay opaque; keep raw logs local. Neither capture
 nor a successful transport proves model adoption, task completion or causal
