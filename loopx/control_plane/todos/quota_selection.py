@@ -21,6 +21,49 @@ from .todo_semantics import (
 from .resume_planning import build_todo_resume_planning_request
 from .summary_item import compact_todo_summary_item
 from .user_gate import is_user_gate_todo_item
+from .route_continuation import build_todo_route_continuation_facts
+from .handoff_gate import todo_summary_handoff_gates
+
+
+def _closure_source_facts(value: dict[str, Any]) -> dict[str, Any]:
+    # JSON erases Python's int/float distinction. Retain the strict integer
+    # evidence type before transport; the typed owner decides validity.
+    def integer(raw: Any) -> int | None:
+        return raw if type(raw) is int else None
+
+    def proof(key: str, fields: tuple[str, ...], counts: dict[str, int | None]) -> Any:
+        raw = value.get(key)
+        if not isinstance(raw, dict):
+            return None
+        return {**{name: raw.get(name) for name in fields},
+                **{name: integer(raw.get(name, default)) for name, default in counts.items()}}
+
+    def rows(key: str, *, absent_empty: bool = False) -> Any:
+        raw = value.get(key)
+        if raw is None and absent_empty:
+            raw = []
+        if not isinstance(raw, list):
+            return None
+        return [{"status": item.get("status"), "done": item.get("done"),
+                 "watch_only": todo_item_is_watch_only_monitor(item),
+                 "route_continuation_replan_required": item.get("route_continuation_replan_required")}
+                if isinstance(item, dict) else None for item in raw]
+
+    return {
+        **{key: value.get(key) for key in ("schema_version", "source_section")},
+        **{key: integer(value.get(key)) for key in ("total_count", "open_count", "done_count", "deferred_count")},
+        "convergence_open_count": integer(value.get("convergence_open_count", value.get("open_count"))),
+        **{key: integer(value.get(key, 0)) for key in ("completed_without_successor_count", "route_continuation_replan_count")},
+        "source_proof": proof("source_proof", ("schema_version", "role", "derived"), {"item_count": None}),
+        "terminal_closure_proof": proof("terminal_closure_proof",
+            ("schema_version", "role", "source_section", "all_todos_done", "all_convergent_todos_done", "derived"),
+            {"item_count": None, "monitor_open_count": None, "watch_only_monitor_count": 0,
+             "successor_gap_count": None, "route_replan_count": None, "no_followup_count": None}),
+        "closure_intent": proof("closure_intent", ("schema_version", "kind", "derived"), {"count": None}),
+        "items": rows("items"), "monitor_open_items": rows("monitor_open_items", absent_empty=True),
+        "deferred_item_count": len(value["deferred_items"]) if isinstance(value.get("deferred_items"), list) else None,
+        "deferred_resume_count": len(value["deferred_resume_candidates"]) if isinstance(value.get("deferred_resume_candidates"), list) else None,
+    }
 
 
 def project_quota_planning(
@@ -34,6 +77,7 @@ def project_quota_planning(
     profile = profile if isinstance(profile, dict) and profile else None
     agent = normalize_todo_claimed_by(identity.get("agent_id"))
     observed_at = now_utc().timestamp()
+    handoff_gates = todo_summary_handoff_gates(value)
 
     def encode(item: dict[str, Any]) -> dict[str, Any]:
         priority, index = todo_projection_sort_key(item)
@@ -66,7 +110,12 @@ def project_quota_planning(
 
     try:
         result = effect_runtime_result("todo.quota_planning.project", {
-            "schema_version": "todo_quota_planning_request_v2",
+            "schema_version": "todo_quota_planning_request_v3",
+            "route_items": build_todo_route_continuation_facts(value, handoff_gates=handoff_gates),
+            "handoff_items": [{"display": gate,
+                "excluded": normalize_todo_excluded_agents(gate.get("excluded_agents"))}
+                for gate in handoff_gates],
+            "source_contract": _closure_source_facts(value),
             "resume": build_todo_resume_planning_request(value, agent_id=agent, item_limit=8,
                 available_capabilities=(available_capabilities or []) if resolve_capacity else None),
             "selection": {
@@ -88,4 +137,10 @@ def project_quota_planning(
         raise ValueError(str(exc)) from None
     if not isinstance(result, dict) or result.get("schema_version") != "todo_quota_planning_v0":
         raise RuntimeError("TypeScript Todo quota planning shape mismatch")
+    if not isinstance(result.get("source_completeness"), dict) or "closure_intent" not in result:
+        raise RuntimeError("TypeScript Todo quota planning source contract missing")
+    if isinstance(result["closure_intent"], dict):
+        result["closure_intent"] = {**value["closure_intent"], **result["closure_intent"]}
+    elif result["closure_intent"] is not None:
+        raise RuntimeError("TypeScript Todo quota planning closure intent shape mismatch")
     return result

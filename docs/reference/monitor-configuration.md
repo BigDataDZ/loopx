@@ -79,6 +79,8 @@ precede display limits; their priority/index order is independent of execution
 claim/profile order. This read refactor removes quota's Python due classification
 and gap rescan without adding a runtime crossing. Legacy Python monitor APIs,
 timestamp parsing and provider IO remain live compatibility adapters.
+The internal planning request uses v3 for these clock facts while retaining v2
+route/handoff/closure behavior; existing v0/v1/v2 requests keep their input contracts.
 
 ## 中文
 
@@ -112,3 +114,6 @@ due、expiry 与缺失 schedule 判定，并复用 summary reader 的时间规�
 writeback 与 capability 准入保留。缺口数量先于展示截断；其 priority/index 顺序独立
 于执行用 claim/profile 排序。本重构删除 quota 中 Python due 判定和缺口二次扫描，
 不增加 runtime crossing；仍有调用方的旧 Python Monitor API、时间解析和 provider IO 保留。
+
+内部 planning request 用 v3 承载时钟事实，保留 v2 的 route／handoff／closure 规则；
+已有 v0／v1／v2 请求保持原输入合同。
