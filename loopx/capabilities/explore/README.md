@@ -112,6 +112,21 @@ Events are sanitized at record time: compact text limits, credential-like
 markers rejected, and evidence refs must be public relative refs or opaque ids
 (for example `ov:doc:lustre-survey`), never local absolute paths.
 
+The default writer still compacts summaries and blocked reasons at 1200
+characters. The strict v0 reader accepts canonical persisted text up to 2002
+characters without recompacting or rewriting it; this prepares for a bounded
+2000-character writer and accommodates the historical compactor's two extra
+ellipsis characters. Unknown fields, unsafe text, stale event hashes and text
+beyond that reader bound still fail closed. Display and page limits remain
+separate from the stored evidence.
+
+For a shared log, deploy this reader preparation to every CLI, service and
+worker that reads it before enabling a larger writer budget. Older readers may
+reject a longer event and block the whole read. This change does not enable a
+larger writer, migrate existing events, upgrade installed runtimes or grant
+write authority. Rolling back to an older reader requires first retaining the
+longer log with a compatible reader; do not silently clip its counterevidence.
+
 ## Results From Ordinary Work Writeback
 
 An enabled evidence or planning mode accepts an explicit
