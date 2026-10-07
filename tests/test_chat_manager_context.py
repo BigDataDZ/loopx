@@ -1272,6 +1272,46 @@ def test_external_authority_is_rechecked_after_same_alias_replacement(
     assert result["warnings"] == ["external_authorization_changed"]
 
 
+@pytest.mark.parametrize("change", ["metadata_once", "metadata_always", "replacement", "revocation"])
+def test_external_context_recollects_only_with_unchanged_exact_authority(
+    monkeypatch, tmp_path, change
+):
+    """A snapshot race can recover; churn and changes during recovery cannot."""
+    registry = tmp_path / "registry.json"
+    payload = {"goals": [{"id": "authorized", "goal_instance_id": "ginst_" + "a" * 32}]}
+    registry.write_text(json.dumps(payload))
+    collect = context.build_goal_portfolio
+    calls = []
+    authorized = ["authorized"]
+
+    def racing_collection(**kwargs):
+        result = collect(**kwargs)
+        calls.append(result["inventory_revision"])
+        if len(calls) == 1 or change == "metadata_always":
+            payload["observation_generation"] = len(calls)
+        elif change == "replacement":
+            payload["goals"][0]["goal_instance_id"] = "ginst_" + "b" * 32
+        elif change == "revocation":
+            authorized.clear()
+        registry.write_text(json.dumps(payload))
+        return result
+
+    monkeypatch.setattr(context, "build_goal_portfolio", racing_collection)
+    result = context.collect_manager_turn_context(
+        registry, {"channel_id": "manager.external.fixture"}, tmp_path,
+        lambda _session: list(authorized), include_details=False,
+    )
+    if change == "metadata_once":
+        assert result["authorization_scope_id"] == context.manager_authorization_scope_id([
+            {"goal_id": "authorized", "goal_instance_id": "ginst_" + "a" * 32}
+        ])
+        assert result["goals"][0]["goal_instance_id"] == "ginst_" + "a" * 32
+    else:
+        assert result["goals"] == []
+        assert result["warnings"] == ["external_authorization_changed"]
+    assert len(calls) == 2
+
+
 def test_empty_external_authority_never_reaches_the_model(monkeypatch, tmp_path):
     store = ChatSessionStore(tmp_path / "runtime")
     runtime = ChatRuntimeController(
