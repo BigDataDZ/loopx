@@ -822,7 +822,19 @@ one canonical revision, with one CAS and durable operation receipt. It composes
 the existing generation, successor-route, User authoring-scope and Todo-create
 planners. Public create and Monitor batches share create admission/duplicate
 planning; target selection is shared by legacy preflight and native commit.
-Python only routes provider intent and drains the existing projection outbox.
+Unpromoted Goals now use the same typed batch planner. Their adapter holds the
+existing Todo/promotion locks and atomically replaces the Markdown state with
+the observation, both successor roles and an immutable operation receipt;
+the three separate Python update/add calls are retired. Exact retry returns
+the original identities after later rename, completion, archival or authority
+promotion. Python retains parsing, legacy lifecycle admission, storage and
+projection delivery. Fresh legacy batches now share canonical semantic-duplicate
+admission: conflicting same-text work is rejected instead of silently updated.
+The retained legacy registered-peer successor handoff uses an internal typed
+policy without replacing the observing actor; canonical Monitor and ordinary
+Todo creation remain actor-owned. Unknown owners fail before quota reservation
+or business writes; exact committed receipts retain frozen admission after
+registration changes without granting new execution authority.
 
 Explicit semantic corrections: completed/archived Monitor targets are rejected;
 target-key selection ignores finished history but never guesses between live matches;
@@ -848,8 +860,15 @@ compatible. Old pending receipts without an admission basis retain current-state
 admission and explicitly report when historical recovery cannot be proven.
 See [Monitor observation and recovery](../../reference/protocols/quota-monitor-observation-receipt-v0.md).
 
-Boundaries still open: cross-owner successor claims are not implicitly authorized;
-unpromoted Goals retain their legacy writer and reject explicit lease proof.
+Boundaries still open: registered-peer legacy assignment does not prove receiver
+adoption or grant a lease; canonical cross-owner claims remain rejected;
+unpromoted Goals retain their storage adapter and reject explicit lease proof.
+New frozen quota plans identify the atomic legacy batch contract. Older pending
+legacy effects without an immutable business receipt require reconciliation;
+their original task identities cannot safely be inferred from mutable text.
+Old canonical business receipts and completed quota receipts remain replayable.
+Inline legacy operation receipts are retained with the state, including after
+archival; their storage cost is not a claim of legacy persistence retirement.
 Quota and business authority remain separate recoverable transactions. Canonical
 commit success is independent of pending Markdown delivery. This does not finish
 all T2 commands or authorize whole-Goal promotion.
@@ -2101,13 +2120,17 @@ actual callers have moved. [Operator contract](../../reference/reviewed-coordina
 Adjacent deadline correction: projected Agent/User frontier waits must compare
 UTC instants rather than ISO spelling, preserving the pre-compaction evidence
 and three live callers (quota compaction, monitor wait, scheduler continuation).
-Retain the existing Python rule for now: an isolated typed read crossing made
-the measured warm scheduler consumer slower, despite preserving its semantics.
-The retirement exit is fusion into an already-needed summary/scheduler batch,
-with same-load cost, clock/freshness parity and installed File/SQLite negative
-cases before deleting this rule. Do not open a duplicate follow-up or treat
-rule relocation as optimization. Default SQLite, full T4 and live host wait
-qualification remain open.
+An isolated typed read crossing previously made the measured warm scheduler
+consumer slower, despite preserving its semantics. The existing quota-planning
+batch now discovers addressed gate and Monitor deadlines before display caps,
+correcting earliest-gate loss without an additional crossing. It shares v3
+Monitor due/gap selection and the same observation instant, while preserving
+older planning wire versions. It removes Python's second gate-list filter.
+Keep the remaining Python current-time/raw-summary rule: bounded resume/handoff
+sources and scheduler freshness still need a cohesive already-needed batch,
+with same-load cost and installed File/SQLite negative cases before retirement.
+Do not open a duplicate follow-up or treat rule relocation as optimization.
+Default SQLite, full T4 and live host wait qualification remain open.
 
 One TS summary batch now owns selected-source counts, display allocation,
 recent-completion chronology, orchestration candidate positions and closure

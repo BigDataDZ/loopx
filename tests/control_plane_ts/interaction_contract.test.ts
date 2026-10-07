@@ -28,6 +28,23 @@ function readFacts(): JsonObject {
     selected_todo: {todo_id: "todo_selected"}};
 }
 
+test("only participating hooks add unavailable context; generic guidance has no preference recipe", () => {
+  const request = {required_reads: [], source_results: []};
+  const inactive = projectInteractionWorkContext(request).work_context as JsonObject;
+  assert.equal(inactive.unavailable_context, undefined);
+  assert.doesNotMatch(String(inactive.instruction), /preference|empty view|empty observations/);
+  assert.match(String(inactive.instruction), /this guard's pre-work checks/);
+  assert.match(String(inactive.instruction), /source-specific freshness obligations/);
+  const denied = projectInteractionWorkContext({...request, hook_dispatch: {results: [{
+    hook_id: "optional.context", capability_id: "optional-context",
+    status: "unavailable", error_code: "source_denied"}], failures: []}}).work_context as JsonObject;
+  assert.deepEqual((denied.unavailable_context as JsonObject).affected_hooks, [{
+    hook_id: "optional.context", capability_id: "optional-context",
+    status: "unavailable", error_code: "source_denied"}]);
+  assert.equal((denied.unavailable_context as JsonObject).dependent_action_policy, "hold_until_fresh_context");
+  assert.equal((denied.unavailable_context as JsonObject).independent_work_policy, "preserve_existing_authority");
+});
+
 test("shared reads retain all Goal sources before exact current work and existing hooks", () => {
   const facts = readFacts();
   const before = structuredClone(facts);

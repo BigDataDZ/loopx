@@ -497,6 +497,18 @@ separate acceptance; active Python IO adapters are retained.
 真实 Legacy/File/SQLite CLI 验证覆盖全文尾部、用户 gate、恢复和签名内容篡改。
 这是普通上下文交付默认值的变化；模型效果、安装后的 App/Lark 旅程及总体效率仍待验证。
 
+The no-write model-behavior safety adapter now recognizes the existing native
+scheduler route prefix (`--registry` / `--runtime-root`) before the matching
+ACK/failure command. Qualification exercises the actual binder and TurnEnvelope
+projection, not only unbound synthetic argv. The adapter decodes bounded wire
+only for recursive confidentiality scanning; route values, decoded extensions
+and unrelated aliases remain subject to that scan, and the original packet and
+wire are forwarded unchanged. Unknown or malformed prefixes and mismatched
+hint/command pairs still refuse. This removes a transport false rejection; it
+changes no scheduler admission, execution grant, default or host effect.
+Real packaged transport qualification remains separate from live model outcomes,
+App adoption and the three convergence acceptances below.
+
 Remaining implementation Todos, in dependency order:
 
 | Todo | Observable outcome and decisive acceptance |
@@ -504,6 +516,41 @@ Remaining implementation Todos, in dependency order:
 | Reconcile execution/context requirements across heartbeat and TurnEnvelope | Same captured authoritative decision preserves actor/Goal/Todo, required full reads, claim/lease, action selection, replan/closure, conditional settlement and scheduler ownership. Inventory omitted/duplicated facts before deleting render branches. Include optional capabilities off, recall-only, ingest-only, stale binding and provider failure; private detail is accessed only through authorized references. |
 | Adopt one typed projection in real host renderers | Heartbeat full/thin and Turn host consume the same execution facts and per-Turn capture/detail route. Keep host-specific notification and scheduler transport explicit. Real File/SQLite CLI plus packaged Codex App tests cover reentry, source loss, refusal before required reads, late results, backoff and exactly-once settlement; no second admission from a detail read. Retire the replaced projection only after its last caller moves. |
 | Qualify the context shape and migration default | Compare the same normal, replan, wait/recovery and optional-capability workloads against both current full and compact paths. Measure payload/model tokens, detail IO, latency, resource growth, omissions and decision/outcome quality. Keep data loss, duplicate effects, identity and settlement errors as hard constraints. Preserve supported saved prompts/receipts and reversible rollout; change budgets or defaults only with that evidence. |
+
+The next cost slice has a reproduced regression-budget gap, rather than a
+missing fixture alias or permission to remove required context. Comparing
+`aa87cc019` with `fc411c878` on the unchanged public CLI fixture, identical
+temporary aliases and command arguments produced these JSON stdout costs:
+
+| Public fixture / surface | Base characters | Candidate characters | Base compact JSON | Candidate compact JSON |
+|---|---:|---:|---:|---:|
+| 36 Todos / 1 Agent / 12 runs, `turn plan` | 16,115 | 17,403 | 12,112 | 13,145 |
+| 1 Todo / 1 Agent / 1 run, enabled multi-subagent `quota should-run --turn-envelope` | 10,990 | 11,661 | 8,892 | 9,464 |
+| 36 Todos / 1 Agent / 12 runs, `heartbeat-prompt --thin` | 3,122 | 3,122 | 3,069 | 3,069 |
+
+The crowded Turn increase includes 484 compact characters in the envelope and
+510 in the newly returned hook-dispatch diagnostic. The envelope now states
+which hooks observed empty context, discards cached content for them, and
+distinguishes fulfilled pre-work reads from later action-specific freshness.
+Those instructions and signed observations carry useful decision semantics.
+The hook diagnostic has a separate effect-disclosure role; audit its actual
+consumers before moving or removing it. Pretty-print overhead is measured
+separately and is not a token, latency or model-quality result.
+
+The original runner tests still fail: crowded `turn plan` exceeds its 16,000
+character ceiling, and the enabled multi-subagent runner exceeds its 9,000
+character envelope ceiling. Its nested fixture paths emit 11,291 characters
+on the base and 11,961 on the candidate; that is a different path workload
+from the table. The historical base was already red. These are regression
+budgets, not execution quota or frozen promotion limits. The next bounded
+implementation must characterize diagnostic consumers, compare lossless
+compaction with justified headroom, and update the existing budget owner and
+its runner tests together. Preserve the fixture populations, full routes,
+required-source content, hook coordinates, freshness clauses and real stdout
+growth rejection. Follow the
+[budget decision guide](../../development/testing-and-quality.md#budget-failure-decisions).
+Until that slice passes the original workload, this measurement is not a
+budget pass, a transport-default decision or installed host qualification.
 
 Do not add a generic executor or lower an acceptance threshold to make a short
 packet pass. Preserve unsatisfied requirements and distinguish transport parity,
