@@ -1,7 +1,8 @@
 # Runner defaults and controlled ablations
 
 New LoopX executions default to **loopx-planned** task entry and replanning
-after **3 settled effective work Turns**. This applies to
+after **3 settled effective work Turns**, deliberately earlier than the product
+default of five. This applies to
 Harbor heartbeat, Turn and LoopX Goal modes, and EdgeBench heartbeat-resume and
 heartbeat-explore profiles. Planned entry replaces the seeded-todo default; pass
 `task_entry: seeded-todo` / `--task-entry seeded-todo` to retain the previous
