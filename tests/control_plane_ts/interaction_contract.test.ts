@@ -6,6 +6,7 @@ import { interpretQuotaShouldRunPacket } from "../../loopx/control_plane/effect_
 import {
   decodeInteractionContract,
   projectInteractionRequiredReads,
+  projectInteractionWorkContext,
   type AgentInteractionChannel,
 } from "../../loopx/control_plane/work_items/interaction_contract.ts";
 
@@ -92,6 +93,58 @@ function successorReplanContract(): Record<string, unknown> {
     },
   };
 }
+
+test("inline context fulfills every source without truncating acceptance or inventing authority", () => {
+  const reads = Array.from({length: 7}, (_, i) => ({command: `read-${i}`, source: "registered_hook"}));
+  const tail = "Retain the final acceptance and stop before deployment.";
+  const request: JsonObject = {required_reads: reads,
+    source_results: reads.map(read => ({command: read.command, content: {text: "full source ".repeat(10_000) + tail}})),
+    user_todos: {todos: [{todo_id: "todo_decision", role: "user", text: "Approve delivery.", blocks_agent: "agent-a"}]}};
+  const before = structuredClone(request);
+  const result = projectInteractionWorkContext(request);
+  assert.deepEqual(result.required_reads, []);
+  const context = result.work_context as JsonObject;
+  assert.equal(context.complete, true);
+  assert.equal((context.sources as JsonObject[]).length, 7);
+  assert.ok(String(((context.sources as JsonObject[])[6].content as JsonObject).text).endsWith(tail));
+  assert.deepEqual(context.user_todos, request.user_todos);
+  assert.equal(result.delivery_allowed, undefined);
+  assert.deepEqual(request, before);
+});
+
+test("failed, ambiguous or changed work never fulfills a pre-work read", () => {
+  const read = {command: "read-todo", source: "selected_todo"};
+  for (const result of [{error_code: "unavailable"}, {content: {matched: false, todo: null}},
+    {content: {matched: true, todo: {todo_id: "todo_other", status: "open"}}},
+    {content: {matched: true, todo: {todo_id: "todo_work", status: "done"}}},
+    {content: {matched: true, todo: {todo_id: "todo_work", status: "open", claimed_by: "peer"}}}]) {
+    const projected = projectInteractionWorkContext({required_reads: [read],
+      selected_todo: {todo_id: "todo_work", status: "open", claimed_by: "agent-a"},
+      source_results: [{command: read.command, ...result}]});
+    assert.deepEqual(projected.required_reads, [read]);
+    assert.equal((projected.work_context as JsonObject).complete, false);
+  }
+});
+
+test("mixed Goal document remains a full progressive read without dropping task requirements", () => {
+  const goalRead = {command: "cat -- state.md", source: "goal_state", ordering: "before_work"};
+  const taskRead = {command: "read-todo", source: "selected_todo"};
+  const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a",
+    text: "Preserve every requirement. ".repeat(400) + "Stop before deployment."};
+  const projected = projectInteractionWorkContext({required_reads: [goalRead, taskRead],
+    selected_todo: task, source_results: [
+      {command: goalRead.command, content: {text: "Goal intent, other tasks and historical evidence."}},
+      {command: taskRead.command, content: {matched: true, todo: task}},
+    ]});
+  assert.deepEqual(projected.required_reads, [goalRead]);
+  const context = projected.work_context as JsonObject;
+  assert.equal(context.complete, true); // No source failure; pending reads still apply.
+  assert.deepEqual(context.sources, [{...taskRead, content: {matched: true, todo: task}}]);
+  const failed = projectInteractionWorkContext({required_reads: [goalRead],
+    source_results: [{command: goalRead.command, error_code: "unavailable"}]});
+  assert.deepEqual(failed.required_reads, [goalRead]);
+  assert.equal((failed.work_context as JsonObject).complete, false);
+});
 
 test("decodes non-delivery successor work as a required agent channel", () => {
   const contract = decodeInteractionContract(successorReplanContract());

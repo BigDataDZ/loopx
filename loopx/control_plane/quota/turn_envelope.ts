@@ -6,7 +6,7 @@ import {
   type JsonObject,
 } from "../effect_program.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
-import { projectTurnStartUnavailableContext, turnStartPromptBudgetBytes } from "../capability_hooks.ts";
+import { projectTurnStartUnavailableContext } from "../capability_hooks.ts";
 import { requireJsonObject } from "../runtime_decode.ts";
 import { projectPendingCapabilityIntent } from "../work_items/pending_capability_intent.ts";
 import { measureTurnEnvelope, turnEnvelopeBudgetBytes, TURN_ENVELOPE_SECTION_TARGETS } from "./turn_envelope_budget.ts";
@@ -284,23 +284,19 @@ function requiredReads(interaction: JsonObject, payload: JsonObject): JsonObject
   const result: JsonObject[] = [];
   for (const value of Array.isArray(raw) ? raw : []) {
     const item = object(value);
-    const promptBudget = item.source === "turn_start_capability_hook"
-      ? turnStartPromptBudgetBytes(item.prompt_budget_bytes) : 0;
     // Required reads are executable obligations, not display summaries. Keep
     // every admitted command byte-for-byte, including quoted path whitespace.
     const command = scalarString(item.command, "required read command");
     if (!command) continue;
     const compact: JsonObject = { command };
-    if (promptBudget) compact.prompt_budget_bytes = promptBudget;
-    for (const field of ["kind", "reason", "source"]) {
-      const rendered = text(item[field], 240);
-      if (rendered) compact[field] = rendered;
-    }
     // These are existing obligation coordinates, not provider diagnostics.
     // Keep identity and ordering intact, just like the executable command.
-    for (const field of ["ordering", "hook_id", "capability_id"]) {
+    for (const field of ["kind", "reason", "source", "ordering", "hook_id", "capability_id"]) {
       const value = scalarString(item[field], `required read ${field}`);
       if (value) compact[field] = value;
+    }
+    if (item.source === "turn_start_capability_hook" && item.prompt_budget_bytes !== undefined) {
+      compact.prompt_budget_bytes = item.prompt_budget_bytes;
     }
     result.push(compact);
   }
@@ -712,6 +708,8 @@ function actionProjection(payload: JsonObject, protocolActionFields: JsonObject)
   );
   const context = object(interaction.agent_context);
   if (Object.keys(context).length > 0) projection.agent_context = context;
+  const workContext = object(object(interaction.agent_channel).work_context);
+  if (Object.keys(workContext).length > 0) projection.work_context = workContext;
   const orchestration = object(payload.task_orchestration_contract);
   if (Object.keys(orchestration).length > 0) projection.task_orchestration_contract = orchestration;
   const plan = responsePlan(interaction);
@@ -797,6 +795,9 @@ export function turnEnvelopeActionSignatureDocument(value: unknown): JsonObject 
   }
   if (Object.keys(object(envelope.agent_context)).length > 0) {
     signature.agent_context = object(envelope.agent_context);
+  }
+  if (Object.keys(object(envelope.work_context)).length > 0) {
+    signature.work_context = object(envelope.work_context);
   }
   if (Object.keys(object(responsePlanValue)).length > 0) {
     signature.response_plan = { ...object(responsePlanValue) };

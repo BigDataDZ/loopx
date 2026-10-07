@@ -900,8 +900,10 @@ def test_duplicate_required_inbox_routes_project_one_public_safe_read(
         turn_start_hook_dispatch=dispatch,
     )
 
-    assert len(packet["required_reads"]) == 1
-    assert packet["required_reads"][0]["command"] == command
+    reads = packet["interaction_contract"]["agent_channel"]["required_reads"]
+    assert len(reads) == 1
+    assert reads[0]["command"] == command
+    assert "required_reads" not in packet
 
 
 def test_prior_closeout_identity_conflict_fails_closed(

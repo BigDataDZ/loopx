@@ -1,4 +1,4 @@
-"""Default product heartbeat reads the whole Goal and current work from their owners."""
+"""Default heartbeat delivers current work and preserves progressive full Goal reads."""
 from __future__ import annotations
 
 import json
@@ -20,6 +20,77 @@ from loopx.control_plane.turn_driver.codex_cli import _prompt
 from loopx.control_plane.turn_driver.driver import build_loopx_turn_plan
 from loopx.control_plane.turn_driver.executor import build_loopx_turn_host_request
 from loopx.control_plane.turn_driver.host_candidate import extract_turn_authority, render_prompt
+
+
+@pytest.mark.parametrize("provider", ["legacy", "file", "sqlite"])
+def test_inline_user_context_preserves_full_scoped_gates_without_granting_delivery(tmp_path, monkeypatch, provider):
+    if provider == "sqlite":
+        isolate_sqlite_runtime(tmp_path, monkeypatch)
+    runtime, registry, state = tmp_path / "runtime", tmp_path / "registry.json", tmp_path / "state.md"
+    gate_text = "Review the publication evidence. " * 35 + "Approval is required before publication."
+    state_text = (
+        "---\nstatus: active\n---\n# Goal\n## Objective\nInspect then publish an approved report.\n## Agent Todo\n"
+        "- [ ] [P1] Inspect the report\n"
+        "  <!-- loopx:todo todo_id=todo_inspect status=open task_class=advancement_task claimed_by=agent-a action_kind=inspect_report -->\n"
+        "- [ ] [P0] Publish the report\n"
+        "  <!-- loopx:todo todo_id=todo_publish status=open task_class=advancement_task claimed_by=agent-a action_kind=publish_report -->\n"
+        "## User Todo\n- [ ] " + gate_text + "\n"
+        "  <!-- loopx:todo todo_id=todo_gate role=user status=open task_class=user_gate blocks_agent=agent-a unblocks_todo_id=todo_publish -->\n"
+        "- [ ] Decide the report format\n"
+        "  <!-- loopx:todo todo_id=todo_user_action role=user status=open task_class=user_action bound_agent=agent-a -->\n"
+        "- [ ] Peer-only approval\n"
+        "  <!-- loopx:todo todo_id=todo_peer_gate role=user status=open task_class=user_gate blocks_agent=agent-b -->\n"
+        "- [ ] Peer-only decision\n"
+        "  <!-- loopx:todo todo_id=todo_peer_action role=user status=open task_class=user_action bound_agent=agent-b -->\n"
+        "- [ ] Global evidence decision\n"
+        "  <!-- loopx:todo todo_id=todo_global_action role=user status=open task_class=user_action goal_bound=true -->\n"
+        "- [x] Completed approval\n"
+        "  <!-- loopx:todo todo_id=todo_closed_gate role=user status=done task_class=user_gate blocks_agent=agent-a -->\n"
+    )
+    state.write_text(state_text)
+    write_fixture_registry(project=tmp_path, runtime_root=runtime, registry_path=registry,
+        goal_id="requirements-goal", domain="software", adapter_kind="generic_project_goal_v0",
+        state_file=str(state), registered_agents=["agent-a", "agent-b"], quota_allowed_slots=None)
+    if provider != "legacy":
+        goal = json.loads(registry.read_text())["goals"][0]
+        fields, _, _ = parse_todo_source(state_text, goal=goal, state_path=state)
+        items = (retained_todo_summary_fields(fields["agent"], rollout_events=[])["agent_todos"]["items"]
+            + retained_todo_summary_fields(fields["user"], rollout_events=[])["user_todos"]["items"])
+        initialize_canonical_authority(runtime, "requirements-goal",
+            build_todo_runtime_shadow_projection(goal_id="requirements-goal", todos=items, handoff_mode="soft_claim"),
+            state_path=state, provider=provider)
+
+    def guard(*extra):
+        code, packet = run_json_cli_result("quota", "should-run", "--goal-id", "requirements-goal",
+            "--agent-id", "agent-a", "--scan-path", str(tmp_path), *extra,
+            registry_path=registry, runtime_root=runtime)
+        assert code == 0, packet
+        return packet
+
+    packet = guard()
+    channel = packet["interaction_contract"]["agent_channel"]
+    users = channel["work_context"]["user_todos"]["todos"]
+    assert {row["todo_id"] for row in users} == {"todo_gate", "todo_user_action", "todo_global_action"}
+    gate = next(row for row in users if row["todo_id"] == "todo_gate")
+    assert gate["text"] == gate_text
+    assert gate["blocks_agent"] == "agent-a" and gate["unblocks_todo_id"] == "todo_publish"
+    assert packet["requires_user_action"] is True
+    assert packet["scoped_user_gate_fallback"]["selected_executable"]["todo_id"] == "todo_inspect"
+    assert channel["work_context"]["complete"] is True
+    envelope = guard("--turn-envelope")
+    assert envelope["work_context"]["user_todos"] == channel["work_context"]["user_todos"]
+    assert state.read_text() == state_text
+    if provider != "legacy":
+        # Canonical tasks still exist: the full Goal source must fail closed,
+        # rather than silently substituting a Todo summary for missing intent.
+        state.unlink()
+        failed = guard()
+        failed_channel = failed["interaction_contract"]["agent_channel"]
+        assert failed_channel["delivery_allowed"] is False
+        assert failed_channel["work_context"]["complete"] is False
+        assert any(read["source"] == "goal_state" for read in failed_channel["required_reads"])
+        state.write_text(state_text)
+        assert guard()["interaction_contract"]["agent_channel"]["work_context"]["complete"] is True
 
 
 @pytest.mark.parametrize("provider", ["legacy", "file", "sqlite"])
@@ -82,7 +153,7 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
         registry_path=registry, runtime_root=runtime)
     assert code == 0 and generated["ok"], generated
     body = generated["task_body"]
-    assert "interaction_contract.agent_channel.required_reads" in body
+    assert "work_context" in body
     script = re.search(r"```sh\n(.*?)\n```", body, re.S).group(1)
     assert "--turn-envelope" not in script and "--decision-output-root" not in script
     env = {**os.environ, "LOOPX_REGISTRY": str(registry)}
@@ -90,27 +161,33 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
         cwd=tmp_path, env=env, capture_output=True, text=True, check=True)
     full = json.loads(result.stdout)
     assert full["should_run"] is True, full.get("reason")
-    reads = full["interaction_contract"]["agent_channel"]["required_reads"]
+    channel = full["interaction_contract"]["agent_channel"]
+    assert [read["source"] for read in channel["required_reads"]] == ["goal_state"]
+    goal_read = channel["required_reads"][0]
     assert "required_reads" not in full["interaction_contract"]["cli_channel"]
-    assert all(read["ordering"] == "before_work" for read in reads)
-    assert [read["source"] for read in reads] == (["goal_state", "selected_todo"] if provider == "legacy"
-        else ["goal_state", "goal_acceptance", "selected_todo"])
-    goal_read = subprocess.run(shlex.split(reads[0]["command"]), capture_output=True, text=True, check=True)
-    assert goal_requirements in goal_read.stdout
-    assert "Stop before an unauthorized deployment." in goal_read.stdout
+    context = channel["work_context"]
+    assert context["complete"] and not context["failures"]
+    reads = context["sources"]
+    assert [read["source"] for read in reads] == (["selected_todo"] if provider == "legacy"
+        else ["goal_acceptance", "selected_todo"])
+    assert not any(read["source"] == "goal_state" for read in reads)
+    goal_result = subprocess.run(shlex.split(goal_read["command"]), capture_output=True, text=True, check=True)
+    assert goal_requirements in goal_result.stdout
+    assert "Stop before an unauthorized deployment." in goal_result.stdout
     if provider != "legacy":
-        acceptance = subprocess.run([sys.executable, "-m", "loopx.cli", *shlex.split(reads[1]["command"])[1:]],
-            capture_output=True, text=True, check=True)
-        contract = json.loads(acceptance.stdout)["goal_acceptance_contract"]
+        contract = reads[0]["content"]["goal_acceptance_contract"]
         assert contract["criteria"][0]["description"].endswith("Retain the last query mode.")
         assert len(contract["objective"]) > 500
     assert full["selected_todo"]["todo_id"] == "todo_cursor_work"
     assert full["selected_todo"]["text"] != expected  # Deliberately bounded hot view.
+    assert reads[-1]["content"]["todo"]["text"] == expected
+    assert json.dumps(context).count(expected) == 1
     envelope = guard("--turn-envelope")
-    assert envelope["required_reads"] == reads
+    assert envelope["required_reads"] == channel["required_reads"]
+    assert envelope["work_context"] == context
     selected = envelope["action"]["selected_todo"]
     assert selected["todo_id"] == "todo_cursor_work"
-    read = next(item for item in envelope["required_reads"] if item.get("source") == "selected_todo")
+    read = reads[-1]
     tokens = shlex.split(read["command"])
     assert tokens[tokens.index("--registry") + 1] == str(registry)
     assert tokens[tokens.index("--runtime-root") + 1] == str(runtime)
@@ -134,10 +211,11 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
         turn_instance_id="requirements-synthetic-turn")
     request = build_loopx_turn_host_request(plan)
     assert read["command"] in _prompt(request)
-    assert "Complete required_reads before primary_action" in _prompt(request)
+    assert "work_context" in _prompt(request)
     authority = extract_turn_authority(request)
     assert authority["selected_todo"]["todo_id"] == "todo_cursor_work"
-    assert read in authority["required_reads"]
+    assert authority["required_reads"] == channel["required_reads"]
+    assert authority["work_context"] == context
     assert read["command"] in render_prompt(authority)
 
     # A fresh CLI process must recover current requirements from the same owner,
@@ -165,12 +243,12 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
     # visible to the host and must not be mistaken for successful consumption.
     state.write_text(state.read_text().replace("Do not omit records in any query mode.",
         "Do not omit records in any query mode, including archived queries."))
-    current_goal = subprocess.run(shlex.split(reads[0]["command"]), capture_output=True, text=True, check=True)
+    current_goal = subprocess.run(shlex.split(goal_read["command"]), capture_output=True, text=True, check=True)
     assert "including archived queries." in current_goal.stdout
     saved = state.with_suffix(".saved")
     state.rename(saved)
     try:
-        failed = subprocess.run(shlex.split(reads[0]["command"]), capture_output=True, text=True)
+        failed = subprocess.run(shlex.split(goal_read["command"]), capture_output=True, text=True)
         assert failed.returncode != 0 and not failed.stdout
     finally:
         saved.rename(state)

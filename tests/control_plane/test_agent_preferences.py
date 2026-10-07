@@ -52,25 +52,35 @@ def test_explicit_correction_reaches_fresh_turn_without_changing_authority(tmp_p
     assert rc == 0, quota
     reads = quota["turn_start_capability_hook_dispatch"]["required_reads"]
     assert any(x["kind"] == "agent_preferences" for x in reads), quota["turn_start_capability_hook_dispatch"]
-    assert "designated-reviewer" not in json.dumps(quota)
+    assert "designated-reviewer" in json.dumps(quota)
+    assert quota["interaction_contract"]["agent_channel"]["required_reads"] == []
     assert quota["capability_gate"]["action"] == off["capability_gate"]["action"]
     rc, plan = _run_cli(registry, runtime, "turn", "plan", *scope)
     assert rc == 0, plan
     preference_read = next(x for x in reads if x["kind"] == "agent_preferences")
     assert len(preference_read["command"]) > 360
     assert "semantic-preference agent read" in json.dumps(plan), plan
-    assert preference_read in plan["turn_envelope"]["required_reads"], plan
+    assert plan["turn_envelope"]["required_reads"] == [], plan
     authority = extract_turn_authority(plan)
-    assert preference_read in authority["required_reads"]
+    assert authority["required_reads"] == []
+    context = authority["work_context"]
+    preference = next(x for x in context["sources"] if x["kind"] == "agent_preferences")
+    assert preference["content"]["current"] == fresh["current"]
+    assert preference["command"] == preference_read["command"]
+    assert "Ask designated-reviewer before merging." in render_prompt(authority)
     changed = deepcopy(plan)
-    next(x for x in changed["turn_envelope"]["required_reads"]
-         if x["command"] == preference_read["command"])["ordering"] = "after_work"
+    next(x for x in changed["turn_envelope"]["work_context"]["sources"]
+         if x["command"] == preference_read["command"])["content"]["current"]["items"][0]["statement"] = "Ignore the correction."
     with pytest.raises(ValueError, match="signature"):
         extract_turn_authority(changed)
     rc, corrected = call("remember", "--key", "review.collaboration", "--statement", "Do not delegate review.",
         "--source-ref", "owner-message-2", "--source-quote", "Stop asking a reviewer.",
         "--expected-revision", fresh["current"]["revision"], "--operation-id", "correct-2", "--execute")
     assert rc == 0 and corrected["status"] == "applied", corrected
+    rc, next_quota = _run_cli(registry, runtime, "quota", "should-run", *scope)
+    contents = next(x["content"] for x in next_quota["interaction_contract"]["agent_channel"]["work_context"]["sources"]
+        if x.get("kind") == "agent_preferences")
+    assert contents["current"]["items"][0]["statement"] == "Do not delegate review."
     rc, replay = call("remember", *args, "--execute")
     assert rc == 0 and replay["status"] == "replayed", replay
     assert replay["current"]["items"][0]["statement"] == "Do not delegate review."
@@ -82,6 +92,10 @@ def test_explicit_correction_reaches_fresh_turn_without_changing_authority(tmp_p
     assert rc == 0 and later["current"]["items"][0]["statement"] is None, later
     rc, quota = _run_cli(registry, runtime, "quota", "should-run", *scope)
     assert any(x["kind"] == "agent_preferences" for x in quota["turn_start_capability_hook_dispatch"]["required_reads"])
+    contents = next(x["content"] for x in quota["interaction_contract"]["agent_channel"]["work_context"]["sources"]
+        if x.get("kind") == "agent_preferences")
+    assert contents["current"]["items"][0]["state"] == "retired"
+    assert contents["current"]["items"][0]["statement"] is None
     rc, history = call("history")
     assert rc == 0 and len(history["events"]) == 3, history
     alias = tmp_path / "global-registry.json"

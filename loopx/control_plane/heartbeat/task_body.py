@@ -674,7 +674,7 @@ def render_thin_heartbeat_task_body(
 {scope_sentence}
 Use TurnEnvelope: `action.must_attempt` requires work; `user.notify` controls
 output only. ok=false -> recovery, no delivery. Language=user. Honor `boundary`, `execution_policy`, `contract_capsule`,
-`required_reads`, `agent_context`, and `replan_action_packet` when present.
+`work_context`, remaining `required_reads`, `agent_context`, and `replan_action_packet` when present.
 Read `detail_ref.full_decision` for selection, replan, capability context or
 missing/truncated commands: same-invocation observation, not fresh admission.
 Selection uses the saved `interaction_contract.cli_channel.selection_command`.

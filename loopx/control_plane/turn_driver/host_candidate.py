@@ -89,6 +89,8 @@ def extract_turn_authority(request: Mapping[str, Any]) -> dict[str, Any]:
         "write_scope": list(write_scope) if isinstance(write_scope, list) else [],
         "workspace_guard": _mapping(boundary.get("workspace_guard")),
     }
+    if isinstance(envelope.get("work_context"), Mapping):
+        authority["work_context"] = dict(envelope["work_context"])
     selected = selected_turn_todo(envelope)
     if selected:
         # Both the declaration and a possible exact-text alias are signed.
@@ -132,7 +134,8 @@ def render_prompt(authority: Mapping[str, Any]) -> str:
     return (
         "You are executing one bounded LoopX-governed work segment.\n"
         "The JSON below is the complete host authority for this Turn. Execute "
-        "primary_action only after required_reads, write only inside write_scope, "
+        "primary_action only after reading work_context and any remaining required_reads. "
+        "Do not repeat reads already fulfilled in work_context. Write only inside write_scope, "
         "and obey workspace_guard. Do not infer authority from other prose.\n\n"
         f"{context_instruction}"
         f"Turn authority JSON:\n{authority_json}\n\n"

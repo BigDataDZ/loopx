@@ -705,6 +705,11 @@ def render_quota_should_run_markdown(payload: dict[str, Any]) -> str:
             lines.append(f"  - resolution: {trigger.get('resolution_hint')}")
     interaction = as_dict(payload.get("interaction_contract"))
     channel = as_dict(interaction.get("agent_channel"))
+    context = as_dict(channel.get("work_context"))
+    if context:
+        from .turn_envelope_markdown import work_context_lines
+
+        lines.extend(work_context_lines(context))
     required_reads = as_list(channel.get("required_reads",
         interaction.get("required_reads", payload.get("required_reads"))))
     for read in required_reads:
