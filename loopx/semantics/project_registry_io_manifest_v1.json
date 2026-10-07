@@ -2295,7 +2295,7 @@
     },
     {
       "site": "loopx/upgrade.py::<module>.build_upgrade_plan::codec_read:load_registry#1",
-      "line": 741,
+      "line": 744,
       "column": 16,
       "kind": "codec_read",
       "api": "load_registry",
@@ -2303,7 +2303,7 @@
     },
     {
       "site": "loopx/upgrade.py::<module>.build_upgrade_plan::codec_read:load_registry#2",
-      "line": 747,
+      "line": 750,
       "column": 24,
       "kind": "codec_read",
       "api": "load_registry",
