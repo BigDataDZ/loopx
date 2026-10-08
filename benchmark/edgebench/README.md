@@ -1,8 +1,9 @@
 # Native EdgeBench worker trials
 
 This research adapter calls SForge's native `run_agent`. Task images, prompts,
-submission cooldowns, host auto-evaluation, judge isolation and scoring remain
-owned by the pinned EdgeBench checkout. Install SForge and Harbor in an isolated
+submission cooldowns, judge isolation and scoring remain owned by the pinned
+EdgeBench checkout. Best-only adds host capture/admission scheduling; native and
+blind retain native automatic evaluation. Install SForge and Harbor in an isolated
 runner environment. Run the controller on Linux with Docker and native SForge
 iptables permissions; a macOS Docker socket alone does not provide that boundary.
 
@@ -45,7 +46,25 @@ Only `benchmark/runtime` is overlaid from the runner archive; installed LoopX
 code remains at the product pin. Both revisions are recorded. Without separate
 runner settings, the existing single-checkout contract applies.
 
-Start the native judge with the same task directory and log root, then run:
+For the best-only default, start the dedicated online judge with the same task
+and private log roots. It requires a pinned SForge revision with bounded
+asynchronous judge capacity (`judge_max_concurrent` / `judge_max_pending`).
+Each slot reserves one solver (4 CPUs/16 GiB) and one evaluator (4 CPUs/8 GiB):
+
+```sh
+SFORGE_TASKS_DIR=/data/tasks SFORGE_LOG_DIR=/data/private-runs \
+  python -m benchmark.edgebench.online_judge --slots 2 --port 8080
+```
+
+The preflight counts existing Docker container limits and retains 2 CPUs/4 GiB
+of host headroom. Unlimited containers or insufficient capacity block admission.
+Run this in an operator-controlled Docker pool: the host lock coordinates this
+adapter's online/offline processes, not arbitrary outside Docker launches. Keep
+that reserved capacity available for the cohort. Slots are finite registrations,
+not recycled when a solver finishes; start a new cohort after draining/stopping
+the previous server. Native/blind use ordinary `sforge serve` instead.
+
+Then run:
 
 ```sh
 python -m benchmark.edgebench.run \
@@ -58,7 +77,7 @@ python -m benchmark.edgebench.run \
 Trial timeouts use **explicit `--timeout` → [task defaults](task-defaults.json)
 → 64,800 seconds (18 hours)**. Portfolio Risk Calibration defaults to
 **43,200 seconds (12 hours)**; Lean Analysis Proofs defaults to
-**86,400 seconds (24 hours)**. Both task defaults apply to every worker and
+**43,200 seconds (12 hours)**. Both task defaults apply to every worker and
 feedback profile; other tasks retain the 18-hour fallback. These are total trial
 budgets, including planning, not per-turn limits.
 
@@ -104,15 +123,48 @@ an evaluator-feedback-free control. Harbor is unchanged.
 | --- | --- | --- |
 | native | Exact score, pass rate, counts, summary, metrics and failed names; `--details` exposes per-check messages; `--list` shows active-submission history | Agent may submit within the native cooldown/budget; automatic samples are hidden |
 | blind | None; public task files, local tests and compiler feedback remain available | Host evaluates fixed automatic samples; agent has no judge route or credentials |
-| best-only | Latest strict improvement notification and the corresponding submitted-source checkpoint; no score, delta, diagnostics or negative-result status | Same host sampling and isolation as blind; agent cannot request extra evaluations |
+| best-only | Latest strict improvement notification and the corresponding submitted-source checkpoint; no score, delta, diagnostics or negative-result status | Fixed capture cadence; one evaluator and latest pending capture per run; agent cannot request extra evaluations |
 
 Best-only supports non-game, offline tasks with `score_first` or
 `valid_then_score` selection, including maximizing and minimizing scores. It
 requires the explicit API-only proxy and a positive sampling interval. Unsupported
 selection policies fail with an actionable error instead of silently changing
-the task's ranking. Native grading, final selection and sampling cadence remain
-unchanged. The publisher requires the judge and runner to share the native log
-root, including each submission's original source archive.
+the task's ranking. Native grading and score selection remain unchanged. The
+publisher requires the online judge and runner to share their native log root,
+including each submission's original source archive. Ordinary native judges fail
+the best-only admission preflight before a solver is launched.
+
+Online scheduling keeps one evaluation in flight and one latest pending capture
+per run. Every capture is archived with its original capture time and digest;
+new captures supersede only the pending online candidate. A run cannot fill a
+shared FIFO with stale samples, and a second run has its own reserved opportunity.
+This guarantees capacity opportunity, not identical grading duration or equal
+numbers of improvements. Submission retries reuse an epoch-bound capture identity;
+a lost response cannot create duplicate evaluations. An unexpected judge restart
+holds that attempt for reconciliation instead of silently replaying it.
+
+The publisher accepts only that sampler's admitted submission/round identities
+and verifies the original source digest. Offline/history-only results cannot
+establish the baseline or change the online incumbent. The solver command's exit
+pauses capture/delivery; official outer resume reuses the same publisher and lane.
+
+After the entire online cohort ends, stop its judge and backfill all captures:
+
+```sh
+python -m benchmark.edgebench.offline_scoring \
+  --trial /data/private-runs/runs/UNIQUE_ATTEMPT/TASK_ID --tasks-dir /data/tasks
+```
+
+The offline command requires terminal solver state, the original task digest and
+a final capture. It acquires the same exclusive pool lock, runs native grading
+sequentially, and writes a separate `offline-scoring/result.json`. Superseded and
+final captures remain visible at their original times. Failed scores remain
+failed; a rerun resumes saved results without silently retrying or rewriting them.
+This first implementation reevaluates online captures too, favoring a complete
+uniform offline record over evaluation reuse. The original native final result
+covers online submissions only; use the complete offline result for post-run
+qualification. Neither report by itself certifies integrity or score countability.
+No offline result is routed to the worker.
 
 The first completed valid finite score establishes a silent baseline. Only a
 strictly better valid score updates `/opt/edgebench-feedback/latest.json`; ties,
@@ -123,12 +175,22 @@ Notifications describe the named **evaluated snapshot**, not the current workspa
 The source archive is the agent's own original submission, with its SHA-256; it
 contains no judge output. The adapter never restores files automatically.
 
-The task wrapper tells every worker to read the small notification file after
-local implementation/validation cycles and before replanning, while continuing
-work between reads. This is a checkpoint read, not an injected model message or
-a forced wake. Verify reads and subsequent checkpoint adoption in the trajectory;
-creating the file alone does not prove the agent used it. A missing/unchanged
-notification says nothing about failure: scoring or delivery may still be pending.
+All five workers receive the allowlisted notification directly through managed
+Codex `PostToolUse`, `SessionStart` and `UserPromptSubmit` hooks. A short synchronous
+reader adds `additionalContext` before the next model request, preserving the
+original tool result. It does not force a wake, interrupt active reasoning or
+change Stop/continuation behavior. The official worker keeps its native Stop
+hook. Delivery is serialized and deduplicated per Codex session; a fresh session
+receives the latest checkpoint, while resume receives only a new one. The
+reader neither queries the evaluator nor interprets arbitrary packet prose.
+
+This transport is qualified with staged Codex 0.160.0, the actual system hook in
+a disposable container and a synthetic Responses endpoint: a new result arriving
+during a tool call enters the next model request; a subsequent result enters a
+resumed request. Earlier Codex versions must be qualified before admission.
+Inspect session input and subsequent checkpoint adoption separately: injection
+proves model visibility, not use or score improvement. A missing notification
+says nothing about failure: evaluation or delivery may still be pending.
 
 A notification looks like this (digest abbreviated for illustration):
 
@@ -146,9 +208,10 @@ A notification looks like this (digest abbreviated for illustration):
 ```
 
 Before the first improvement, `latest` is null. Native outer resume preserves the
-same publisher; it does not reset the incumbent or resend a notification. Delivery
+same publisher and session cursor; it does not reset the incumbent. Delivery
 failures retry before committing an improvement. The host-only `best-only-host`
-artifacts record delivery and health; never mount or copy them into the worker.
+artifacts record file publication and health; session hook receipts under
+`/logs/agent/best-feedback-delivery` record emission, not model acknowledgement; never mount or copy them into the worker.
 Treat missing archive/delivery evidence as an unqualified treatment, not as a
 successful best-only trial. Public notifications do not include these errors.
 
