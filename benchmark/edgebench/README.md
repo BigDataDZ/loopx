@@ -51,7 +51,8 @@ Start the native judge with the same task directory and log root, then run:
 python -m benchmark.edgebench.run \
   --task TASK_ID --tasks-dir /data/tasks --log-dir /data/private-runs \
   --run-id UNIQUE_ATTEMPT --worker heartbeat-resume \
-  --model MODEL --effort xhigh --judge-url http://HOST:8080
+  --model MODEL --effort xhigh --judge-url http://HOST:8080 \
+  --api-proxy-url http://PROXY_IP:9090
 ```
 
 Trial timeouts use **explicit `--timeout` → [task defaults](task-defaults.json)
@@ -65,7 +66,8 @@ Auto-evaluation uses **explicit `--eval-interval` → task defaults → 300 seco
 Portfolio defaults to **300 seconds (5 minutes)**; Lean Analysis Proofs defaults
 to **1,800 seconds (30 minutes)** to space out expensive compilation. Other tasks
 retain the 5-minute fallback. Defaults apply equally to every worker and feedback
-profile. Explicit `--eval-interval 0` disables periodic auto-evaluation. The resolved
+profile. Explicit `--eval-interval 0` disables periodic auto-evaluation in native/blind;
+`best-only` requires a positive interval. The resolved
 interval is passed to SForge and recorded in each attempt's runtime receipt.
 These defaults affect new launches; editing the file does not change a running
 sampler or create historical snapshots. Sampling cadence does not set evaluator
@@ -90,7 +92,75 @@ behavior is unchanged. Record a new runner revision for new attempts; do not
 rewrite earlier `outer_resume` receipts. Explicit total timeouts can support diagnostics,
 but short probes are not a prerequisite for running the intended protocol.
 
-The default `--feedback native` preserves native evaluator feedback.
+## Feedback protocol (new-run default: best-only)
+
+`--feedback best-only` is now the default for **new attempts across all five
+workers**. This is an explicit protocol change from native, not a demonstrated
+score improvement. Existing trials and pinned study manifests keep their modes.
+Use `--feedback native` to retain the previous default or `--feedback blind` as
+an evaluator-feedback-free control. Harbor is unchanged.
+
+| Mode | Agent-visible evaluator feedback | Evaluation access |
+| --- | --- | --- |
+| native | Exact score, pass rate, counts, summary, metrics and failed names; `--details` exposes per-check messages; `--list` shows active-submission history | Agent may submit within the native cooldown/budget; automatic samples are hidden |
+| blind | None; public task files, local tests and compiler feedback remain available | Host evaluates fixed automatic samples; agent has no judge route or credentials |
+| best-only | Latest strict improvement notification and the corresponding submitted-source checkpoint; no score, delta, diagnostics or negative-result status | Same host sampling and isolation as blind; agent cannot request extra evaluations |
+
+Best-only supports non-game, offline tasks with `score_first` or
+`valid_then_score` selection, including maximizing and minimizing scores. It
+requires the explicit API-only proxy and a positive sampling interval. Unsupported
+selection policies fail with an actionable error instead of silently changing
+the task's ranking. Native grading, final selection and sampling cadence remain
+unchanged. The publisher requires the judge and runner to share the native log
+root, including each submission's original source archive.
+
+The first completed valid finite score establishes a silent baseline. Only a
+strictly better valid score updates `/opt/edgebench-feedback/latest.json`; ties,
+regressions, invalid/non-finite results and errors do not update it. Multiple
+completed improvements observed together coalesce to the best one. Out-of-order
+results compete against the best observed score, never against the last result.
+Notifications describe the named **evaluated snapshot**, not the current workspace.
+The source archive is the agent's own original submission, with its SHA-256; it
+contains no judge output. The adapter never restores files automatically.
+
+The task wrapper tells every worker to read the small notification file after
+local implementation/validation cycles and before replanning, while continuing
+work between reads. This is a checkpoint read, not an injected model message or
+a forced wake. Verify reads and subsequent checkpoint adoption in the trajectory;
+creating the file alone does not prove the agent used it. A missing/unchanged
+notification says nothing about failure: scoring or delivery may still be pending.
+
+A notification looks like this (digest abbreviated for illustration):
+
+```json
+{
+  "schema_version": "edgebench_best_feedback_v1",
+  "latest": {
+    "kind": "new_best",
+    "snapshot_id": "auto-7",
+    "source_sha256": "<SHA-256>",
+    "source_archive": "/opt/edgebench-feedback/auto-7-<SHA-256>.tar.gz",
+    "message": "This evaluated snapshot strictly improved the best valid score observed so far. It may differ from your current files; keep using local validation."
+  }
+}
+```
+
+Before the first improvement, `latest` is null. Native outer resume preserves the
+same publisher; it does not reset the incumbent or resend a notification. Delivery
+failures retry before committing an improvement. The host-only `best-only-host`
+artifacts record delivery and health; never mount or copy them into the worker.
+Treat missing archive/delivery evidence as an unqualified treatment, not as a
+successful best-only trial. Public notifications do not include these errors.
+
+Sparse feedback reduces disclosed information but still supports adaptive tuning;
+it does not prove protection against evaluator overfitting or generalization.
+Keep native/blind comparisons and any independent final evaluation separate.
+First qualify the real network/judge boundary with the opt-in Docker smoke in
+`benchmark/tests/test_edgebench_feedback_docker.py`, then compare matched tasks,
+models, budgets and sampling schedules. Synthetic transport validation alone
+cannot establish solver uptake or score improvement.
+
+`--feedback native` preserves native evaluator feedback.
 `--feedback blind` requires a non-game task with native internet isolation and
 an explicit API-only proxy IP/port. Its host firewall omits the judge route;
 native registration sets the agent submission allowance to zero, task environments
