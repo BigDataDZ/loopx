@@ -218,6 +218,8 @@ def report(
     caller_goal_ref=None,
     scope=None,
     update_id=None,
+    attachment_refs=None,
+    workspace=None,
 ):
     """Chat audience adapter; the shared Inbox owns result validation/persistence."""
     if scope is None and registry is not None:
@@ -240,6 +242,8 @@ def report(
                 text,
                 scope=goal_scope,
                 update_id=update_id,
+                attachment_refs=attachment_refs,
+                workspace=workspace,
             )
     row = _entry(root, goal_id, agent_id, request_id, scope=scope)
     route = _route(root, row, scope=scope)
@@ -249,6 +253,16 @@ def report(
             and not scan_public_boundary_text(text)["ok"]):
         raise ValueError("reply contains private boundary material; write an audience-safe conclusion")
     from ...control_plane.collaboration.inbox import record_result
+    attachments = None
+    if attachment_refs:
+        # Only the independently verified bound-owner App is qualified here.
+        # Group and local-Web file disclosure need their own qualified surface.
+        if scope is None or not str(route.get("channel_id", "")).startswith("manager.external.native."):
+            raise ValueError("result attachments require a registered Goal and bound-owner App return")
+        from ...control_plane.collaboration.result_files import snapshot_result_files
+
+        decide_collaboration_lifecycle(scope, operation="result_publish", record=row, route=route)
+        attachments = snapshot_result_files(root, scope, attachment_refs, workspace=workspace)
     return {
         **record_result(
             root,
@@ -258,6 +272,7 @@ def report(
             scope=scope,
             route=route,
             update_id=update_id,
+            attachments=attachments,
         ),
         "status": (
             "queued_for_requester"
@@ -576,6 +591,10 @@ def _write_exact_return_state(
                 raise ValueError("exact return delivery admission changed")
             result = {**value, "goal_ref": row["goal_ref"],
                       **({"result_key": reply["result_key"]} if "result_key" in reply else {})}
+            # A refusal does not erase evidence that the provider already wrote.
+            # Terminal state remains terminal; preserving its locator is no retry.
+            if result.get("status") == "explicit_unverified" and current.get("attempt") is not None:
+                result["attempt"] = current["attempt"]
             if preserve_admission:
                 result["admission"] = admission
             else:
@@ -603,6 +622,16 @@ def _retry_state(state, now, *, error):
         ).isoformat(),
     )
     return result
+
+
+def _transport_route(route, reply, external_sender):
+    attachments = reply.get("attachments") or []
+    if not attachments:
+        return route
+    if getattr(external_sender, "supports_result_files", False) is not True:
+        raise ValueError("return_transport_unavailable")
+    # Ephemeral transport payload, never part of the persisted audience/grant.
+    return {**route, "result_attachments": attachments}
 
 
 def _resolve_delivery_sender(external_sender):
@@ -677,6 +706,7 @@ def _drain_exact(root, registry, store, external_sender, *, now, cancelled):
         try:
             if cancelled():
                 return processed
+            route = _transport_route(route, reply, external_sender)
             try:
                 store.append_message(
                     route["session_id"],
@@ -974,7 +1004,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                     or reply.get("source_id") != row["source_id"]
                 ):
                     raise ValueError("return_reply_identity_mismatch")
-                route = _route(root, row)
+                route = _transport_route(_route(root, row), reply, external_sender)
                 if route.get("kind") == "peer":
                     continue  # Delivered by the requester inbox, never a Chat audience.
                 session = store.load_session(route["session_id"])
@@ -1038,6 +1068,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                     _write(
                         state_path,
                         {
+                            **state,
                             "status": "explicit_unverified",
                             "error": "manager_return_payload_conflict",
                         },
@@ -1056,6 +1087,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                             _write(
                                 state_path,
                                 {
+                                    **state,
                                     "status": "explicit_unverified",
                                     "error": "provider_locator_unavailable",
                                 },
@@ -1067,6 +1099,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                             _write(
                                 state_path,
                                 {
+                                    **state,
                                     "status": "explicit_unverified",
                                     "error": "provider_locator_unavailable",
                                 },
@@ -1093,6 +1126,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                             _write(
                                 state_path,
                                 {
+                                    **state,
                                     "status": "explicit_unverified",
                                     "error": "provider_verifier_unavailable",
                                 },
@@ -1112,7 +1146,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                             if error:
                                 _write(
                                     state_path,
-                                    {"status": "explicit_unverified", "error": error},
+                                    {**state, "status": "explicit_unverified", "error": error},
                                 )
                                 continue
                             # An unclassified readback failure keeps the locator and
@@ -1152,6 +1186,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                             _write(
                                 state_path,
                                 {
+                                    **state,
                                     "status": "explicit_unverified",
                                     "error": decision["error"],
                                 },
@@ -1275,7 +1310,7 @@ def drain(root, registry, store, external_sender, *, now=None, cancelled=lambda:
                     if error:
                         _write(
                             state_path,
-                            {"status": "explicit_unverified", "error": error},
+                            {**current, "status": "explicit_unverified", "error": error},
                         )
                     elif _attempt_locator(current.get("attempt")) is None:
                         # The record says the provider took the write and named
