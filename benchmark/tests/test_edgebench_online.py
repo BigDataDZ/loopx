@@ -99,6 +99,28 @@ def test_capacity_accounts_for_both_solver_and_judge_and_headroom():
         resource_preflight(client, 1)
 
 
+def test_explicit_shared_pool_retains_memory_and_bounded_container_gates(monkeypatch):
+    from pathlib import Path
+    monkeypatch.setattr(Path, "read_text", lambda self: "MemAvailable: 33554432 kB\n")
+    container = SimpleNamespace(attrs={"HostConfig": {
+        "NanoCpus": 4000000000, "Memory": 16 << 30}})
+    client = SimpleNamespace(info=lambda: dict(NCPU=14, MemTotal=45 << 30),
+                             containers=SimpleNamespace(list=lambda: [container] * 4))
+    with pytest.raises(ValueError, match="Insufficient"):
+        resource_preflight(client, 2)
+    result = resource_preflight(client, 2, allow_resource_overcommit=True)
+    assert not result["exclusive_resources"]
+    assert result["reserved_cpu"] == result["reserved_memory"] == 0
+    assert result["operator_resource_monitor_required"]
+    assert result["startup_memory_floor"] == 28 << 30
+    monkeypatch.setattr(Path, "read_text", lambda self: "MemAvailable: 8388608 kB\n")
+    with pytest.raises(ValueError, match="available memory"):
+        resource_preflight(client, 2, allow_resource_overcommit=True)
+    client.containers.list = lambda: [SimpleNamespace(attrs={"HostConfig": {}})]
+    with pytest.raises(ValueError, match="unbounded"):
+        resource_preflight(client, 1, allow_resource_overcommit=True)
+
+
 def test_offline_high_score_and_foreign_submission_do_not_enter_incumbent(tmp_path):
     from benchmark.edgebench.feedback import BestOnlyFeedback
     queue = sampler(tmp_path)

@@ -64,6 +64,17 @@ that reserved capacity available for the cohort. Slots are finite registrations,
 not recycled when a solver finishes; start a new cohort after draining/stopping
 the previous server. Native/blind use ordinary `sforge serve` instead.
 
+An operator may explicitly pass `--allow-resource-overcommit` for a monitored
+shared Docker pool. Container CPU/memory ceilings then remain enforced, but are
+not treated as exclusive reservations. Startup requires available memory for
+each evaluator's ceiling, up to 4 GiB per worker, and 4 GiB host headroom; unknown
+container limits still block admission. The admission receipt explicitly records
+zero exclusive reservation and the monitoring requirement. Monitor actual memory,
+CPU pressure and grading latency throughout the cohort and stop affected trials
+if sustained pressure makes operation unreliable. This mode preserves per-run
+evaluation lanes but does not guarantee dedicated compute or equal latency;
+record shared-pool contention when comparing experiments.
+
 Then run:
 
 ```sh

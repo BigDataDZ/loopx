@@ -26,7 +26,8 @@ POLICY = "edgebench_online_cohort_v1"
 
 
 def resource_preflight(client, slots, *, worker_cpu=4, judge_cpu=4,
-                       worker_memory=16 << 30, judge_memory=8 << 30):
+                       worker_memory=16 << 30, judge_memory=8 << 30,
+                       allow_resource_overcommit=False):
     """Reserve the whole finite cohort, retaining 2 CPUs and 4 GiB host headroom.
 
     Existing containers count at their hard limits. An unlimited container makes
@@ -49,10 +50,26 @@ def resource_preflight(client, slots, *, worker_cpu=4, judge_cpu=4,
         used_memory += memory
     required_cpu = slots * (worker_cpu + judge_cpu)
     required_memory = slots * (worker_memory + judge_memory)
+    if allow_resource_overcommit:
+        # Docker quotas are ceilings, not exclusive reservations. An operator
+        # may choose a monitored shared pool; retain bounded containers and
+        # enough currently available memory for judges and worker startup.
+        available = int(next(line.split()[1] for line in
+            Path("/proc/meminfo").read_text().splitlines()
+            if line.startswith("MemAvailable:"))) * 1024
+        minimum = slots * (judge_memory + min(worker_memory, 4 << 30)) + (4 << 30)
+        if available < minimum:
+            raise ValueError("Insufficient available memory for shared-pool startup")
+        return dict(slots=slots, reserved_cpu=0, reserved_memory=0,
+                    requested_cpu_ceiling=required_cpu, requested_memory_ceiling=required_memory,
+                    observed_other_cpu=used_cpu, observed_other_memory=used_memory,
+                    observed_available_memory=available, startup_memory_floor=minimum,
+                    exclusive_resources=False, operator_resource_monitor_required=True)
     if required_cpu + used_cpu + 2 > info["NCPU"] or required_memory + used_memory + (4 << 30) > info["MemTotal"]:
         raise ValueError("Insufficient CPU/memory for solver plus one evaluator per online slot")
     return dict(slots=slots, reserved_cpu=required_cpu, reserved_memory=required_memory,
-                observed_other_cpu=used_cpu, observed_other_memory=used_memory)
+                observed_other_cpu=used_cpu, observed_other_memory=used_memory,
+                exclusive_resources=True, operator_resource_monitor_required=False)
 
 
 def create_app(config, *, slots, reservation):
@@ -157,6 +174,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--slots", required=True, type=int)
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--allow-resource-overcommit", action="store_true",
+                        help="Use an operator-monitored shared pool; container ceilings are not reserved")
     args = parser.parse_args()
     config = load_config()
     if config.backend != "docker":
@@ -167,7 +186,8 @@ def main():
         with cohort_lock():
             client = docker.from_env()
             try:
-                reservation = resource_preflight(client, args.slots)
+                reservation = resource_preflight(client, args.slots,
+                    allow_resource_overcommit=args.allow_resource_overcommit)
             finally:
                 client.close()
             uvicorn.run(create_app(config, slots=args.slots, reservation=reservation),
