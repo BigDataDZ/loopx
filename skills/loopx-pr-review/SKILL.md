@@ -74,6 +74,10 @@ When `review_action_kind` is null, the row stays in `pull_requests` inventory bu
    and real-path counterfactuals rather than repeating them as prose. Fill `result.reviewer`
    per `review_execution_contract.reviewer_declaration`, open the body with its `body_marker`
    line, and read `problem_context.spec_basis`'s specification before the diff.
+   When a row includes `repository_experience`, read its advisory guidance alongside
+   that frame. State adoption, rejection or irrelevance with current-head evidence
+   in the existing `problem_context` judgment; do not inherit a case's verdict or
+   treat context delivery as semantic application or demonstrated utility.
 3. Apply `completion_gate` literally: save final Markdown in `review_body`, then check
    evidence and that exact body. Follow capability-owned floors and scope counterfactuals;
    prose cannot replace missing execution:
