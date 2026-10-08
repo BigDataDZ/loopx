@@ -106,3 +106,91 @@ def test_real_quota_frontier_reads_canonical_claims(tmp_path, monkeypatch, provi
     }
     assert packet["selected_todo"]["text"] == "Own direction"
     assert state.exists()
+
+
+def _frontier_context(summary, *, agent="worker-a", receipt_bound=None):
+    from loopx.control_plane.goals.goal_frontier import build_goal_frontier_projection_context_from_status
+
+    return build_goal_frontier_projection_context_from_status(
+        goal_id="goal-a", agent_id=agent,
+        status_payload={"run_history": {"goals": []}}, item={}, project_asset=None,
+        user_todo_summary={"open_count": 0}, agent_todo_summary=summary,
+        work_lane_contract={"lane": "advancement_task", "must_attempt_work": True},
+        neutral_replan_ack_classifications=set(),
+        receipt_bound_replan_obligation_id=receipt_bound,
+    )
+
+
+@pytest.mark.parametrize("agent, claimed, free, peer", [
+    ("worker-a", 1, 1, 1), ("worker-b", 1, 2, 1), (None, 2, 2, 0),
+])
+def test_context_keeps_claim_scope_and_observes_next_source(agent, claimed, free, peer):
+    from copy import deepcopy
+
+    summary = {"executable_backlog_items": [
+        item("todo_own", claimed_by="worker-a"), item("todo_free"),
+        item("todo_peer", claimed_by="worker-b"),
+        item("todo_excluded", excluded_agents=["worker-a"]),
+    ]}
+    before = deepcopy(summary)
+    context = _frontier_context(summary, agent=agent)
+    assert context["goal_frontier_projection"]["remaining_advancement_frontier"] == {
+        "current_agent_claimed_advancement_count": claimed,
+        "unclaimed_advancement_count": free,
+        "other_agent_claimed_advancement_count": peer,
+    }
+    assert context["replan_obligation"] is None
+    assert summary == before
+    # Reusing this exact Python object on a later call cannot reuse its old view.
+    summary["executable_backlog_items"] = []
+    summary["current_agent_claimed_advancement_count"] = 9007199254740993
+    refreshed = _frontier_context(summary, agent=agent)
+    assert refreshed["goal_frontier_projection"]["remaining_advancement_frontier"] == {
+        "current_agent_claimed_advancement_count": 9007199254740993,
+        "unclaimed_advancement_count": 0,
+        "other_agent_claimed_advancement_count": 0,
+    }
+
+
+def test_standalone_frontier_helpers_read_each_current_summary(monkeypatch):
+    from loopx.control_plane.goals import goal_frontier
+
+    original = goal_frontier._frontier_advancement_counts
+    reads = []
+
+    def observe(**kwargs):
+        reads.append(kwargs["agent_todo_summary"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(goal_frontier, "_frontier_advancement_counts", observe)
+    for summary in (None, {}, {"executable_backlog_items": []},
+                    {"executable_backlog_items": [item("todo_free")]}):
+        common = dict(user_todo_summary=None, agent_todo_summary=summary,
+                      work_lane_contract=None, agent_id="worker-a")
+        goal_frontier.derive_goal_frontier_replan_obligation_from_summaries(
+            **common, existing_replan_obligation=None)
+        projection = goal_frontier.build_goal_frontier_projection_from_summaries(
+            **common, goal_id="goal-a", replan_obligation=None)
+        expected = 1 if summary and summary.get("executable_backlog_items") else 0
+        assert projection["remaining_advancement_frontier"]["unclaimed_advancement_count"] == expected
+        assert reads[-2:] == [summary, summary]
+    assert len(reads) == 8
+
+
+@pytest.mark.parametrize("receipt_bound", [None, "prior-obligation"])
+def test_one_context_classifies_its_fresh_counts_once(monkeypatch, receipt_bound):
+    from loopx.control_plane.goals import goal_frontier
+
+    original = goal_frontier._frontier_advancement_counts
+    reads = []
+
+    def observe(**kwargs):
+        reads.append(kwargs)
+        return original(**kwargs)
+
+    monkeypatch.setattr(goal_frontier, "_frontier_advancement_counts", observe)
+    summary = {"executable_backlog_items": [item("todo_free")]}
+    context = _frontier_context(summary, receipt_bound=receipt_bound)
+    assert context["replan_obligation"] is None
+    assert context["goal_frontier_projection"]["remaining_advancement_frontier"]["unclaimed_advancement_count"] == 1
+    assert reads == [{"agent_todo_summary": summary, "agent_id": "worker-a"}]
