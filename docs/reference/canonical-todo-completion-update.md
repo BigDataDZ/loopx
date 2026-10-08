@@ -531,3 +531,36 @@ provider 失效后恢复、释放租约后的重放、一次 event、无额度�
 未迁移 Markdown 的原子 batch、shadow/outbox 中断恢复仍须通过原反例。本批只完成
 该调用方隔离，不删除仍受支持的 writer、历史回执和备份恢复，不切换默认或强制
 已有 Goal 升级。
+
+## Frontier classification retirement
+
+Goal-frontier wait, fallback and replan readers keep their Python imports and
+legacy fact codecs. Summary-slot precedence, claimant/exclusion lanes and
+diagnostic count floors now belong to the existing TypeScript frontier owner,
+using the shared claim-scope rule. The compact internal request carries facts
+and row coordinates, not private Todo prose. An explicitly empty executable
+view wins over stale display rows; diagnostic count floors never create
+selectable work or grant execution. Decimal transport preserves Python integer
+observations beyond the JSON number precision boundary. No authority record or
+receipt changes. A Goal-context reduction shares its fresh count result with
+its replan and final projection helpers, including receipt-bound recovery.
+Standalone helpers still read their current summary; there is no cross-call
+cache or new public packet field.
+
+File/SQLite quota CLI checks use the same independent oracle before and after
+the move. The permanent Markdown narrative projection remains required by
+status; canonical storage does not retire that document IO. Existing Markdown
+writers, source capture, old backups and original-operation recovery keep
+their live callers and separate retirement exits. Code rollback restores the
+internal classifier without migrating Goal data or changing provider defaults.
+
+Goal frontier 的等待、fallback 与重规划调用方保留 Python import 和旧输入编码；
+summary 视图优先级、认领／排除分组及诊断计数下界交给既有 TS frontier owner，
+复用共同 claim-scope 规则。紧凑内部请求只携带事实与行坐标，不传 Todo 私有文案。
+明确为空的 executable 视图优先于旧显示行；诊断计数不会制造可执行工作或授予权限。
+十进制传输保留超出 JSON number 精度边界的 Python 整数观测值。
+同次 Goal context reduction 复用 fresh 计数给重规划及最终投影（含原回执恢复）；
+独立 helper 仍读取当前 summary，不新增跨调用缓存或公共 packet 字段。
+真实 File/SQLite quota CLI 使用迁移前后同一独立断言。永久 Markdown 叙事投影、
+仍有调用方的 writer/capture、旧备份及原操作恢复继续保留。本批不转换数据或回执，
+不改变 provider 默认，也不代表全部 Python 或旧 writer 已退役。
