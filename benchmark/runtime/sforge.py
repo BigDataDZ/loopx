@@ -15,6 +15,8 @@ from types import SimpleNamespace
 
 from sforge.harness.agent.codex import CodexAgent
 
+from benchmark.edgebench.feedback import FEEDBACK_MODES
+
 from .codex import DEFAULT_REPLAN_AFTER_TURNS, Execution, prepare_codex_home
 from .codex_offline import CodexOffline
 from .harbor import (
@@ -80,7 +82,8 @@ class SForgeWorker(CodexAgent):
 
     def __init__(self, config, *, profile: str, cwd: str,
                  timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
-                 blind_prompt: str | None = None,
+                 feedback_prompt: str | None = None,
+                 feedback: str = "native",
                  task_entry: str | None = None,
                  turn_envelope: bool = False,
                  replan_after_turns: int | None = None,
@@ -124,7 +127,12 @@ class SForgeWorker(CodexAgent):
         self.replan_after_turns = replan_after_turns
         self.replan_after_todos = replan_after_todos
         self.profile, self.cwd = profile, cwd
-        self.blind_prompt = blind_prompt
+        if feedback not in FEEDBACK_MODES:
+            raise ValueError("Unknown feedback mode")
+        if (feedback == "native") != (feedback_prompt is None):
+            raise ValueError("Restricted feedback requires its task wrapper")
+        self.feedback = feedback
+        self.feedback_prompt = feedback_prompt
         self.prompt_installed = False
         self.timeout_seconds = timeout_seconds
         # Let one call use the trial budget. The shared worker recomputes the
@@ -149,6 +157,7 @@ class SForgeWorker(CodexAgent):
             self.environment.setup_env = {}
 
     def _install_worker(self, backend, handle, log_dir, logger):
+        self.backend, self.handle = backend, handle
         self.log_dir = log_dir
         effort = {"max": "xhigh"}.get(self._config.agent_effort, self._config.agent_effort)
         common = dict(logs_dir=log_dir / "worker", model_name=self._config.agent_model,
@@ -190,7 +199,7 @@ class SForgeWorker(CodexAgent):
                 replan_after_todos=self.replan_after_todos,
             )
             asyncio.run(self.runtime.install(self.environment))
-        if self.blind_prompt is not None:
+        if self.feedback_prompt is not None:
             result = backend.exec_run(handle, ["rm", "-f", "/usr/local/bin/sforge-submit"], user="root")
             if result.exit_code:
                 raise RuntimeError("Could not remove unavailable submission entrypoint")
@@ -203,21 +212,23 @@ class SForgeWorker(CodexAgent):
             "outer_resume": self.resume_cmd is not None,
             "explore_graph": self.profile == "heartbeat-explore",
             "explore_harness": self.profile == "heartbeat-explore",
-            "feedback": "blind" if self.blind_prompt is not None else "native",
+            "feedback": self.feedback,
             **(self.runtime._replan_receipt() if self.runtime and
                self.profile.startswith("heartbeat-") else {}),
         }, indent=2))
 
     def format_run_cmd(self, prompt_path, *, model=None, cwd="", internet=True, resume=False):
-        if self.blind_prompt is not None and not self.prompt_installed:
+        if self.feedback_prompt is not None and not self.prompt_installed:
             with tempfile.TemporaryDirectory(prefix="benchmark-prompt-") as directory:
                 prompt = Path(directory) / "task.md"
-                prompt.write_text(self.blind_prompt)
+                prompt.write_text(self.feedback_prompt)
                 asyncio.run(self.environment.upload_file(prompt, prompt_path))
             # Native run_agent saved the pre-override wrapper. Keep its visible
             # prompt artifact aligned with what all five workers actually read.
-            (self.log_dir / "agent_prompt.md").write_text(self.blind_prompt)
+            (self.log_dir / "agent_prompt.md").write_text(self.feedback_prompt)
             self.prompt_installed = True
+        if self.feedback == "best-only":
+            self.backend.start_feedback(self.handle)
         if self.profile in {"official", "single"}:
             return super().format_run_cmd(prompt_path, model=model, cwd=cwd,
                                           internet=internet, resume=resume)

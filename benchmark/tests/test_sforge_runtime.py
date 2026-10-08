@@ -159,6 +159,7 @@ def test_artifact_collection_preserves_both_session_homes_without_auth(tmp_path,
     from benchmark.runtime.sforge_backend import RecordingDockerBackend, DockerBackend
     backend = object.__new__(RecordingDockerBackend)
     backend.log_dir = tmp_path / "artifacts"
+    backend.feedback = None
     copied, cleaned = [], []
     def archive(handle, remote):
         copied.append(str(remote))
@@ -445,7 +446,7 @@ def test_edgebench_receipt_records_resolved_entry_and_enabled_treatment(tmp_path
     monkeypatch.setattr(run, "run_agent", stop_before_solver)
     args = ["--task", task, "--tasks-dir", str(tmp_path), "--log-dir", str(tmp_path),
             "--run-id", "receipt", "--worker", "heartbeat-resume", "--model", "fixture",
-            "--effort", "xhigh", "--judge-url", "http://127.0.0.1:9999"]
+            "--effort", "xhigh", "--judge-url", "http://127.0.0.1:9999", "--feedback", "native"]
     if entry:
         args += ["--task-entry", entry]
     with pytest.raises(RuntimeError, match="synthetic launch failure"):

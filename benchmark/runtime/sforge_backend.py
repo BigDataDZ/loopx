@@ -15,10 +15,11 @@ from .harbor import _CODEX_HOME, _CONTROL, _LOOPX_RUNTIME
 
 class RecordingDockerBackend(DockerBackend):
     def __init__(self, *, log_dir: Path, logger, oauth_proxy: bool = False,
-                 blind_api_endpoint: tuple[str, int] | None = None, client=None):
+                 blind_api_endpoint: tuple[str, int] | None = None, feedback=None, client=None):
         super().__init__(client)
         self.log_dir, self.logger = log_dir, logger
         self.blind_api_endpoint = blind_api_endpoint
+        self.feedback = feedback
         self.auth_ips = [] if oauth_proxy else resolve_hostname("auth.openai.com", logger)
         if not oauth_proxy and not self.auth_ips:
             raise RuntimeError("Cannot resolve Codex OAuth endpoint")
@@ -28,6 +29,8 @@ class RecordingDockerBackend(DockerBackend):
         if self.auth_ips:
             hosts["auth.openai.com"] = self.auth_ips[0]
         kwargs["extra_hosts"] = hosts
+        if self.feedback is not None:
+            self.feedback.bind(kwargs.get("environment"))
         kwargs["environment"] = self._agent_environment(kwargs.get("environment"))
         return super().create_container(image, name, **kwargs)
 
@@ -60,7 +63,14 @@ class RecordingDockerBackend(DockerBackend):
         ]]
         return super().create_network_isolation(handle, endpoints, logger)
 
+    def start_feedback(self, handle):
+        if self.feedback is None:
+            raise RuntimeError("Best-only publisher is unavailable")
+        self.feedback.start(self, handle)
+
     def cleanup_container(self, handle, logger=None):
+        if self.feedback is not None:
+            self.feedback.close()
         if handle is not None:
             self.log_dir.mkdir(parents=True, exist_ok=True)
             observations = []
