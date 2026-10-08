@@ -16,6 +16,8 @@ class Transport:
     def __init__(self):
         self.files = {}
         self.fail = False
+        self.read_failure = False
+        self.corrupt = False
 
     def copy_to_container(self, handle, source, target):
         if self.fail:
@@ -23,8 +25,15 @@ class Transport:
         self.files[str(target)] = Path(source).read_bytes()
 
     def exec_run(self, handle, command, **kwargs):
-        self.files[str(FEEDBACK_FILE)] = self.files.pop(str(FEEDBACK_FILE.parent / ".latest.pending"))
-        return SimpleNamespace(exit_code=0)
+        if command[0] == "sha256sum":
+            assert kwargs.get("user") == "agent"
+            content = self.files[command[1]]
+            digest = hashlib.sha256(content if not self.corrupt else b"changed").hexdigest()
+            return SimpleNamespace(exit_code=int(self.read_failure), output=digest)
+        pending = str(FEEDBACK_FILE.parent / ".latest.pending")
+        if command[0] == "/bin/sh" and "mv -f" in command[-1]:
+            self.files[str(FEEDBACK_FILE)] = self.files.pop(pending)
+        return SimpleNamespace(exit_code=0, output="")
 
 
 def row(n, score, **kwargs):
@@ -137,6 +146,26 @@ def test_delivery_failure_retries_without_advancing_incumbent(publisher):
     assert publisher.score == 3 and publisher.notifications == 1
     publisher.update(values, transport, None)
     assert publisher.notifications == 1
+
+
+@pytest.mark.parametrize("failure", ["read_failure", "corrupt"])
+def test_unreadable_or_changed_worker_source_keeps_previous_notice_and_incumbent(publisher, failure):
+    transport = Transport()
+    archive(publisher, 2)
+    archive(publisher, 3)
+    values = history(row(1, 1), row(2, 2))
+    publisher.update(values, transport, None)
+    previous = transport.files[str(FEEDBACK_FILE)]
+    setattr(transport, failure, True)
+    values["entries"].append(row(3, 3))
+    with pytest.raises(RuntimeError, match="source checkpoint"):
+        publisher.update(values, transport, None)
+    assert transport.files[str(FEEDBACK_FILE)] == previous
+    assert publisher.score == 2 and publisher.notifications == 1
+    setattr(transport, failure, False)
+    publisher.update(values, transport, None)
+    publisher.update(values, transport, None)
+    assert publisher.score == 3 and publisher.notifications == 2
 
 
 def test_missing_snapshot_or_foreign_history_fails_closed(publisher):

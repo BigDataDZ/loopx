@@ -5,6 +5,7 @@ LOOPX_EDGEBENCH_DOCKER_SMOKE=1 python -m pytest -q <this file>
 Requires a locally available python:3.12-slim image. No model calls or task data.
 """
 import gzip
+import hashlib
 import io
 import json
 import logging
@@ -14,6 +15,8 @@ import tarfile
 import threading
 import time
 import uuid
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -30,7 +33,96 @@ def wait_for(predicate, timeout=40):
     raise AssertionError("Synthetic feedback journey did not finish before its deadline")
 
 
-def test_native_judge_to_isolated_worker_positive_only(tmp_path):
+@pytest.fixture(scope="module")
+def agent_image():
+    """Match the native worker's ordinary agent, including its image USER."""
+    import docker
+    client = docker.from_env()
+    base = client.images.get("python:3.12-slim")
+    setup = client.containers.run(base.id, ["sleep", "300"], detach=True, user="root")
+    try:
+        result = setup.exec_run(["sh", "-c", "groupadd -g 1000 agent && useradd -u 1000 -g agent -m agent "
+            "&& mkdir -p /logs/agent && chown agent:agent /logs/agent"])
+        assert result.exit_code == 0, result.output
+        image = setup.commit(conf={"User": "agent"})
+    finally:
+        setup.remove(force=True)
+    try:
+        yield image
+    finally:
+        client.images.remove(image.id)
+        client.close()
+
+
+def test_private_host_checkpoint_is_readable_before_notification(tmp_path, agent_image):
+    """Real native copy preserves host permissions; publication must repair only public files."""
+    from sforge.harness.backend.docker_backend import DockerBackend
+    from benchmark.edgebench.feedback import BestOnlyFeedback, FEEDBACK_FILE
+
+    previous_umask = os.umask(0o077)
+    try:
+        for n in (2, 3):
+            archive = tmp_path / f"submissions/auto-{n}/submission.tar.gz"
+            archive.parent.mkdir(parents=True)
+            archive.write_bytes(b"synthetic worker source")
+        assert archive.stat().st_mode & 0o777 == 0o600
+        assert os.getuid() != 1000  # Host and image identity must differ.
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        sampler = SimpleNamespace(admitted=lambda: {
+            "s1": {"round_id": "auto-1", "source_sha256": digest},
+            "s2": {"round_id": "auto-2", "source_sha256": digest},
+            "s3": {"round_id": "auto-3", "source_sha256": digest}})
+        publisher = BestOnlyFeedback(trial=tmp_path, run_id="fixture", task_id="fixture",
+            direction="maximize", judge_url="http://127.0.0.1:1", admin_secret="synthetic",
+            logger=logging.getLogger("source-permission-smoke"), sampler=sampler)
+        backend = DockerBackend()
+        handle = backend.create_container(agent_image.id, "source-smoke-" + uuid.uuid4().hex[:10])
+        backend.start_container(handle)
+        try:
+            assert backend.exec_run(handle, ["id", "-u"]).output.strip() == "1000"
+            # The installer prepares this public directory before the publisher starts.
+            assert backend.exec_run(handle, ["sh", "-c", "mkdir -p /opt/edgebench-feedback && "
+                "chmod 0755 /opt/edgebench-feedback"], user="root").exit_code == 0
+            assert backend.exec_run(handle, ["sh", "-c", "umask 077; "
+                "printf synthetic-secret > /tmp/host-only-sentinel"], user="root").exit_code == 0
+            values = {"run_id": "fixture", "entries": [dict(type="submission", status="completed",
+                valid=True, task_id="fixture", submission_id=f"s{n}", round=f"auto-{n}", score=n)
+                for n in (1, 2)]}
+            publisher.update(values, backend, handle)
+            packet = json.loads(backend.exec_run(handle, ["cat", str(FEEDBACK_FILE)]).output)
+            remote = packet["latest"]["source_archive"]
+            source = backend.exec_run(handle, ["cat", remote])
+            assert source.exit_code == 0 and source.output == "synthetic worker source"
+            # Failed ordinary-agent verification must not publish or advance.
+            original_exec = backend.exec_run
+            def deny_read(handle, cmd, **kwargs):
+                if isinstance(cmd, list) and cmd[0] == "sha256sum":
+                    return SimpleNamespace(exit_code=1, output="synthetic unreadable source")
+                return original_exec(handle, cmd, **kwargs)
+            backend.exec_run = deny_read
+            values["entries"].append(dict(type="submission", status="completed", valid=True,
+                task_id="fixture", submission_id="s3", round="auto-3", score=3))
+            with pytest.raises(RuntimeError, match="source checkpoint"):
+                publisher.update(values, backend, handle)
+            assert publisher.score == 2 and publisher.notifications == 1
+            assert json.loads(original_exec(handle, ["cat", str(FEEDBACK_FILE)]).output) == packet
+            backend.exec_run = original_exec
+            publisher.update(values, backend, handle)
+            packet = json.loads(backend.exec_run(handle, ["cat", str(FEEDBACK_FILE)]).output)
+            remote = packet["latest"]["source_archive"]
+            assert backend.exec_run(handle, ["cat", remote]).output == "synthetic worker source"
+            assert backend.exec_run(handle, ["sha256sum", remote], user="agent").output.split()[0] == digest
+            publisher.update(values, backend, handle)
+            assert publisher.score == 3 and publisher.notifications == 2
+            assert archive.stat().st_mode & 0o777 == 0o600  # Host file remains private.
+            assert backend.exec_run(handle, ["cat", "/tmp/host-only-sentinel"], user="agent").exit_code != 0
+        finally:
+            backend.cleanup_container(handle)
+    finally:
+        os.umask(previous_umask)
+
+
+def test_native_judge_to_isolated_worker_positive_only(tmp_path, agent_image):
     import docker
     import requests
     import uvicorn
@@ -91,7 +183,7 @@ def test_native_judge_to_isolated_worker_positive_only(tmp_path):
                                      blind_api_endpoint=("192.0.2.10", 443), feedback=publisher)
     handle, isolation = None, None
     try:
-        handle = backend.create_container(image.id, name, user="root", environment={
+        handle = backend.create_container(agent_image.id, name, environment={
             "SFORGE_TOKEN": token, "SFORGE_JUDGE_URL": url})
         backend.start_container(handle)
         gateway = backend.get_container_gateway_ip(handle)
@@ -248,17 +340,16 @@ def test_native_judge_to_isolated_worker_positive_only(tmp_path):
         client.images.remove(judge_tag)
 
 
-def test_codex_hook_enters_next_model_request_and_resume(tmp_path):
+def test_codex_hook_enters_next_model_request_and_resume(tmp_path, agent_image):
     """Real staged Codex, system hook and Docker; synthetic Responses, no paid model."""
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-    from pathlib import Path
     import docker
     from benchmark.edgebench import feedback_hook
 
     payload = Path(os.environ['LOOPX_TEST_CODEX_DIR']).resolve()
     requests = []
     client = docker.from_env()
-    worker = client.containers.run('python:3.12-slim', ['sleep', '300'], detach=True,
+    worker = client.containers.run(agent_image.id, ['sleep', '300'], detach=True,
         volumes={str(payload): {'bind': '/opt/codex-bin', 'mode': 'ro'}})
     root = '/opt/edgebench-feedback'
     digest = 'a' * 64
@@ -266,7 +357,7 @@ def test_codex_hook_enters_next_model_request_and_resume(tmp_path):
     def write(path, data):
         result = worker.exec_run(['python3', '-c',
             'import pathlib,sys;p=pathlib.Path(sys.argv[1]);p.parent.mkdir(parents=True,exist_ok=True);'
-            'p.write_text(sys.argv[2])', path, data])
+            'p.write_text(sys.argv[2]);p.chmod(0o644)', path, data], user='root')
         assert result.exit_code == 0, result.output
 
     def notify(n):
@@ -313,7 +404,10 @@ def test_codex_hook_enters_next_model_request_and_resume(tmp_path):
         gateway = next(iter(worker.attrs['NetworkSettings']['Networks'].values()))['Gateway']
         write(f'{root}/latest.json', json.dumps({'schema_version': 'edgebench_best_feedback_v1', 'latest': None}))
         write(f'{root}/hook.py', Path(feedback_hook.__file__).read_text())
-        assert worker.exec_run(['python3', f'{root}/hook.py', '--install']).exit_code == 0
+        assert worker.exec_run(['sh', '-c', f'chmod 0600 {root}/hook.py; umask 077; '
+            f'python3 {root}/hook.py --install'], user='root').exit_code == 0
+        assert worker.exec_run(['python3', '-c', 'from pathlib import Path; '
+            f'Path("{root}/hook.py").read_bytes();Path("/etc/codex/hooks.json").read_bytes()']).exit_code == 0
         write('/tmp/codex-home/config.toml', f'''model = "gpt-5.4"
 model_provider = "fixture"
 [model_providers.fixture]
@@ -322,6 +416,7 @@ base_url = "http://{gateway}:{server.server_port}/v1"
 wire_api = "responses"
 env_key = "FIXTURE_API_KEY"
 ''')
+        assert worker.exec_run(['chown', '-R', 'agent:agent', '/tmp/codex-home'], user='root').exit_code == 0
         env = {'CODEX_HOME': '/tmp/codex-home', 'FIXTURE_API_KEY': 'synthetic',
                'PATH': '/opt/codex-bin:/usr/local/bin:/usr/bin:/bin'}
         command = ['/opt/codex-bin/codex', 'exec', '--skip-git-repo-check',

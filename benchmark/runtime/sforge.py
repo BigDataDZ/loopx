@@ -205,11 +205,18 @@ class SForgeWorker(CodexAgent):
                 raise RuntimeError("Could not remove unavailable submission entrypoint")
         if self.feedback == "best-only":
             from benchmark.edgebench import feedback_hook
+            from benchmark.edgebench.feedback import prepare_feedback_root
             hook = PurePosixPath("/opt/edgebench-feedback/hook.py")
+            prepare_feedback_root(backend, handle)
             backend.copy_to_container(handle, Path(feedback_hook.__file__), hook)
             result = backend.exec_run(handle, ["python3", str(hook), "--install"], user="root")
             if result.exit_code:
                 raise RuntimeError("Could not install best-only Codex delivery hooks")
+            result = backend.exec_run(handle, ["python3", "-c",
+                "from pathlib import Path; "
+                f"Path({str(hook)!r}).read_bytes(); Path('/etc/codex/hooks.json').read_bytes()"], user="agent")
+            if result.exit_code:
+                raise RuntimeError("Best-only Codex delivery hooks are unreadable by worker")
         (log_dir / "worker-profile.json").write_text(json.dumps({
             "profile": self.profile, "model": self._config.agent_model,
             "task_entry": self.task_entry,

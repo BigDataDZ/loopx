@@ -174,6 +174,12 @@ results compete against the best observed score, never against the last result.
 Notifications describe the named **evaluated snapshot**, not the current workspace.
 The source archive is the agent's own original submission, with its SHA-256; it
 contains no judge output. The adapter never restores files automatically.
+Before publishing an improvement, the adapter makes only the disclosed copy
+readable and verifies its digest as the ordinary `agent` worker. A read or digest
+failure retains the previous notification and incumbent for retry. Private host
+archives retain their original permissions; evaluator and secret directories
+are not made public. The hook script and system hook configuration are also
+checked for ordinary-worker readability before handoff.
 
 All five workers receive the allowlisted notification directly through managed
 Codex `PostToolUse`, `SessionStart` and `UserPromptSubmit` hooks. A short synchronous
@@ -210,8 +216,9 @@ A notification looks like this (digest abbreviated for illustration):
 Before the first improvement, `latest` is null. Native outer resume preserves the
 same publisher and session cursor; it does not reset the incumbent. Delivery
 failures retry before committing an improvement. The host-only `best-only-host`
-artifacts record file publication and health; session hook receipts under
-`/logs/agent/best-feedback-delivery` record emission, not model acknowledgement; never mount or copy them into the worker.
+artifacts record file publication and health; never mount or copy them into the
+worker. Worker-local session hook receipts under `/logs/agent/best-feedback-delivery`
+record emission, not model acknowledgement.
 Treat missing archive/delivery evidence as an unqualified treatment, not as a
 successful best-only trial. Public notifications do not include these errors.
 

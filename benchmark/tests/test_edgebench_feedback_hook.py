@@ -1,6 +1,7 @@
 """Informational delivery: no polling tool call, no replacement of tool output."""
 import io
 import json
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -57,9 +58,19 @@ def test_empty_and_malformed_do_not_disclose(tmp_path):
 def test_installer_preserves_official_stop_and_is_idempotent(tmp_path):
     settings = {'hooks': {'Stop': [{'hooks': [{'type': 'command', 'command': '/official-stop'}]}]}}
     (tmp_path / 'hooks.json').write_text(json.dumps(settings))
-    install(tmp_path)
+    script = tmp_path / 'hook.py'
+    script.write_text('# synthetic provider hook')
+    script.chmod(0o600)
+    previous_umask = os.umask(0o077)
+    try:
+        install(tmp_path, script)
+    finally:
+        os.umask(previous_umask)
     once = (tmp_path / 'hooks.json').read_text()
-    install(tmp_path)
+    install(tmp_path, script)
     assert (tmp_path / 'hooks.json').read_text() == once
     assert json.loads(once)['hooks']['Stop'] == settings['hooks']['Stop']
     assert set(json.loads(once)['hooks']) == {'Stop', 'PostToolUse', 'SessionStart', 'UserPromptSubmit'}
+    assert tmp_path.stat().st_mode & 0o777 == 0o755
+    assert script.stat().st_mode & 0o777 == 0o644
+    assert (tmp_path / 'hooks.json').stat().st_mode & 0o777 == 0o644

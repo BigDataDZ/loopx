@@ -26,6 +26,14 @@ _MESSAGE = (
 )
 
 
+def prepare_feedback_root(backend, handle):
+    """Prepare only the directory explicitly disclosed to the ordinary worker."""
+    result = backend.exec_run(handle, ["/bin/sh", "-c",
+        f"mkdir -p {FEEDBACK_ROOT} && chmod 0755 {FEEDBACK_ROOT}"], user="root")
+    if result.exit_code:
+        raise RuntimeError("Could not prepare best-only feedback directory")
+
+
 def validate_best_only(task, interval):
     if task.judge.selection not in {"score_first", "valid_then_score"}:
         raise ValueError("best-only requires score_first or valid_then_score selection; use native or blind")
@@ -143,7 +151,17 @@ class BestOnlyFeedback:
         if admission["source_sha256"] != digest:
             raise ValueError("Native archive differs from admitted online capture")
         remote = FEEDBACK_ROOT / f"{snapshot}-{digest}.tar.gz"
+        prepare_feedback_root(backend, handle)
         backend.copy_to_container(handle, archive, remote)
+        # Native Docker copy preserves host uid/mode, including private 0600
+        # archives. Only this disclosed copy becomes public; verify as the
+        # actual SForge worker before publishing or advancing the incumbent.
+        permission = backend.exec_run(handle, ["chmod", "0644", str(remote)], user="root")
+        if permission.exit_code:
+            raise RuntimeError("Could not prepare best-only source checkpoint")
+        readable = backend.exec_run(handle, ["sha256sum", str(remote)], user="agent")
+        if readable.exit_code or readable.output.split()[:1] != [digest]:
+            raise RuntimeError("Could not verify best-only source checkpoint for worker")
         packet = {
             "schema_version": "edgebench_best_feedback_v1",
             "latest": {"kind": "new_best", "snapshot_id": snapshot,
@@ -169,6 +187,7 @@ class BestOnlyFeedback:
                 stream.write(json.dumps({"published_at": time.time(), "packet": packet}) + "\n")
 
     def _publish_json(self, backend, handle, packet):
+        prepare_feedback_root(backend, handle)
         local = self.directory / "public.json"
         local.write_text(json.dumps(packet, allow_nan=False) + "\n")
         pending = FEEDBACK_ROOT / ".latest.pending"

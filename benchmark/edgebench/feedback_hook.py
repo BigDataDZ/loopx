@@ -63,6 +63,8 @@ def deliver(event, root=ROOT, receipts=Path('/logs/agent/best-feedback-delivery'
 def install(config=Path('/etc/codex'), script=ROOT / 'hook.py'):
     """Merge the provider hook with the official worker's existing Stop hook."""
     config.mkdir(parents=True, exist_ok=True)
+    config.chmod(0o755)
+    script.chmod(0o644)
     path = config / 'hooks.json'
     settings = json.loads(path.read_text()) if path.exists() else {}
     hooks = settings.setdefault('hooks', {})
@@ -72,6 +74,7 @@ def install(config=Path('/etc/codex'), script=ROOT / 'hook.py'):
         if handler not in groups:
             groups.append(handler)
     path.write_text(json.dumps(settings))
+    path.chmod(0o644)
 
 
 if __name__ == '__main__':

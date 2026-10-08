@@ -109,6 +109,42 @@ def test_invalid_worker_inputs_fail_before_install(monkeypatch):
         SForgeWorker(config, profile="single", cwd="/task")
 
 
+@pytest.mark.parametrize("profile", ["official", "single", "native-goal", "heartbeat-resume", "heartbeat-explore"])
+@pytest.mark.parametrize("unreadable", [False, True])
+def test_best_only_install_requires_ordinary_worker_hook_readback(tmp_path, monkeypatch, profile, unreadable):
+    pytest.importorskip("sforge")
+    pytest.importorskip("harbor")
+    from types import SimpleNamespace
+    from sforge.harness.agent.codex import CodexAgent
+    from sforge.harness.config import SForgeConfig
+    from benchmark.runtime.sforge import SForgeWorker, BenchmarkCodex, CodexOffline
+    credential = tmp_path / "synthetic-auth.json"
+    credential.write_text("{}")
+    monkeypatch.setenv("CODEX_AUTH_JSON_PATH", str(credential))
+    async def installed(self, environment):
+        pass  # Exercise the native installation seam without installing a model.
+    monkeypatch.setattr(CodexOffline, "install", installed)
+    monkeypatch.setattr(BenchmarkCodex, "install", installed)
+    monkeypatch.setattr(CodexAgent, "install_stop_hook", lambda *args: None)
+    ordinary_reads = []
+    def command(handle, cmd, **kwargs):
+        if kwargs.get("user") == "agent" and isinstance(cmd, list) and "read_bytes" in cmd[-1]:
+            ordinary_reads.append(cmd)
+            return SimpleNamespace(exit_code=int(unreadable), output="")
+        return SimpleNamespace(exit_code=0, output="")
+    backend = SimpleNamespace(exec_run=command, copy_to_container=lambda *args: None)
+    worker = SForgeWorker(SForgeConfig(agent_model="fixture", agent_effort="xhigh"),
+        profile=profile, cwd="/task", feedback="best-only", feedback_prompt="Synthetic local task")
+    if unreadable:
+        with pytest.raises(RuntimeError, match="unreadable by worker"):
+            worker.install_stop_hook(backend, None, tmp_path, None)
+        assert not (tmp_path / "worker-profile.json").exists()
+    else:
+        worker.install_stop_hook(backend, None, tmp_path, None)
+        assert json.loads((tmp_path / "worker-profile.json").read_text())["feedback_delivery"] == "codex_hooks"
+    assert len(ordinary_reads) == 1
+
+
 @pytest.mark.parametrize("profile,total,expected", [
     ("native-goal", 64800, 64640), ("native-goal", 1800, 1640),
     ("heartbeat-resume", 64800, 64640), ("heartbeat-explore", 64800, 64640),
