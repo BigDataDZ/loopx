@@ -20,6 +20,7 @@ class RecordingDockerBackend(DockerBackend):
         self.log_dir, self.logger = log_dir, logger
         self.blind_api_endpoint = blind_api_endpoint
         self.feedback = feedback
+        self.feedback_command = None
         self.auth_ips = [] if oauth_proxy else resolve_hostname("auth.openai.com", logger)
         if not oauth_proxy and not self.auth_ips:
             raise RuntimeError("Cannot resolve Codex OAuth endpoint")
@@ -42,7 +43,12 @@ class RecordingDockerBackend(DockerBackend):
 
     def exec_run_with_timeout(self, handle, cmd, timeout=60, **kwargs):
         kwargs["environment"] = self._agent_environment(kwargs.get("environment"))
-        return super().exec_run_with_timeout(handle, cmd, timeout, **kwargs)
+        is_solver = self.feedback is not None and cmd == ["/bin/bash", "-c", self.feedback_command]
+        try:
+            return super().exec_run_with_timeout(handle, cmd, timeout, **kwargs)
+        finally:
+            if is_solver:
+                self.feedback.pause()
 
     def create_network_isolation(self, handle, allowed_endpoints, logger):
         # ChatGPT login may refresh during an 18h run. Preserve the native

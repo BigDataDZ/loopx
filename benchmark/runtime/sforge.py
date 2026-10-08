@@ -203,6 +203,13 @@ class SForgeWorker(CodexAgent):
             result = backend.exec_run(handle, ["rm", "-f", "/usr/local/bin/sforge-submit"], user="root")
             if result.exit_code:
                 raise RuntimeError("Could not remove unavailable submission entrypoint")
+        if self.feedback == "best-only":
+            from benchmark.edgebench import feedback_hook
+            hook = PurePosixPath("/opt/edgebench-feedback/hook.py")
+            backend.copy_to_container(handle, Path(feedback_hook.__file__), hook)
+            result = backend.exec_run(handle, ["python3", str(hook), "--install"], user="root")
+            if result.exit_code:
+                raise RuntimeError("Could not install best-only Codex delivery hooks")
         (log_dir / "worker-profile.json").write_text(json.dumps({
             "profile": self.profile, "model": self._config.agent_model,
             "task_entry": self.task_entry,
@@ -213,6 +220,7 @@ class SForgeWorker(CodexAgent):
             "explore_graph": self.profile == "heartbeat-explore",
             "explore_harness": self.profile == "heartbeat-explore",
             "feedback": self.feedback,
+            **({"feedback_delivery": "codex_hooks"} if self.feedback == "best-only" else {}),
             **(self.runtime._replan_receipt() if self.runtime and
                self.profile.startswith("heartbeat-") else {}),
         }, indent=2))
@@ -227,11 +235,9 @@ class SForgeWorker(CodexAgent):
             # prompt artifact aligned with what all five workers actually read.
             (self.log_dir / "agent_prompt.md").write_text(self.feedback_prompt)
             self.prompt_installed = True
-        if self.feedback == "best-only":
-            self.backend.start_feedback(self.handle)
         if self.profile in {"official", "single"}:
-            return super().format_run_cmd(prompt_path, model=model, cwd=cwd,
-                                          internet=internet, resume=resume)
+            return self._feedback_command(super().format_run_cmd(prompt_path, model=model, cwd=cwd,
+                                          internet=internet, resume=resume))
         if self.runtime is None:
             raise RuntimeError("Run the native SForge installation hook before execution")
         if not self.prepared:
@@ -262,10 +268,16 @@ class SForgeWorker(CodexAgent):
         # an entry command must never grant another full trial budget.
         deadline = "/opt/loopx-benchmark/control/phase-deadline"
         exports = " ".join(f"{key}={shlex.quote(value)}" for key, value in env.items())
-        return (
+        return self._feedback_command(
             f"set -eu; test -f {deadline} || echo $(( $(date +%s) + {self.timeout_seconds} )) > {deadline}; "
             f"export LOOPX_PHASE_DEADLINE_EPOCH=$(cat {deadline}); "
             f"remaining=$(( LOOPX_PHASE_DEADLINE_EPOCH - $(date +%s) )); "
             'test "$remaining" -gt 0 || exit 0; '
             f"exec timeout --signal=TERM --kill-after=30 ${{remaining}}s env {exports} {shlex.join(command)}"
         )
+
+    def _feedback_command(self, command):
+        if self.feedback == "best-only":
+            self.backend.feedback_command = command
+            self.backend.start_feedback(self.handle)
+        return command

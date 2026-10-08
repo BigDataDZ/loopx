@@ -1,4 +1,5 @@
 """Feedback is a disclosure policy, not a replacement evaluator."""
+import hashlib
 import json
 import logging
 import math
@@ -35,11 +36,29 @@ def history(*entries):
     return {"run_id": "run", "entries": list(entries)}
 
 
+class Admissions:
+    def admitted(self):
+        return {f"s{n}": dict(round_id=f"auto-{n}", source_sha256=hashlib.sha256(b"agent source only").hexdigest())
+                for n in range(1, 10)}
+
+    def start(self, *args):
+        pass
+
+    def pause(self):
+        pass
+
+    def close(self):
+        pass
+
+    def tick(self, history):
+        pass
+
+
 @pytest.fixture
 def publisher(tmp_path):
     return BestOnlyFeedback(trial=tmp_path, run_id="run", task_id="fixture", direction="maximize",
                             judge_url="http://127.0.0.1:1", admin_secret="private-secret",
-                            logger=logging.getLogger("fixture"))
+                            logger=logging.getLogger("fixture"), sampler=Admissions())
 
 
 def archive(publisher, n, content=b"agent source only"):
@@ -141,6 +160,8 @@ def test_close_prevents_late_feedback_and_native_resume_does_not_restart(publish
     assert publisher.thread is thread
     publisher.close()
     assert not thread.is_alive()
+    with pytest.raises(RuntimeError, match="closed"):
+        publisher.start(transport, None)
     archive(publisher, 2)
     publisher.update(history(row(1, 1), row(2, 9)), transport, None)
     assert json.loads(transport.files[str(FEEDBACK_FILE)])["latest"] is None
@@ -166,6 +187,7 @@ def test_cli_default_and_explicit_controls_reach_native_registration(tmp_path, m
     monkeypatch.setenv("LOOPX_EXPECTED_COMMIT", "fixture")
     monkeypatch.setenv("CODEX_AUTH_JSON_PATH", "/synthetic-credential")
     (tmp_path / "fixture.json").write_text("{}")
+    monkeypatch.setattr(run.OnlineSampler, "qualify", lambda self: setattr(self, "epoch", "synthetic-epoch"))
     monkeypatch.setattr(run, "source_pins", lambda *a: ("fixture", "fixture"))
     monkeypatch.setattr(run, "load_benchmark", lambda *a: None)
     monkeypatch.setattr(run, "make_task_spec", lambda *a: SimpleNamespace(
@@ -185,6 +207,7 @@ def test_cli_default_and_explicit_controls_reach_native_registration(tmp_path, m
         assert constructed["blind_api_endpoint"] == (None if selected == "native" else ("192.0.2.1", 9090))
         assert (kwargs["agent"].feedback_prompt is None) == (selected == "native")
         assert kwargs["eval_interval"] == 300
+        assert kwargs["disable_auto_eval"] == (selected == "best-only")
         raise RuntimeError("synthetic launch boundary")
     monkeypatch.setattr(run, "run_agent", handoff)
     args = ["--task", "fixture", "--tasks-dir", str(tmp_path), "--log-dir", str(tmp_path),

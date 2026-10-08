@@ -109,6 +109,6 @@ def test_best_only_wrapper_preserves_task_and_limits_signal_meaning():
     text = best_only_task_prompt(query, ["solver.py"])
     assert text.endswith("---\n\n" + query + "\n")
     for clause in ["first valid result", "baseline", "Ties, regressions", "not necessarily",
-                   "Do not busy-poll", "acceptance criteria", "source_archive", "latest.json"]:
+                   "automatically adds", "acceptance criteria", "source_archive", "do not need to poll"]:
         assert clause in text
     assert "sforge-submit" not in text

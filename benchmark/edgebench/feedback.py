@@ -11,6 +11,7 @@ import json
 import math
 import re
 import threading
+import time
 from pathlib import Path, PurePosixPath
 
 import requests
@@ -43,7 +44,7 @@ class BestOnlyFeedback:
     """
 
     def __init__(self, *, trial: Path, run_id: str, task_id: str, direction: str,
-                 judge_url: str, admin_secret: str, logger):
+                 judge_url: str, admin_secret: str, logger, sampler):
         self.trial, self.run_id, self.task_id = trial, run_id, task_id
         self.direction, self.judge_url = direction, judge_url.rstrip("/")
         self.admin_secret, self.logger = admin_secret, logger
@@ -52,8 +53,10 @@ class BestOnlyFeedback:
         self.score = None
         self.notifications = 0
         self.errors = 0
+        self.sampler = sampler
         self.token = None
         self.thread = None
+        self.active = threading.Event()
         self.stop_event = threading.Event()
         self.session = requests.Session()
         self.session.trust_env = False
@@ -67,14 +70,23 @@ class BestOnlyFeedback:
         self.token = token  # Never serialize the token or the admin secret.
 
     def start(self, backend, handle):
+        if self.stop_event.is_set():
+            raise RuntimeError("Feedback publisher is closed")
+        self.active.set()
         if self.thread is not None:
+            self.sampler.start(backend, handle, self.token)
             return
         if self.token is None or self.stop_event.is_set():
             raise RuntimeError("Feedback registration is missing or already closed")
         self._publish_json(backend, handle, {"schema_version": "edgebench_best_feedback_v1", "latest": None})
         self._record()
+        self.sampler.start(backend, handle, self.token)
         self.thread = threading.Thread(target=self._loop, args=(backend, handle), daemon=True)
         self.thread.start()
+
+    def pause(self):
+        self.active.clear()
+        self.sampler.pause()
 
     def close(self):
         self.stop_event.set()
@@ -83,15 +95,20 @@ class BestOnlyFeedback:
             if self.thread.is_alive():
                 raise RuntimeError("Feedback publisher did not stop before container cleanup")
         self.session.close()
+        self.sampler.close()
 
     def _candidate(self, history):
         if history.get("run_id") != self.run_id or not isinstance(history.get("entries"), list):
             raise ValueError("Feedback history does not match this trial")
         eligible = []
+        admitted = self.sampler.admitted()
         for entry in history["entries"]:
             score = entry.get("score")
             if entry.get("task_id") != self.task_id:
                 raise ValueError("Feedback history contains another task")
+            admission = admitted.get(entry.get("submission_id"))
+            if admission is None or admission["round_id"] != entry.get("round"):
+                continue
             if (entry.get("type") != "submission" or entry.get("status") != "completed"
                     or entry.get("valid", True) is not True
                     or type(score) not in (int, float) or not math.isfinite(score)
@@ -122,6 +139,9 @@ class BestOnlyFeedback:
         # Read only the agent's original submitted archive, never judge artifacts.
         archive = self.trial / "submissions" / snapshot / "submission.tar.gz"
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        admission = self.sampler.admitted()[candidate["submission_id"]]
+        if admission["source_sha256"] != digest:
+            raise ValueError("Native archive differs from admitted online capture")
         remote = FEEDBACK_ROOT / f"{snapshot}-{digest}.tar.gz"
         backend.copy_to_container(handle, archive, remote)
         packet = {
@@ -146,7 +166,7 @@ class BestOnlyFeedback:
         pending.replace(path)
         if packet is not None:
             with (self.directory / "delivered.jsonl").open("a") as stream:
-                stream.write(json.dumps(packet) + "\n")
+                stream.write(json.dumps({"published_at": time.time(), "packet": packet}) + "\n")
 
     def _publish_json(self, backend, handle, packet):
         local = self.directory / "public.json"
@@ -160,11 +180,16 @@ class BestOnlyFeedback:
 
     def _loop(self, backend, handle):
         while not self.stop_event.wait(10):
+            if not self.active.is_set():
+                continue
             try:
                 response = self.session.get(f"{self.judge_url}/api/v1/history",
                     params={"token": self.token, "admin_secret": self.admin_secret}, timeout=(3, 5))
                 response.raise_for_status()
-                self.update(response.json(), backend, handle)
+                history = response.json()
+                if self.active.is_set():
+                    self.sampler.tick(history)
+                    self.update(history, backend, handle)
             except Exception as error:
                 # Do not leak report bodies/URLs/credentials through exception text.
                 self.errors += 1

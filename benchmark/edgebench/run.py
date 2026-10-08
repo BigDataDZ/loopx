@@ -24,6 +24,7 @@ from benchmark.runtime.sforge import DEFAULT_TIMEOUT_SECONDS, PROFILES, SForgeWo
 from benchmark.runtime.sforge_backend import RecordingDockerBackend
 from benchmark.runtime.source import source_pins
 from benchmark.edgebench.prompts import blind_task_prompt, best_only_task_prompt
+from benchmark.edgebench.online_sampling import OnlineSampler
 from benchmark.edgebench.feedback import BestOnlyFeedback, FEEDBACK_MODES, validate_best_only
 
 
@@ -163,11 +164,17 @@ def main(argv=None):
     if args.api_proxy_url:
         agent.default_api_base_url = args.api_proxy_url
     logger = logging.getLogger("edgebench-runtime")
+    sampler = None
+    if args.feedback == "best-only":
+        sampler = OnlineSampler(trial=trial, task=task, interval=args.eval_interval,
+            judge_url=args.judge_url.replace("host.docker.internal", "127.0.0.1"),
+            secret=get_admin_secret(args.log_dir), logger=logger)
+        sampler.qualify()  # Fail before native registration, solver creation or token spend.
     feedback = (BestOnlyFeedback(
         trial=trial, run_id=args.run_id, task_id=args.task,
         direction=task.judge.score_direction,
         judge_url=args.judge_url.replace("host.docker.internal", "127.0.0.1"),
-        admin_secret=get_admin_secret(args.log_dir), logger=logger,
+        admin_secret=get_admin_secret(args.log_dir), logger=logger, sampler=sampler,
     ) if args.feedback == "best-only" else None)
     backend = RecordingDockerBackend(log_dir=trial / "collected", logger=logger,
                                      oauth_proxy=bool(args.api_proxy_url),
@@ -185,6 +192,8 @@ def main(argv=None):
         "feedback": args.feedback, "internet": task.internet,
         "eval_interval": args.eval_interval, "submission_cooldown": args.submission_cooldown,
         "status": "starting", "score_countable": False,
+        **({"online_admission_epoch": sampler.epoch, "offline_scoring_complete": False}
+           if sampler is not None else {}),
         **({"replan_after_effective_turns": agent.replan_after_turns}
            if agent.replan_after_turns is not None else {}),
         **({"replan_after_completed_todos": agent.replan_after_todos}
@@ -198,6 +207,7 @@ def main(argv=None):
             run_id=args.run_id, model=args.model, timeout=args.timeout,
             judge_url=args.judge_url, eval_interval=args.eval_interval,
             submission_cooldown=args.submission_cooldown, internet=task.internet,
+            disable_auto_eval=args.feedback == "best-only",
             disable_stop_hook=False, disable_auto_resume=agent.resume_cmd is None,
             max_submissions=0 if args.feedback != "native" else None,
         ))

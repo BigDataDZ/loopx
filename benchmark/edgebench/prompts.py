@@ -54,8 +54,6 @@ def _local_task_prompt(original_query, submit_paths, *, intro=(
 
 def best_only_task_prompt(original_query: str, submit_paths: list[str]) -> str:
     """Use the blind local-work contract with one explicit positive feedback channel."""
-    from benchmark.edgebench.feedback import FEEDBACK_FILE
-
     # Build the wrapper without rewriting any task-owned query or instructions.
     local = _local_task_prompt("", submit_paths,
         intro="External evaluation is automatic; only new-best notifications are available.",
@@ -63,8 +61,9 @@ def best_only_task_prompt(original_query: str, submit_paths: list[str]) -> str:
     ).removesuffix("---\n\n\n")
     return local + (
         "### New-best Feedback\n\n"
-        f"After each local implementation/validation cycle and before replanning, read `{FEEDBACK_FILE}`. "
-        "Do not busy-poll it or wait idle for feedback. Continue useful local work. "
+        "The harness automatically adds new-best notifications to your context after tool calls "
+        "or when a session/turn starts. You do not need to poll a file. "
+        "Do not wait idle for feedback; continue useful local work. "
         "The host samples submitted files on a fixed schedule; you cannot trigger evaluations. "
         "A notification means that the named snapshot strictly improved the best valid score "
         "observed so far (using the task's score direction). The first valid result only establishes "
