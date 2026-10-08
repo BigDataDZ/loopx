@@ -386,6 +386,15 @@ that must survive process termination should choose the id before dispatch.
 Legacy Markdown creation rejects this option instead of pretending to provide
 canonical idempotency.
 
+Public creation validates task class, role and User gate scope together through
+the existing typed create-authoring plan before provider dispatch. It no longer
+makes a separate class-only preflight call. The standalone Markdown add codec
+retains its class check for callers outside that facade. Priority normalization
+still preserves the create request bound by historical operation receipts;
+removing a redundant check does not change replay identity or authorize a write.
+Requests with several invalid fields still fail; the reported error follows the
+complete create and input-validation order.
+
 Validation content is prepared privately before create/revision dispatch. Its
 presence alone never activates a validator: the authoritative Todo selects its
 exact digest. Corrupt selected content fails closed. Legacy per-Todo sidecars
@@ -400,6 +409,11 @@ publication recovery, not cross-host distribution of private validation commands
 不会因 Todo 后来改名、完成或修订验证器而重复创建。相同编号搭配不同意图会被拒绝。
 省略编号时会自动生成并在成功或不确定超时错误中返回；需要应对进程终止的调用方
 应在发送前自行确定编号。旧 Markdown 路径不支持此参数。
+
+公开创建入口在 provider 调用之前，通过现有 TS 创建规划一并检查任务类别、角色与
+User gate 范围，移除重复的类别预检调用。独立 Markdown 添加 codec 仍为直接调用方
+保留类别检查；优先级规范化继续保持历史创建回执绑定的请求形态，不改变重放身份或
+写入准入。多个字段同时无效时，仍拒绝写入，错误由完整创建检查及输入检查顺序决定。
 
 私有声明先持久保存，权威摘要再引用它；没有被权威 Todo 引用的内容不会成为验证要求。
 被选中内容损坏时仍拒绝执行。旧 sidecar 可继续读取，历史创建回执不能回滚新验证器。
