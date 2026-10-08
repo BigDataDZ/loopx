@@ -1,8 +1,12 @@
 /** Replan history IO: qualify work through the existing settlement owner. */
 import type { JsonObject } from "../effect_program.ts";
-import { jsonObject, requireJsonObject, requireNonEmptyString } from "../runtime_decode.ts";
-import { readQuotaSettlementSnapshot, readQuotaSettlementForAdmittedOwnerFromSnapshot,
-  QUOTA_SETTLEMENT_READBACK_REQUEST_SCHEMA } from "../quota/settlement_readback.ts";
+import { jsonObject, requireJsonObject } from "../runtime_decode.ts";
+import {
+  readQuotaSettlementSnapshot,
+  readQuotaSettlementForAdmittedOwnerFromSnapshot,
+  QUOTA_SETTLEMENT_READBACK_REQUEST_SCHEMA,
+  validateQuotaSettlementScope,
+} from "../quota/settlement_readback.ts";
 import { readGoalRolloutEventSnapshot, strictGoalRolloutEvents } from "../rollout_receipt_log.ts";
 import { parseQuotaAccountingOwner, withQuotaAccountingOwner,
   withBorrowedQuotaAccountingOwner, quotaOwnerOwnsProjection } from "../quota/source_admission.ts";
@@ -14,8 +18,10 @@ export async function projectSettledReplanHistory(value: unknown): Promise<JsonO
   // Historical callers retain their units until explicitly migrated.
   if (source == null) return projectReplanHistory(request);
   const scope = requireJsonObject(source, "settlement source");
-  const runtimeRoot = requireNonEmptyString(scope.runtime_root, "runtime_root");
-  const goalId = requireNonEmptyString(scope.goal_id, "goal_id");
+  const {runtimeRoot, goalId} = validateQuotaSettlementScope(
+    scope.runtime_root,
+    scope.goal_id,
+  );
   const owner = parseQuotaAccountingOwner({runtimeRoot, goalId,
     goalRefValue: scope.goal_ref, sourceAdmissionValue: scope.source_admission});
   const withOwner = scope.borrow_source_admission === true
