@@ -114,15 +114,34 @@ def _doctor_failure_summary(stdout: str) -> str | None:
     for scope, checks in scopes:
         if not isinstance(checks, list):
             continue
-        failed.extend(
-            f"{scope}.{item['id']}"
-            for item in checks
-            if isinstance(item, dict)
-            and item.get("required")
-            and not item.get("ok")
-            and isinstance(item.get("id"), str)
-        )
-    return ", ".join(sorted(failed)) or "no failed required checks reported"
+        for item in checks:
+            if not (
+                isinstance(item, dict)
+                and item.get("required")
+                and not item.get("ok")
+                and isinstance(item.get("id"), str)
+            ):
+                continue
+            parts = [f"{scope}.{item['id']}"]
+            for key in ("detail", "recommended_action"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    detail = " ".join(value.split())
+                    if len(detail) > 400:
+                        detail = detail[:397] + "..."
+                    parts.append(f"{key}={detail}")
+            failed.append("; ".join(parts))
+    if not failed:
+        return None
+    for key in ("error", "recommended_action"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            detail = " ".join(value.split())
+            if len(detail) > 400:
+                detail = detail[:397] + "..."
+            failed.append(f"{key}={detail}")
+    summary = ", ".join(sorted(failed))
+    return summary if len(summary) <= 2000 else summary[:1997] + "..."
 
 
 def _validate_candidate(

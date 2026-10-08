@@ -91,6 +91,7 @@ def test_windows_candidate_failure_reports_required_doctor_checks(
                 "required": True,
                 "ok": False,
                 "detail": "runtime unavailable",
+                "recommended_action": "Install the supported Node.js runtime.",
             }
         ],
         "release_candidate": {
@@ -112,10 +113,42 @@ def test_windows_candidate_failure_reports_required_doctor_checks(
         ),
     )
 
-    with pytest.raises(RuntimeError, match=r"doctor\.typescript_control_plane_ready"):
+    with pytest.raises(RuntimeError, match=r"doctor\.typescript_control_plane_ready") as exc_info:
         windows_install._validate_candidate(
             tmp_path / "release", python=Path(sys.executable), skills_dir=tmp_path / "skills"
         )
+
+    assert "detail=runtime unavailable" in str(exc_info.value)
+    assert "recommended_action=Install the supported Node.js runtime." in str(
+        exc_info.value
+    )
+    assert "diagnostics" not in str(exc_info.value)
+
+
+def test_windows_candidate_failure_preserves_structured_error_without_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "ok": False,
+        "error": "selected Node.js runtime is unsupported",
+        "recommended_action": "Install Node.js 22 or newer.",
+    }
+    monkeypatch.setattr(
+        windows_install.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args[0], 1, stdout=json.dumps(payload), stderr=""
+        ),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        windows_install._validate_candidate(
+            tmp_path / "release", python=Path(sys.executable), skills_dir=tmp_path / "skills"
+        )
+
+    assert "selected Node.js runtime is unsupported" in str(exc_info.value)
+    assert "Install Node.js 22 or newer." in str(exc_info.value)
+    assert "no failed required checks reported" not in str(exc_info.value)
 
 
 def test_chat_bundle_preflight_preserves_stdout_with_legacy_pointer(
