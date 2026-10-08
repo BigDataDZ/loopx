@@ -467,7 +467,9 @@ diagnostic count floors now belong to the existing TypeScript frontier owner,
 using the shared claim-scope rule. The compact internal request carries facts
 and row coordinates, not private Todo prose. An explicitly empty executable
 view wins over stale display rows; diagnostic count floors never create
-selectable work or grant execution. No authority record or receipt changes.
+selectable work or grant execution. Decimal transport preserves Python integer
+observations beyond the JSON number precision boundary. No authority record or
+receipt changes.
 
 File/SQLite quota CLI checks use the same independent oracle before and after
 the move. The permanent Markdown narrative projection remains required by
@@ -480,6 +482,7 @@ Goal frontier 的等待、fallback 与重规划调用方保留 Python import 和
 summary 视图优先级、认领／排除分组及诊断计数下界交给既有 TS frontier owner，
 复用共同 claim-scope 规则。紧凑内部请求只携带事实与行坐标，不传 Todo 私有文案。
 明确为空的 executable 视图优先于旧显示行；诊断计数不会制造可执行工作或授予权限。
+十进制传输保留超出 JSON number 精度边界的 Python 整数观测值。
 真实 File/SQLite quota CLI 使用迁移前后同一独立断言。永久 Markdown 叙事投影、
 仍有调用方的 writer/capture、旧备份及原操作恢复继续保留。本批不转换数据或回执，
 不改变 provider 默认，也不代表全部 Python 或旧 writer 已退役。

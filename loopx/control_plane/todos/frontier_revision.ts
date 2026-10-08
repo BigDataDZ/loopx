@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import {inflateSync} from "node:zlib";
 import type { JsonObject } from "../effect_program.ts";
-import { requireJsonObject, requireBoolean, requireInteger, requireStringArray, optionalNonEmptyString } from "../runtime_decode.ts";
+import { requireJsonObject, requireBoolean, requireNonEmptyString, requireStringArray, optionalNonEmptyString } from "../runtime_decode.ts";
 import { EffectRuntimeRequestError } from "../effect_runtime_errors.ts";
 import { parseTodoTimestampMicros } from "../runtime_timestamp.ts";
 import { normalizeTodoAgent, stripPythonWhitespace } from "../coordination/todo_agents.ts";
@@ -249,15 +249,22 @@ function classifyFrontier(request: JsonObject, agent: string | null): JsonObject
     ? executable.filter(row => eligible(row) && row.claim === null && !excluded(row))
     : free.filter(row => eligible(row) && !excluded(row));
   const others = (executable ?? claimed).filter(row => eligible(row) && agent !== null && row.claim !== null && row.claim !== agent);
-  const floor = requireInteger(request.claimed_count_floor, "claimed_count_floor");
-  if (floor < 0) throw new EffectRuntimeRequestError("claimed count floor must be nonnegative");
+  // Python integer observations may exceed the JSON number precision boundary.
+  // Keep the floor exact in transit; selection still depends only on real rows.
+  const encodedFloor = requireNonEmptyString(request.claimed_count_floor, "claimed_count_floor");
+  if (!/^(0|[1-9][0-9]*)$/.test(encodedFloor)) {
+    throw new EffectRuntimeRequestError("claimed count floor must be canonical nonnegative decimal");
+  }
+  const floor = BigInt(encodedFloor);
+  const currentCount = floor > BigInt(current.length) ? floor : BigInt(current.length);
   const group = (source: string, rows: typeof free) => ({source, indices: rows.map(row => row.index)});
   return {groups: {
     current_agent_claimed_items: group(executable !== null ? "executable_backlog_items" : "claimed_advancement_open_items", current),
     unclaimed_items: group(executable !== null ? "executable_backlog_items" : "unclaimed_priority_open_items", unclaimed),
     other_agent_claimed_items: group(executable !== null ? "executable_backlog_items" : "claimed_advancement_open_items", others),
   }, counts: {
-    current_agent_claimed_advancement_count: Math.max(current.length, floor),
+    current_agent_claimed_advancement_count: currentCount <= BigInt(Number.MAX_SAFE_INTEGER)
+      ? Number(currentCount) : currentCount.toString(),
     unclaimed_advancement_count: unclaimed.length,
     other_agent_claimed_advancement_count: Math.max(others.length, (decode(request.diagnostic_peers) ?? []).filter(eligible).length),
   }};

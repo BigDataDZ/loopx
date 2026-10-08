@@ -24,7 +24,7 @@ test("summary classification shares claim scope and keeps visibility floors sepa
   const fact = (claim: string | null = null, excluded: string[] = [], actionable = true) =>
     ({claim, excluded, actionable, advancement: true});
   const request = {schema_version: "todo_frontier_revision_request_v0", operation: "classify",
-    agent_id: "worker-a", claimed_count_floor: 12, diagnostic_peers: [fact(), fact()],
+    agent_id: "worker-a", claimed_count_floor: "12", diagnostic_peers: [fact(), fact()],
     sources: {executable_backlog_items: [fact("worker-a"), fact(), fact("worker-b"),
       fact("worker-a", ["worker-a"]), fact(null, [], false)],
       unclaimed_priority_open_items: [fact()], claimed_advancement_open_items: [fact("worker-a")]}};
@@ -40,7 +40,9 @@ test("summary classification shares claim scope and keeps visibility floors sepa
   const fallback = projectAdvancementFrontier({...request, sources: {...request.sources, executable_backlog_items: null}});
   assert.deepEqual((fallback.groups as Record<string, unknown>).current_agent_claimed_items,
     {source: "claimed_advancement_open_items", indices: [0]});
-  for (const value of [-1, 0.5, "1"]) assert.throws(() => projectAdvancementFrontier({...request, claimed_count_floor: value}));
+  for (const value of ["-1", "0.5", "01", 1, false, "bad"]) assert.throws(() => projectAdvancementFrontier({...request, claimed_count_floor: value}));
+  const large = projectAdvancementFrontier({...request, claimed_count_floor: "9007199254740993"});
+  assert.equal((large.counts as Record<string, unknown>).current_agent_claimed_advancement_count, "9007199254740993");
   assert.throws(() => projectAdvancementFrontier({...request,
     sources: {...request.sources, executable_backlog_items: [{...fact(null, [], false), advancement: "true"}]}}));
 });

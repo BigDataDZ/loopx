@@ -62,6 +62,13 @@ def test_resume_readiness_is_an_observation_not_a_raw_condition_guess():
     assert agent_scoped_selectable_advancement_todo_ids({"executable_backlog_items": source}, agent_id="worker-a") == {"todo_ready"}
 
 
+@pytest.mark.parametrize("floor, expected", [(0, 0), ("12", 12), (9007199254740993, 9007199254740993)])
+def test_diagnostic_floor_preserves_python_integer_precision_without_selecting_work(floor, expected):
+    summary = {"executable_backlog_items": [], "current_agent_claimed_advancement_count": floor}
+    assert todo_advancement_frontier_counts(summary, agent_id="worker-a")["current_agent_claimed_advancement_count"] == expected
+    assert agent_scoped_selectable_advancement_todo_ids(summary, agent_id="worker-a") == set()
+
+
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
 def test_real_quota_frontier_reads_canonical_claims(tmp_path, monkeypatch, provider):
     from canonical_authority_fixture import promoted_create_fixture, isolate_sqlite_runtime

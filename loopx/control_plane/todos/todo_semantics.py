@@ -314,7 +314,7 @@ def _advancement_frontier_projection(
         "sources": {key: encode(items) for key, items in sources.items()},
         "diagnostic_peers": encode([item for item in diagnostic if isinstance(item, dict)])
             if isinstance(diagnostic, list) else None,
-        "claimed_count_floor": _positive_int(summary.get("current_agent_claimed_advancement_count")),
+        "claimed_count_floor": str(_positive_int(summary.get("current_agent_claimed_advancement_count"))),
     })
     if not isinstance(result, dict) or not isinstance(result.get("groups"), dict) or not isinstance(result.get("counts"), dict):
         raise TypeError("invalid typed advancement frontier projection")
@@ -329,6 +329,10 @@ def _advancement_frontier_projection(
             raise TypeError("invalid typed advancement frontier index")
         groups[key] = [source[index] for index in indices]
     counts = result["counts"]
+    current_key = "current_agent_claimed_advancement_count"
+    encoded_count = counts.get(current_key)
+    if isinstance(encoded_count, str) and re.fullmatch(r"0|[1-9][0-9]*", encoded_count):
+        counts[current_key] = int(encoded_count)
     if set(counts) != {"current_agent_claimed_advancement_count", "unclaimed_advancement_count", "other_agent_claimed_advancement_count"} or any(type(count) is not int or count < 0 for count in counts.values()):
         raise TypeError("invalid typed advancement frontier counts")
     return groups, counts
