@@ -942,7 +942,7 @@ explicit runtime-root applies to both intent and Todo IO. Frozen editorial
 requests retain their original basis. See [operation and boundaries](../../../loopx/capabilities/periodic_report/README.md#todo-authority-and-report-retries).
 Native Vision-successor milestone staging consumes the existing typed accepted
 replan obligation without requiring an optional monitor frontier identity, and
-binds its ACK to the successor's durable Vision writeback. Explicit frontier
+binds its ACK to the successor's persisted run, including same-second writes. Explicit frontier
 receipts remain compatible. This qualifies the existing `refresh-state` report
 producer; direct Turn hook adoption and historical frontier recovery remain
 separate [post-writeback hook boundaries](provider-neutral-post-writeback-capability-hooks-v0.md).
