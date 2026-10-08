@@ -354,6 +354,29 @@ def test_terminal_stage_requires_the_current_agents_closed_vision(
     assert (receipt is not None) is expected
 
 
+def test_active_vision_cannot_settle_an_older_terminal_stage() -> None:
+    projection = {
+        "terminal_state": {
+            "schema_version": "goal_terminal_state_v0",
+            "kind": "no_followup",
+            "derived": True,
+            "source": "validated_goal_closure",
+        }
+    }
+    assert derive_periodic_report_stage_completion_from_runs(
+        latest_runs=[
+            {"agent_vision": _vision(
+                state="active", generated_at="2026-08-29T11:00:00Z"
+            )},
+            {"agent_vision": _vision(
+                state="vision_closed", generated_at="2026-08-29T10:00:00Z"
+            ), "vision_checkpoint": _checkpoint()},
+        ],
+        agent_id="case-analyst",
+        goal_frontier_projection=projection,
+    ) is None
+
+
 @pytest.mark.parametrize("newer_at", ["2026-08-29T10:00:00Z", "2026-08-29T12:00:00Z"])
 @pytest.mark.parametrize("satisfied", [False, True])
 def test_terminal_stage_cannot_skip_a_newer_nonmaterial_closed_vision(

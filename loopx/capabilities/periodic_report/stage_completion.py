@@ -206,6 +206,7 @@ def derive_periodic_report_stage_completion_from_runs(
     goal_frontier_projection: Mapping[str, Any],
     settled_replan_obligation: Mapping[str, Any] | None = None,
     settled_replan_ack: Mapping[str, Any] | None = None,
+    source_run_path: str | None = None,
 ) -> dict[str, Any] | None:
     """Derive the boundary from durable runtime history and current frontier."""
 
@@ -253,6 +254,11 @@ def derive_periodic_report_stage_completion_from_runs(
             goal_terminal_state=terminal_state,
         )
     if successor_vision is None:
+        return None
+    if (
+        source_run_path is not None
+        and _mapping(successor_run).get("json_path") != source_run_path
+    ):
         return None
     ack = _mapping(settled_replan_ack)
     if not _text(ack.get("frontier_identity")):

@@ -151,13 +151,56 @@ def test_native_successor_produces_only_an_enabled_bounded_intent(
     assert len(list(sidecar_dir.glob("*.json"))) == 1
 
 
+def test_later_same_second_refresh_cannot_report_an_earlier_successor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "loopx.state_refresh.now_local", lambda: "2026-10-08T10:00:00+00:00"
+    )
+    runtime, _closed, successor, _replay = _native_successor(tmp_path, enabled=False)
+    registry = tmp_path / "project" / ".loopx" / "registry.json"
+    project = tmp_path / "project"
+    data = json.loads(registry.read_text(encoding="utf-8"))
+    data["goals"][0]["control_plane"] = {
+        "periodic_report": {
+            "enabled": True, "profile_preset": "weekly", "route_ref": "project-room"
+        }
+    }
+    registry.write_text(json.dumps(data), encoding="utf-8")
+
+    ordinary = _run_cli([
+        "--registry", str(registry), "--runtime-root", str(runtime),
+        "--format", "json", "refresh-state", "--goal-id", GOAL_ID,
+        "--delivery-workspace-path", str(project), "--agent-id", AGENT_ID,
+        "--delivery-batch-scale", "implementation", "--delivery-outcome", "outcome_progress",
+        "--no-global-sync", "--suppress-external-sinks",
+        "--classification", "fixture_ordinary_progress",
+    ])
+    assert ordinary["appended"] is True
+    assert ordinary["generated_at"] == successor["generated_at"]
+    assert ordinary["json_path"] != successor["json_path"]
+    copied_ack = {**ordinary, "autonomous_replan_ack": successor["autonomous_replan_ack"]}
+    assert build_periodic_report_post_writeback_projection(
+        payload=successor, registry_path=registry, runtime_root=runtime,
+        goal_id=GOAL_ID, agent_id=AGENT_ID,
+    )["stage_completion"]["transition"] == "successor_frontier_settled"
+    assert build_periodic_report_post_writeback_projection(
+        payload=copied_ack, registry_path=registry, runtime_root=runtime,
+        goal_id=GOAL_ID, agent_id=AGENT_ID,
+    ).get("stage_completion") is None
+    assert pending_periodic_report_intents(
+        registry_path=registry, runtime_root=runtime,
+        goal_id=GOAL_ID, agent_id=AGENT_ID,
+    ) == []
+
+
 @pytest.mark.parametrize("later_second", [False, True], ids=["same-second", "next-second"])
 def test_unacknowledged_vision_edit_cannot_borrow_native_successor_ack(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, later_second: bool,
 ) -> None:
     clock = ["2026-10-08T10:00:00+00:00"]
     monkeypatch.setattr("loopx.state_refresh.now_local", lambda: clock[0])
-    runtime, closed, successor, _replay = _native_successor(tmp_path, enabled=True)
+    runtime, closed, successor, _replay = _native_successor(tmp_path, enabled=False)
     registry = tmp_path / "project" / ".loopx" / "registry.json"
     project = tmp_path / "project"
 
@@ -197,3 +240,10 @@ def test_unacknowledged_vision_edit_cannot_borrow_native_successor_ack(
         Path(edit["json_path"]).read_text(encoding="utf-8")
     )
     assert projection(edit).get("stage_completion") is None
+    assert projection(successor)["stage_completion"]["transition"] == (
+        "successor_frontier_settled"
+    )
+    assert pending_periodic_report_intents(
+        registry_path=registry, runtime_root=runtime,
+        goal_id=GOAL_ID, agent_id=AGENT_ID,
+    ) == []
