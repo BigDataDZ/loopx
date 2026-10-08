@@ -24,6 +24,37 @@ transfer, or a default change.
 
 ## 1. Decision summary
 
+### First supported user outcome
+
+The first bounded user promise is recovery of one local Goal after its source
+workspace is unavailable or no longer trusted. The qualified profile is a
+packaged local LoopX environment on a qualified POSIX host, with File/SQLite
+authority and a backup plus external manifest available to the operator.
+
+At M1, the operator can verify that backup and inspect the result from the
+existing Settings/Capability Center entry. The view distinguishes durable Goal
+outcomes and progress that were found and remain readable, historical-only
+state, and work that is unknown or cannot be recovered. Each blocked item names
+its existing decision owner and exactly one next action. Byte verification never
+means that the Goal can execute.
+
+At M3, the operator can choose the verified backup, preview impact, confirm
+controlled adoption into a replacement environment of the same profile, resolve
+owner holds, and return to the same product entry to see the result. After the
+existing Goal, authority, session, and effect owners admit the destination, the
+Goal can continue unfinished work and produce a separately accepted result.
+Work after the captured owner checkpoints, including volatile in-flight work,
+may be reported lost or unknown; recovery never guesses it back.
+
+The required human actions are to supply the backup and manifest, choose a new
+empty destination, reauthenticate or rebind credentials when owners require it,
+resolve visible holds, and confirm adoption. Ordinary restart or session
+continuation while the original workspace and authority remain available stays
+with the existing session and execution owners. This RFC owns disaster recovery
+from backup when that ordinary path is unavailable or unsafe. The profile's RPO
+and RTO targets, baselines, and stop conditions must be frozen before the M3
+drill; this RFC does not invent them in advance.
+
 This RFC makes seven decisions:
 
 1. A `backup-state` archive is one immutable **verification unit**, called a
@@ -119,6 +150,8 @@ new monolithic restore owner would become a second authority.
   rollback limits, and independent readback.
 - File/SQLite, service-owned PostgreSQL, and future provider profiles behind one
   provider-neutral logical contract.
+- The first qualified end-to-end profile: one local Goal in a packaged local
+  LoopX environment on a qualified POSIX host with File/SQLite authority.
 
 ### Non-goals
 
@@ -132,6 +165,8 @@ new monolithic restore owner would become a second authority.
 - Live restore or automatic activation in the RFC pull request.
 - Declaring a platform, filesystem, provider, RPO, or RTO qualified without its
   own measured acceptance evidence.
+- Qualifying multi-Goal recovery, service providers, cross-machine transport, or
+  unattended activation as part of the first end-to-end profile.
 
 ### Relationship to existing recovery contracts
 
@@ -267,6 +302,14 @@ or forward repair; it cannot simply delete the journal.
 The M1 verify/audit slice stops at `audited` or `held`. Neither state grants
 execution authority.
 
+The packaged M1 surface renders this audit through the existing
+Settings/Capability Center entry rather than adding a new top-level workflow.
+For each discovered asset, it shows one of: recovered and readable,
+historical-only, or unknown/unrecoverable. It also shows the responsible
+existing owner and exactly one next action. A valid digest, SQLite check, or
+configuration check may make an asset readable; none of them makes it
+executable.
+
 ### Capture consistency profiles
 
 Profiles describe evidence, not marketing tiers:
@@ -401,6 +444,26 @@ NoKV or another provider is unsupported until its profile independently proves
 the same logical contract. A generic filesystem copy cannot stand in for a
 provider profile.
 
+### Implementation ownership and reuse evidence
+
+M3 implementation records a decision-owner matrix before code is admitted. For
+each Goal identity, authority, lease/session, and effect disposition, the matrix
+names:
+
+- the existing TypeScript decision owner and reviewed API that remains
+  authoritative;
+- the backward-compatible reader retained for existing v0 archives and
+  historical receipts;
+- any duplicate decision rule or migrated caller that can be deleted;
+- the real CLI or packaged-product consumer that exercises the owner and reads
+  its result back.
+
+Implementation progress is measured by fewer locations that independently make
+the same decision, a shorter trace from each real consumer to its owner, lower
+caller-location and verification cost, and behavior-preservation evidence for
+positive, rejection, retry, and stale-generation cases. Counts of enums, RPCs,
+files, or newly introduced types are inventory, not progress evidence.
+
 ## 6. Alternatives and design choices
 
 ### Raw extraction
@@ -502,6 +565,7 @@ reconciliation is mandatory.
 | Archive and manifest bind exactly | Change archive, external manifest, embedded manifest, backup ID, or digest | Verification rejects before extraction publication | Does not prove semantic consistency |
 | Extraction is confined | Absolute/traversal paths, escaping links, duplicate/case/Unicode collisions, special files, expansion limits | No write outside staging; typed rejection; prior audit unchanged | Platform matrix is explicit |
 | M1 stays inert | Verify/extract while monitoring registries, processes, providers, network, leases, timers, and effects | Only new workspace/audit bytes; `execution_authority_granted=false` | No activation claim |
+| M1 audit is understandable in product | Open a verified or held audit through the packaged Settings/Capability Center entry | Found assets are classified as recovered/readable, historical-only, or unknown/unrecoverable; every blocked item has its owner and exactly one next action; byte verification is not shown as execution permission | Read-only; no restore or activation claim |
 | SQLite and configuration remain valid | Corrupt snapshots and configuration; valid WAL-backed fixture | Independent integrity and owner verification; corruption rejects | Other owners need their own verifier |
 | v0 uncertainty is honest | Verify current archives with missing component revisions/profiles | Useful byte audit plus `legacy_manifest_incomplete`; activation ineligible | No inferred timestamp consistency |
 | Capture profiles are truthful | Concurrent writers, quiescence failure, crash journals, required-component downgrade | Achieved profile is no stronger than evidence; incomplete required component fails | External system state stays external |
@@ -514,7 +578,9 @@ reconciliation is mandatory.
 | Partial adoption is fail-closed | Fail each owner before/after effect and acknowledgement | Retry converges through owner readback; required failure keeps admission closed | No global rollback claim |
 | New live work blocks byte rollback | Complete adoption, perform a new write, request rollback | Generic rollback rejects; fenced forward export/import required | Pre-mutation inert workspace remains removable |
 | Privacy boundary holds | Archive with credentials, private paths, session content, and provider errors | Public output contains only bounded redacted facts | Private audit remains private |
-| Product journey is complete | Qualified CLI and packaged frontend; separately qualified Lark path | Preview, verify, audit, plan, confirm, interruption/retry, activation readback, original-entry result | M1 alone does not satisfy this row |
+| M3 restores one Goal end to end | In the first supported profile, complete part of one Goal, leave a task unfinished, inject failures at each critical owner commit point, then recover through the packaged journey | The operator selects a backup, previews impact, confirms, resolves holds, and retries; original owners admit the destination; the unfinished task continues to a separately accepted result visible at the original entry | Source workspace is unavailable; one local Goal, qualified POSIX host, File/SQLite authority |
+| M3 recovery outcome and cost are measured | Record captured checkpoints, recovered and lost/unknown work, elapsed time, human interventions, holds, and protected external operations; freeze targets before the drill | Protected duplicate operations equal zero; repeat failure or unknown outcome visibly holds with owner and continuation condition; measured RPO/RTO is compared with the pre-frozen target | No target is invented after results are known |
+| M3 reuses existing decision owners | Review the decision-owner matrix and trace real CLI/product consumers through positive, rejection, retry, and stale-generation cases | Compatible historical readers remain; duplicate decision rules and migrated callers are deleted where proven redundant; independent readback preserves behavior and reduces repeated decisions and caller-location/verification cost | Enum, RPC, type, and file counts do not establish progress |
 
 Acceptance records passed, failed, skipped, and untested rows separately.
 Provider or platform skips are not green. Fault tests use disposable synthetic
@@ -533,6 +599,8 @@ Every status exposes:
 - requested and achieved capture profile;
 - required/optional component counts by owner;
 - verified, invalid, missing, ambiguous, unsupported, and unknown counts;
+- recovered/readable, historical-only, and unknown/unrecoverable asset counts,
+  with the responsible owner for every blocked item;
 - current phase, last durable owner receipt, retryability, and one next action;
 - whether source and destination writer fences are established;
 - `execution_authority_granted`, which remains false for verification/recovery.
@@ -555,19 +623,27 @@ and data size but makes no recovery-time claim. Alerts distinguish corrupt input
 unsupported schema, capacity, missing dependency, fence failure, unknown effect,
 and pending delivery.
 
+M3 drill receipts additionally report captured checkpoints, recovered work,
+lost or unknown work, elapsed time, human interventions, and protected duplicate
+operations. A repeated failure or unknown outcome remains visibly held with its
+owner, continuation condition, and one next action.
+
 ## 11. Normative delivery plan
 
 | Milestone | Shipped behavior | Entry gate | Exit evidence | Rollback |
 | --- | --- | --- | --- | --- |
-| M1: verify and inert audit | Existing v0 archive verification, safe extraction to a new workspace, SQLite/configuration checks, owner/dependency inventory, `execution_authority_granted=false` | Accepted RFC; frozen limits and audit schema | CLI dry-run/execute, malicious archive negatives, v0 fixtures, no-live-mutation proof, docs/public-private checks | Remove never-adopted workspace and audit |
+| M1: verify and readable inert audit | Existing v0 archive verification, safe extraction to a new workspace, SQLite/configuration checks, owner/dependency inventory, and a read-only Settings/Capability Center view of recovered/readable, historical-only, and unknown/unrecoverable assets with owner and one next action; `execution_authority_granted=false` | Accepted RFC; frozen limits and audit schema | CLI dry-run/execute, packaged view, malicious archive negatives, v0 fixtures, no-live-mutation proof, docs/public-private checks | Remove never-adopted workspace and audit |
 | M2: declared capture profiles | Component manifest revision; online/quiescent/crash-consistent capture facts and downgrade findings | M1 plus complete mutable-owner inventory | Concurrent/quiescence/crash fixtures on qualified platforms; schema size/compatibility evidence | Continue v0 creation; verifier dual-reads |
-| M3: one complete local recovery | File/SQLite destination import, Goal/provider identity decisions, stale execution invalidation, effect/delivery reconciliation, controlled local admission | M1; relevant M2 profile; Goal, authority, session, and effect owner support | Real disposable runtime from capture through new work and original-entry result; crash at every owner boundary; old writer rejects | Before new work, owner compensation; afterward fenced forward export/import |
+| M3: first packaged local Goal recovery | In the first supported profile, select a backup, preview impact, confirm, restore one Goal into the same kind of packaged local environment, resolve or retry holds, obtain original-owner admission, continue unfinished work, and read a separately accepted result at the original entry | M1; relevant M2 profile; qualified POSIX/File/SQLite profile; Goal, authority, session, and effect owner support; decision-owner matrix; pre-frozen drill targets | Complete some work and leave a task unfinished before capture; fail every critical owner commit point; record recovered and lost/unknown work, elapsed time, human interventions, visible hold continuation conditions, behavior-preserving owner reuse, and zero protected duplicate operations; prove old writers reject | Before new work, owner compensation; afterward fenced forward export/import |
 | M4: service/provider profiles | Service-owned PostgreSQL and separately admitted providers with restore-incarnation, tenant, credential-rebind, capacity, and availability evidence | M3 semantic contract and provider-specific operations review | Real backup/restore, ambiguous commit, old-service writer, failover and receipt/cursor readback | Provider's reviewed export/source-selection workflow |
-| M5: product and operational qualification | Packaged frontend plus qualified transports, retention, drills, measured RPO/RTO, and supported platform matrix | At least one M3/M4 profile approved for the target release | Operator drill, interrupted recovery, human takeover, accessibility/audience review, release runbook | Disable activation entry; retain verify/audit and historical receipts |
+| M5: expanded operational qualification | Additional transports and platforms, retention policy, recurring drills, measured RPO/RTO qualification, and release operating eligibility | At least one M3/M4 profile approved for the target release | Transport/platform-specific drills, interrupted recovery, human takeover, retention proof, accessibility/audience review, and release runbook | Disable activation entry; retain verify/audit and historical receipts |
 
-Each milestone is independently useful. M1 is a safe diagnostic; M2 improves
-future backups without activating them; M3 is the first complete local restore;
-M4 and M5 expand qualified profiles rather than making M3 retroactively safe.
+Each milestone is independently useful. M1 makes recovered evidence readable in
+the existing packaged product without activation. M2 improves future backups
+without activating them. M3 fulfills the first end-to-end user promise for one
+local Goal. M4 adds provider profiles, while M5 expands transport, platform,
+retention, and operating qualification; neither defers the basic M1/M3 product
+journey or makes an earlier profile retroactively safe.
 
 The RFC pull request implements none of these runtime milestones.
 

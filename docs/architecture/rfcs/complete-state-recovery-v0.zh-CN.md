@@ -20,6 +20,29 @@ RFC 只授权有界实现切片，不授权真实恢复、provider 晋升、凭�
 
 ## 1. 决策摘要
 
+### 首个支持的用户结果
+
+首个有界用户承诺是：一个本地 Goal 的来源工作区不可用或不再可信后，用户可以恢复
+该 Goal。取得资格的 profile 是运行在合格 POSIX host 上的 packaged local LoopX
+环境，使用文件／SQLite authority，且 operator 持有 backup 与 external manifest。
+
+在 M1，operator 可以验证该备份，并从既有 Settings/Capability Center 入口查看结果。
+该视图区分：已经找回并保持可读的 durable Goal outcome 与进度、仅可作为历史读取的
+状态，以及未知或不可恢复的工作。每个阻塞项都标明其既有 decision owner 和唯一
+next action。字节验证通过绝不表示 Goal 可以执行。
+
+在 M3，operator 可以选择已验证备份、预览影响、确认受控 adoption 到同 profile 的
+替代环境、处理 owner hold，并回到同一产品入口查看结果。既有 Goal、authority、
+session 和 effect owner 准入目标后，该 Goal 可以继续未完成工作并产出一个独立验收
+通过的结果。Owner checkpoint 之后的工作，包括易失的进行中工作，可以报告为丢失
+或未知；恢复流程绝不猜测性补回它们。
+
+必要人工动作是提供 backup 与 manifest、选择新的空目标、按 owner 要求重新认证或
+绑定 credential、处理可见 hold，并确认 adoption。当原工作区与 authority 仍可用
+时，日常重启或 session 接续仍归既有 session 与 execution owner。本 RFC 负责的是
+该普通路径不可用或不安全时从备份进行灾难恢复。该 profile 的 RPO/RTO 目标、基线
+与停止条件必须在 M3 演练前冻结；本 RFC 不预先编造这些数值。
+
 本 RFC 作出七项决策：
 
 1. 一个 `backup-state` 归档是一个不可变的**验证单元**，称为恢复集。它不是跨
@@ -99,6 +122,8 @@ reconciliation 和 readback。任何单独 owner 都不能安全推断其他 own
 - 目标和旧 writer fencing、局部失败、幂等重试、回滚限制及独立 readback。
 - 在同一个 provider-neutral 逻辑契约后支持文件／SQLite、服务自有 PostgreSQL
   和未来 provider profile。
+- 首个取得端到端资格的 profile：合格 POSIX host 上 packaged local LoopX 环境中的
+  一个本地 Goal，并使用文件／SQLite authority。
 
 ### 非目标
 
@@ -111,6 +136,8 @@ reconciliation 和 readback。任何单独 owner 都不能安全推断其他 own
 - 在本 RFC 拉取请求中实现 live restore 或自动 activation。
 - 在没有自身实测验收证据时，宣称某个 platform、filesystem、provider、RPO 或
   RTO 已具备资格。
+- 把多 Goal 恢复、服务 provider、跨机器传输或无人值守 activation 纳入首个端到端
+  profile 的资格范围。
 
 ### 与既有恢复契约的关系
 
@@ -232,6 +259,11 @@ applying -> complete`
 M1 verify/audit 切片终止在 `audited` 或 `held`。两种状态都不授予 execution
 authority。
 
+Packaged M1 界面通过既有 Settings/Capability Center 入口呈现该 audit，而不新增
+顶层 workflow。每个发现的资产显示为以下一种：已找回且可读、仅历史可读，或未知／
+不可恢复。界面同时显示负责的既有 owner 和唯一 next action。有效 digest、SQLite
+check 或 configuration check 可以使资产可读，但都不能使其可执行。
+
 ### 捕获一致性 profile
 
 Profile 描述证据，不是市场等级：
@@ -352,6 +384,21 @@ grant。协调器记录这些 receipt，但不能铸造或扩大它们。
 identity；Agent 永远不获得数据库访问权。NoKV 或其他 provider 在独立证明同一
 逻辑契约前不受支持。通用 filesystem copy 不能代替 provider profile。
 
+### 实现归属与复用证据
+
+M3 实现必须在代码准入前记录 decision-owner matrix。对于每个 Goal identity、
+authority、lease/session 和 effect disposition，该矩阵必须标明：
+
+- 保持 authoritative 的既有 TypeScript decision owner 及其经评审 API；
+- 为既有 v0 archive 与历史 receipt 保留的向后兼容 reader；
+- 可以删除的重复决策规则或已迁移 caller；
+- 实际调用该 owner 并回读结果的 CLI 或 packaged-product consumer。
+
+实现进展以这些证据衡量：独立作出同一决策的位置减少；真实 consumer 到 owner 的
+trace 缩短；caller 定位与验证成本降低；positive、rejection、retry 和
+stale-generation 场景下的行为保持不变。Enum、RPC、文件或新增类型的数量只是
+inventory，不是进展证据。
+
 ## 6. 替代方案与设计选择
 
 ### 原始提取
@@ -443,6 +490,7 @@ outcome，必须 forward reconcile。
 | Archive 与 manifest 精确绑定 | 修改 archive、external manifest、embedded manifest、backup ID 或 digest | 发布提取前拒绝验证 | 不证明语义一致性 |
 | 提取被限制在工作区内 | Absolute/traversal path、escaping link、duplicate/case/Unicode collision、special file、expansion limit | Staging 外零写入；typed rejection；先前 audit 不变 | 明确列出 platform matrix |
 | M1 保持惰性 | Verify/extract 时监控 registry、process、provider、network、lease、timer 与 effect | 只有新 workspace/audit 字节；`execution_authority_granted=false` | 不声明 activation |
+| M1 audit 在产品内可理解 | 通过 packaged Settings/Capability Center 入口打开 verified 或 held audit | 找回的资产被分类为已恢复／可读、仅历史可读或未知／不可恢复；每个阻塞项都有 owner 和唯一 next action；字节验证不会显示为执行权限 | 只读；不声明 restore 或 activation |
 | SQLite 与配置保持有效 | 损坏 snapshot 与配置；有效 WAL-backed fixture | 独立 integrity 与 owner verification；损坏时拒绝 | 其他 owner 需要自己的 verifier |
 | 如实表达 v0 不确定性 | 验证缺少 component revision/profile 的当前 archive | 有用的字节审计加 `legacy_manifest_incomplete`；不具备 activation 资格 | 不推断 timestamp consistency |
 | Capture profile 真实 | Concurrent writer、quiescence failure、crash journal、required-component downgrade | Achieved profile 不强于证据；必要组件不完整时失败 | 外部系统状态仍在外部 |
@@ -455,7 +503,9 @@ outcome，必须 forward reconcile。
 | Partial adoption fail closed | 每个 owner 在 effect 和 acknowledgement 前后失败 | 通过 owner readback 重试收敛；必要失败保持 admission closed | 不声明 global rollback |
 | 新 live work 阻止字节回滚 | 完成 adoption，执行新写入，再请求 rollback | 拒绝 generic rollback；要求 fenced forward export/import | Mutation 前 inert workspace 仍可删除 |
 | 隐私边界成立 | 含 credential、private path、session content 和 provider error 的 archive | Public output 只含有界脱敏事实 | Private audit 仍私有 |
-| 产品旅程完整 | Qualified CLI 与 packaged frontend；另行 qualified Lark path | Preview、verify、audit、plan、confirm、interruption/retry、activation readback 及原入口结果 | 仅 M1 不满足本行 |
+| M3 端到端恢复一个 Goal | 在首个支持 profile 中先完成一个 Goal 的部分工作并保留未完成任务，在每个关键 owner commit point 注入故障，再通过 packaged journey 恢复 | Operator 选择备份、预览影响、确认、处理 hold 并重试；原 owner 准入目标；未完成任务继续产出独立验收通过且可在原入口读取的结果 | 来源工作区不可用；一个本地 Goal、合格 POSIX host、文件／SQLite authority |
+| M3 恢复结果与成本可测量 | 记录捕获 checkpoint、找回及丢失／未知工作、耗时、人工介入、hold 和受保护外部 operation；演练前冻结目标 | 受保护重复 operation 数为零；再次失败或未知结果以可见 hold 显示 owner 与继续条件；将实测 RPO/RTO 与预先冻结的目标比较 | 不能在结果已知后编造目标 |
+| M3 复用既有 decision owner | 评审 decision-owner matrix，并通过真实 CLI／产品 consumer 跟踪 positive、rejection、retry 与 stale-generation 场景 | 保留兼容历史 reader；删除已证明冗余的重复决策规则与迁移后 caller；独立 readback 在保持行为的同时减少重复决策及 caller 定位／验证成本 | Enum、RPC、类型与文件数量不证明进展 |
 
 验收记录必须分别列出 passed、failed、skipped 和 untested。Provider 或 platform skip
 不算绿色。故障测试使用 disposable synthetic state 与真实受影响存储边界，绝不恢复
@@ -473,6 +523,8 @@ outcome，必须 forward reconcile。
 - 请求和达成的 capture profile；
 - 按 owner 分类的 required/optional component count；
 - verified、invalid、missing、ambiguous、unsupported 和 unknown count；
+- 已恢复／可读、仅历史可读及未知／不可恢复的资产数量，并为每个阻塞项标明负责
+  owner；
 - 当前 phase、最后一个 durable owner receipt、retryability 与唯一 next action；
 - source 与 destination writer fence 是否建立；
 - `execution_authority_granted`，对 verification/recovery 始终为 false。
@@ -492,19 +544,25 @@ RPO 与 RTO 取决于 profile 和 provider。M1 报告 verification duration 与
 但不作 recovery-time 声明。Alert 区分 corrupt input、unsupported schema、capacity、
 missing dependency、fence failure、unknown effect 和 pending delivery。
 
+M3 演练 receipt 还必须报告捕获 checkpoint、找回的工作、丢失或未知工作、耗时、
+人工介入及受保护的重复 operation。再次失败或结果未知时保持可见 held 状态，并
+显示其 owner、继续条件和唯一 next action。
+
 ## 11. 规范性交付计划
 
 | 里程碑 | 交付行为 | 入口门槛 | 退出证据 | 回滚 |
 | --- | --- | --- | --- | --- |
-| M1：verify 与 inert audit | 验证既有 v0 archive、安全提取到新 workspace、SQLite/configuration check、owner/dependency inventory、`execution_authority_granted=false` | 已接受 RFC；冻结 limit 与 audit schema | CLI dry-run/execute、恶意 archive 负例、v0 fixture、无 live mutation 证明、docs/public-private check | 删除从未 adoption 的 workspace 与 audit |
+| M1：verify 与可读 inert audit | 验证既有 v0 archive、安全提取到新 workspace、SQLite/configuration check、owner/dependency inventory，并在只读 Settings/Capability Center 视图中显示已恢复／可读、仅历史可读及未知／不可恢复的资产及其 owner 和唯一 next action；`execution_authority_granted=false` | 已接受 RFC；冻结 limit 与 audit schema | CLI dry-run/execute、packaged view、恶意 archive 负例、v0 fixture、无 live mutation 证明、docs/public-private check | 删除从未 adoption 的 workspace 与 audit |
 | M2：声明 capture profile | Component manifest revision；online/quiescent/crash-consistent 捕获事实与 downgrade finding | M1 加完整 mutable-owner inventory | Qualified platform 上的 concurrent/quiescence/crash fixture；schema size/compatibility 证据 | 继续创建 v0；verifier dual-read |
-| M3：一次完整本地恢复 | File/SQLite destination import、Goal/provider identity 决策、stale execution 失效、effect/delivery reconciliation、受控本地 admission | M1；相关 M2 profile；Goal、authority、session 与 effect owner 支持 | 真实 disposable runtime 从 capture 到新工作和原入口结果；每个 owner boundary crash；旧 writer 拒绝 | 新工作前 owner compensation；之后 fenced forward export/import |
+| M3：首次 packaged local Goal 恢复 | 在首个支持 profile 中选择备份、预览影响、确认、把一个 Goal 恢复到同类 packaged local 环境、处理或重试 hold、取得原 owner 准入、继续未完成工作，并在原入口读取独立验收通过的结果 | M1；相关 M2 profile；合格 POSIX／文件／SQLite profile；Goal、authority、session 与 effect owner 支持；decision-owner matrix；预先冻结的演练目标 | 捕获前先完成部分工作并留下未完成任务；使每个关键 owner commit point 失败；记录找回及丢失／未知工作、耗时、人工介入、可见 hold 的继续条件、保持行为的 owner 复用及零受保护重复 operation；证明旧 writer 拒绝 | 新工作前 owner compensation；之后 fenced forward export/import |
 | M4：service/provider profile | 服务自有 PostgreSQL 与单独准入 provider，包含 restore-incarnation、tenant、credential-rebind、capacity 与 availability 证据 | M3 语义契约与 provider-specific operations review | 真实 backup/restore、ambiguous commit、old-service writer、failover 及 receipt/cursor readback | Provider 经评审的 export/source-selection workflow |
-| M5：产品与运行资格 | Packaged frontend、qualified transport、retention、drill、实测 RPO/RTO 及支持的 platform matrix | 至少一个 M3/M4 profile 获目标 release 批准 | Operator drill、interrupted recovery、human takeover、accessibility/audience review、release runbook | 禁用 activation 入口；保留 verify/audit 与历史 receipt |
+| M5：扩展运行资格 | 新增 transport 与 platform、retention policy、定期 drill、实测 RPO/RTO 资格及 release 运行准入 | 至少一个 M3/M4 profile 获目标 release 批准 | Transport/platform 专项 drill、interrupted recovery、human takeover、retention proof、accessibility/audience review 与 release runbook | 禁用 activation 入口；保留 verify/audit 与历史 receipt |
 
-每个 milestone 都独立有用。M1 是安全 diagnostic；M2 改进未来 backup 但不激活；
-M3 是第一次完整 local restore；M4 和 M5 扩展 qualified profile，而不是追溯性地让
-M3 变安全。
+每个 milestone 都独立有用。M1 在不 activation 的情况下，让恢复证据可以从既有
+packaged product 中读取。M2 改进未来 backup，但不激活。M3 为一个本地 Goal 完成
+首个端到端用户承诺。M4 增加 provider profile；M5 扩展 transport、platform、
+retention 与运行资格。后二者都不会推迟基本的 M1/M3 产品旅程，也不会追溯性地让
+更早的 profile 变安全。
 
 本 RFC 拉取请求不实现任何上述 runtime milestone。
 
