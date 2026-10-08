@@ -940,6 +940,12 @@ retry ordering, retiring Python selection/sorting loops. Offset-aware instants
 retain microseconds, canonical archived rejection records remain effective, and
 explicit runtime-root applies to both intent and Todo IO. Frozen editorial
 requests retain their original basis. See [operation and boundaries](../../../loopx/capabilities/periodic_report/README.md#todo-authority-and-report-retries).
+Native Vision-successor milestone staging consumes the existing typed accepted
+replan obligation without requiring an optional monitor frontier identity, and
+binds its ACK to the successor's persisted run, including same-second writes. Explicit frontier
+receipts remain compatible. This qualifies the existing `refresh-state` report
+producer; direct Turn hook adoption and historical frontier recovery remain
+separate [post-writeback hook boundaries](provider-neutral-post-writeback-capability-hooks-v0.md).
 This closes that T3/L5 consumer family, not D1 permanent display freshness,
 D2 durability, D3 whole-Goal qualification or default-provider selection. The
 remaining work is classified in the current reconciled inventory.
@@ -2176,6 +2182,15 @@ Public `todo_summary_v0` and persisted records do not change. Full-source
 relationship evaluation is reused before selection, and source completeness is
 preserved independently of query matching. See [semantics and rollback](../../reference/todo-work-counts.md).
 This advances T3/L5; it does not replace D2/D3 or flip a provider default.
+
+The existing typed frontier owner also classifies claimant/exclusion lanes and
+exact diagnostic floors for wait, fallback and replan readers. One Goal-context
+reduction shares fresh counts with its nested helpers, while standalone calls
+remain fresh. Python retains fact/result codecs and original row identity;
+there is no persisted cache, new packet field or changed execution authority.
+The same real File/SQLite entrypoints must qualify functional parity and the
+original full-CLI cost gate together. Fewer crossings alone do not explain a
+whole-CLI tail regression or complete writer/backup/default-provider retirement.
 
 2026-09-24: [Typed complete-source assembly and remaining delivery packages](ledger/shared-goal-authority-state-provider-v0/2026-09-24-source-capture.md) unify source construction, identity rejection and current-graph membership; L7/D2/D3 and provider defaults remain open.
 
