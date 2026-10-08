@@ -462,6 +462,14 @@ identity. Native Vision-successor ACKs use the matching accepted
 identity. The native ACK and successor Vision must occupy the same persisted
 run; a separate unacknowledged Vision edit cannot reuse that acceptance even
 when both writes share a timestamp.
+Only the exact refresh that durably wrote the selected accepted successor
+Vision and ACK may emit its successor milestone. A later Todo completion or
+ordinary refresh cannot first report that older boundary; terminal settlement
+may still follow a later Todo completion while the closed Vision remains current.
+Exact-source retry uses the run-index append prefix through that refresh, so
+a later Vision edit does not displace the original successor. Legacy
+unpromoted Todo state does not yet provide historical frontier readback, so
+retry after later Todo mutation remains dependent on current frontier facts.
 Ordinary Todo completion, Todo-count thresholds, elapsed time, setup work, and
 generic replan causes such as blockers, succession gaps, long Todo chains, or
 monitor exhaustion are evidence or control-plane context only; they never
