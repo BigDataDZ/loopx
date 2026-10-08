@@ -81,6 +81,15 @@ test("authoring plan cannot grant terminal, executor, or non-user gate semantics
   assert.equal(plan({}, {command: "update", todo: {status: "done", task_class: "legacy"}}).status, "done");
 });
 
+test("create reports draft class violations before inferring response scope", () => {
+  assert.throws(() => plan({bound_agent: "agent-a"}), /user todo requires explicit --task-class/);
+  for (const flags of [{global_gate: true}, {blocks_agent: "agent-a"}]) {
+    assert.throws(() => plan({task_class: "user_action", ...flags}), /user_action is non-blocking/);
+  }
+  assert.throws(() => plan({task_class: "user_gate"}, {role: "agent"}),
+    /user_action and user_gate task_class are only valid for --role user/);
+});
+
 test("deferred state requires a supported condition and clears remain explicit", () => {
   const todo = {task_class: "advancement_task", status: "deferred", resume_when: "capacity_available:network"};
   assert.equal(plan({}, {command: "update", role: "agent", todo}).effective_resume_when, todo.resume_when);

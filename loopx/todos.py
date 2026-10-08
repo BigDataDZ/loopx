@@ -507,12 +507,6 @@ def add_goal_todo(
     shadow_runtime_root = effective_runtime_root(registry_path, runtime_root_arg)
     if role not in TODO_SECTION_HEADINGS:
         raise ValueError("todo role must be one of: user, agent")
-    require_user_todo_task_class(
-        role=role,
-        task_class=task_class,
-        blocks_agent=blocks_agent,
-        global_gate=True if global_gate else None,
-    )
     replan_obligation_id = require_replan_successor_scope(
         role=role,
         task_class=task_class,
