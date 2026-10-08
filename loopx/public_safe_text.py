@@ -186,18 +186,18 @@ LABELED_CREDENTIAL_ASSIGNMENT_PATTERN = re.compile(
 # or suffix is invisible to all of them -- the two capability faces caught that
 # spelling with a substring rule of their own (Refs #5136, direction 1).
 #
-# The value test is the owner's existing one, reused rather than restated: the
-# match requires either an assembled run or a long letter-only run. Without that
-# requirement the arm reads any ``"key_named_secret": <anything>`` JSON field as a
-# credential, which is the false-positive class direction 2 moved out of the rule.
+# The value carries no test, which is what the free-standing assignment arm above
+# already does: an operator beside a credential label states an assignment, so a
+# short or quoted value such as ``client_secret="hunter"`` cannot be released by a
+# digit or word-length accident (Refs #5136, direction 2; those rows are the
+# direction-4 counterexamples the migrated callers still lacked). The residual
+# runs the other way: the field-name suffix also absorbs prose that ends on the
+# label's plural before an operator, ``secrets:`` included, which the
+# free-standing arm's ``\\b`` does not reach. That is why this arm stays an
+# opt-in rather than a member of the ``credential`` category.
 _COMPOUND_LABEL_SOURCE = "pass" + r"word|sec" + r"ret|api" + r"[_-]?key"
 COMPOUND_CREDENTIAL_FIELD_ASSIGNMENT_PATTERN = re.compile(
-    r"[A-Za-z0-9_]*(?:" + _COMPOUND_LABEL_SOURCE + r")[A-Za-z0-9_]*"
-    r"[\"']?\s*[:=]\s*[\"']?(?:"
-    + _SHAPE_VALUE_TOKEN_SOURCE
-    + r"|"
-    + _OPAQUE_VALUE_RUN_SOURCE
-    + r")",
+    r"[A-Za-z0-9_]*(?:" + _COMPOUND_LABEL_SOURCE + r")[A-Za-z0-9_]*[\"']?\s*[:=]",
     re.IGNORECASE,
 )
 # The credential half of the rule, on its own, named so the two capability faces
@@ -588,7 +588,7 @@ def classify_private_text(
     ):
         return PrivateTextMatch(
             CATEGORY_CREDENTIAL,
-            "credential field name carrying an assembled value",
+            "credential field name behind an assignment operator",
             COMPOUND_CREDENTIAL_FIELD_ASSIGNMENT_PATTERN,
         )
     return None

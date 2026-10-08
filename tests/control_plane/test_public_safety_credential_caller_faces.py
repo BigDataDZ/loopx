@@ -26,8 +26,12 @@ from typing import Any, Callable
 import pytest
 
 from loopx.capabilities.decision_context.packets import _compact_text as decision_text
+from loopx.capabilities.decision_context.packets import build_decision_evidence_packet
 from loopx.capabilities.material_lifecycle._validation import (
     compact_text as material_text,
+)
+from loopx.capabilities.material_lifecycle.decision_planning import (
+    build_material_explore_intent,
 )
 from loopx.public_safe_text import (
     CATEGORY_CREDENTIAL,
@@ -43,6 +47,7 @@ from loopx.public_safe_text import (
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 OWNER_MODULE = "loopx/public_safe_text.py"
+_OBSERVED_AT = "2026-10-08T12:00:00+00:00"
 
 FACES: list[tuple[str, Callable[[str], Any]]] = [
     ("decision_context", lambda text: decision_text(text, field="summary")),
@@ -62,6 +67,19 @@ COMPOUND_FIELD_ASSIGNMENTS = [
     "API_KEY_ID: 9f8a7b6c5d4e",
     "secrets_vault=Abc123456789xyz",
     '{"password_reset_token":"Abc12345678901"}',
+]
+
+# The rows the owner's value floor used to let through: the label is still glued
+# into a field name, but the value carries no digit, no base64 character, and
+# fifteen letters or fewer -- two of them quoted. An operator beside a credential
+# label already states an assignment, so these must read the same verdict as the
+# rows above rather than be released by a length accident (Refs #5136, direction
+# 2). Folded from two pieces for the same scan-path reason stated below.
+COMPOUND_SHORT_VALUE_ASSIGNMENTS = [
+    "client_sec" + 'ret="hunter"',
+    "db_pass" + "word=x",
+    "password_hash" + "='hunter'",
+    "password_reset_token" + ": short",
 ]
 
 # Spellings the union of the two faces' lists accepted before this change and the
@@ -116,7 +134,9 @@ def _rejects(face: Callable[[str], Any], text: str) -> bool:
 
 
 @pytest.mark.parametrize("face", FACE_IDS, ids=FACE_IDS)
-@pytest.mark.parametrize("text", COMPOUND_FIELD_ASSIGNMENTS)
+@pytest.mark.parametrize(
+    "text", COMPOUND_FIELD_ASSIGNMENTS + COMPOUND_SHORT_VALUE_ASSIGNMENTS
+)
 def test_both_faces_reject_a_credential_label_glued_into_a_field_name(
     face: str, text: str
 ) -> None:
@@ -147,11 +167,54 @@ def test_benign_prose_still_passes_both_faces(face: str, text: str) -> None:
     assert dict(FACES)[face](text) == text, (face, text)
 
 
+def test_the_two_real_builders_reject_a_short_or_quoted_assignment() -> None:
+    # The helpers are half the claim: a packet and an intent are what reach a public
+    # surface. Every row goes through a legal build of both, so hardening only the
+    # helper while a builder still carries the value fails here.
+    for text in COMPOUND_SHORT_VALUE_ASSIGNMENTS:
+        with pytest.raises(ValueError, match="changed_facts"):
+            build_decision_evidence_packet(
+                goal_id="goal:decision-advisor",
+                decision_id="decision:20261008:credential-faces",
+                observed_at=_OBSERVED_AT,
+                changed_facts=[
+                    {
+                        "fact_id": "fact:adoption-stage",
+                        "summary": text,
+                        "source_ref": "authority:collaboration-ledger",
+                        "source_revision": "revision:42",
+                        "observed_at": _OBSERVED_AT,
+                        "freshness": "current",
+                        "authority": "first_party_receipt",
+                    }
+                ],
+            )
+        with pytest.raises(ValueError, match="stop_condition"):
+            build_material_explore_intent(
+                goal_id="goal:material-example",
+                intent_id="intent:credential-faces",
+                inventory_ref="material-inventory-0123456789abcdef",
+                decision_evidence_ref="decision-evidence-0123456789abcdef",
+                policy_ref="policy:material-fit",
+                observed_at=_OBSERVED_AT,
+                max_explore_topics=1,
+                max_provider_calls=1,
+                max_new_candidates=2,
+                stop_condition=text,
+                topics=[
+                    {
+                        "topic_ref": "topic:runtime",
+                        "reason_code": "evidence_gap",
+                    }
+                ],
+            )
+
+
 def test_the_compound_arm_is_the_only_reason_the_glued_class_is_rejected() -> None:
     # Without the opt-in the owner's category arms miss every row in the class, so
     # the flag earns its place. If a future category arm covers them, this test
     # fails and the opt-in can be retired rather than left as dead weight.
-    for text in COMPOUND_FIELD_ASSIGNMENTS:
+    for text in COMPOUND_FIELD_ASSIGNMENTS + COMPOUND_SHORT_VALUE_ASSIGNMENTS:
         assert COMPOUND_ARM.search(text), text
         assert classify_private_text(text, categories=CREDENTIAL_CATEGORIES) is None, (
             text
@@ -169,7 +232,7 @@ def test_the_compound_arm_is_the_only_reason_the_glued_class_is_rejected() -> No
 def test_the_opt_in_does_not_widen_the_surfaces_that_did_not_choose_it() -> None:
     # Blast radius, asserted on the owner rather than argued: the four migrated text
     # owners and the repository-publication tier see no new verdict from this slice.
-    for text in COMPOUND_FIELD_ASSIGNMENTS:
+    for text in COMPOUND_FIELD_ASSIGNMENTS + COMPOUND_SHORT_VALUE_ASSIGNMENTS:
         assert not matches_private_text_policy(text, categories=TEXT_OWNER_CATEGORIES)
         assert find_private_text_match(text) is None
 
