@@ -210,6 +210,12 @@ code; Latin code remains Geist Mono. This intentionally replaces the older
 12px primary choices and 9–11.5px auxiliary copy with readable body and caption
 roles across Goal, Task, Chat, settings and result surfaces.
 
+![Personal Workspace proportions and typography](assets/personal-workspace-layout.jpg)
+
+Illustrative synthetic state rendered with the workspace sidebar, header, brief
+components and packaged styles. It shows mixed-language text, quiet summaries
+and an unavailable Goal; it is a composition example, not runtime evidence.
+
 ## Spacing And Layout
 
 Use a 4px base:
