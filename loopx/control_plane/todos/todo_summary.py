@@ -137,6 +137,20 @@ def normalize_todo_text(text: str, *, limit: int | None = 500) -> str:
     return compact[: limit - 1].rstrip() + "…"
 
 
+def _structured_todo_text_fields(
+    item: dict[str, Any],
+    *,
+    text_limit: int | None,
+    include_content_revision: bool,
+) -> tuple[str, str | None]:
+    source_text = str(item.get("text") or "")
+    content_revision = (
+        todo_text_content_revision(source_text)
+        if include_content_revision else None
+    )
+    return normalize_todo_text(source_text, limit=text_limit), content_revision
+
+
 def todo_archive_state(item: dict[str, Any]) -> str:
     value = str(item.get("archive_state") or TODO_ARCHIVE_STATE_ACTIVE).strip()
     return value or TODO_ARCHIVE_STATE_ACTIVE
@@ -291,12 +305,11 @@ def structured_todo_item(
     text_limit: int | None = 500,
     include_content_revision: bool = False,
 ) -> dict[str, Any]:
-    source_text = str(item.get("text") or "")
-    content_revision = (
-        todo_text_content_revision(source_text)
-        if include_content_revision else None
+    text, content_revision = _structured_todo_text_fields(
+        item,
+        text_limit=text_limit,
+        include_content_revision=include_content_revision,
     )
-    text = normalize_todo_text(source_text, limit=text_limit)
     priority, title = todo_priority_parts(text)
     index = item.get("index")
     explicit_status = normalize_todo_status(item.get("status"))

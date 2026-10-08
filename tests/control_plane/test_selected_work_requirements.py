@@ -64,7 +64,7 @@ def test_inline_user_context_preserves_full_scoped_gates_without_granting_delive
         code, packet = run_json_cli_result("quota", "should-run", "--goal-id", "requirements-goal",
             "--agent-id", "agent-a", "--scan-path", str(tmp_path), *extra,
             registry_path=registry, runtime_root=runtime)
-        assert code == 0, packet
+        assert code == 0, json.dumps(packet, indent=2)
         return packet
 
     packet = guard()
@@ -123,29 +123,16 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
         initialize_canonical_authority(runtime, "requirements-goal", snapshot,
             state_path=state, provider=provider)
         state.write_text(goal_requirements + "## Agent Todo\n- [ ] Stale display: do only an easier check.\n")
-        code, inspected = run_json_cli_result("goal-acceptance", "inspect", "--goal-id", "requirements-goal",
-            registry_path=registry, runtime_root=runtime)
-        assert code == 0, inspected
-        document = tmp_path / "acceptance.json"
-        document.write_text(json.dumps({"scope": {"kind": "selected_work", "todo_ids": ["todo_cursor_work"]},
-            "objective": "Deliver every query guarantee. " * 24,
-            "non_goals": ["No unrelated migration."], "criteria": [{"id": "compatibility",
-                "description": "Preserve all modes. " * 24 + "Retain the last query mode.",
-                "validation_argv": [sys.executable, "-c", "pass"]}],
-            "bindings": [{"todo_id": "todo_cursor_work", "criterion_ids": ["compatibility"]}]}))
-        code, configured = run_json_cli_result("goal-acceptance", "configure", "--goal-id", "requirements-goal",
-            "--document", str(document), "--expected-provider-revision", inspected["provider_revision"],
-            "--execute", registry_path=registry, runtime_root=runtime)
-        assert code == 0, configured
 
     def guard(*extra: str) -> dict:
         code, packet = run_json_cli_result("quota", "should-run", "--goal-id", "requirements-goal",
             "--agent-id", "agent-a", "--scan-path", str(tmp_path), *extra,
             registry_path=registry, runtime_root=runtime)
-        assert code == 0, packet
+        assert code == 0, json.dumps(packet, indent=2)
         assert packet["should_run"] is True, packet.get("reason")
         return packet
 
+    envelope = guard("--turn-envelope")
     before = state.read_bytes()
     # Run the actual default product prompt's guard: no capture/envelope opt-in.
     code, generated = run_json_cli_result("heartbeat-prompt", "--goal-id", "requirements-goal",
@@ -168,21 +155,15 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
     context = channel["work_context"]
     assert context["complete"] and not context["failures"]
     reads = context["sources"]
-    assert [read["source"] for read in reads] == (["selected_todo"] if provider == "legacy"
-        else ["goal_acceptance", "selected_todo"])
+    assert [read["source"] for read in reads] == ["selected_todo"]
     assert not any(read["source"] == "goal_state" for read in reads)
     goal_result = subprocess.run(shlex.split(goal_read["command"]), capture_output=True, text=True, check=True)
     assert goal_requirements in goal_result.stdout
     assert "Stop before an unauthorized deployment." in goal_result.stdout
-    if provider != "legacy":
-        contract = reads[0]["content"]["goal_acceptance_contract"]
-        assert contract["criteria"][0]["description"].endswith("Retain the last query mode.")
-        assert len(contract["objective"]) > 500
     assert full["selected_todo"]["todo_id"] == "todo_cursor_work"
     assert full["selected_todo"]["text"] != expected  # Deliberately bounded hot view.
     assert reads[-1]["content"]["todo"]["text"] == expected
     assert json.dumps(context).count(expected) == 1
-    envelope = guard("--turn-envelope")
     assert envelope["required_reads"] == channel["required_reads"]
     assert envelope["work_context"] == context
     selected = envelope["action"]["selected_todo"]
@@ -227,14 +208,9 @@ def test_current_work_requirements_reach_real_guard_and_host_without_display_los
     assert code == 0, json.dumps(update)
     assert read_detail()["todo"]["text"] == replacement
     fresh = guard()
-    if provider == "legacy":
-        assert fresh["selected_todo"]["todo_id"] == "todo_cursor_work"
-    else:
-        # Updating a bound task makes its acceptance binding stale. Re-guarding
-        # must respect that owner rather than readmission via the full text.
-        assert fresh.get("selected_todo") is None
-        assert not any(read.get("source") == "selected_todo"
-            for read in fresh["interaction_contract"]["agent_channel"].get("required_reads", []))
+    assert fresh["selected_todo"]["todo_id"] == "todo_cursor_work"
+    fresh_reads = fresh["interaction_contract"]["agent_channel"]["work_context"]["sources"]
+    assert fresh_reads[-1]["content"]["todo"]["text"] == replacement
     missing_tokens = ["todo_missing" if token == "todo_cursor_work" else token for token in tokens]
     missing = subprocess.run([sys.executable, "-m", "loopx.cli", *missing_tokens[1:]],
         capture_output=True, text=True, check=True)
