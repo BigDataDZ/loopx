@@ -902,7 +902,10 @@ def test_turn_envelope_references_selected_todo_without_duplicate_context(
     assert exit_code == 0, text
     payload = json.loads(text)
     assert payload["action"]["selected_todo"]["text_ref"] == "action.recommended_action"
-    assert "work_context" not in payload
+    work_context = payload["work_context"]
+    assert work_context["selected_todo_ref"] == "selected_todo"
+    assert work_context["selected_todo_authority"].startswith("markdown_active_state@sha256:")
+    assert "sources" not in work_context
 
 
 def _assert_scenario_matrix(scenarios: dict[str, dict[str, dict[str, dict]]]) -> None:

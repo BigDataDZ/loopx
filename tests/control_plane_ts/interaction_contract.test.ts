@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import type { JsonObject } from "../../loopx/control_plane/effect_program.ts";
 
@@ -161,9 +162,12 @@ test("failed, ambiguous or changed work never fulfills a pre-work read", () => {
 
 test("selected Todo references its admitted body only after an exact detail read", () => {
   const read = {command: "read-todo", source: "selected_todo"};
+  const text = "Keep full acceptance.";
+  const contentRevision = `sha256:${createHash("sha256").update(text, "utf8").digest("hex")}`;
   const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a",
-    text: "Keep full acceptance.", note: "Do not publish before the final review."};
-  const selected = {todo_id: task.todo_id, status: task.status, text: task.text};
+    text, content_revision: contentRevision, note: "Do not publish before the final review."};
+  const selected = {todo_id: task.todo_id, status: task.status, text: task.text,
+    content_revision: contentRevision};
   const projected = projectInteractionWorkContext({required_reads: [read], selected_todo: selected,
     source_results: [{command: read.command, content: {matched: true, todo: task}}]});
   const context = projected.work_context as JsonObject;
@@ -187,10 +191,12 @@ test("selected Todo references its admitted body only after an exact detail read
 test("bounded selected text validates its full source snapshot and preserves exact detail", () => {
   const read = {command: "read-todo", source: "selected_todo"};
   const body = "Keep every query result and its final acceptance condition.";
+  const contentRevision = `sha256:${createHash("sha256").update(body, "utf8").digest("hex")}`;
   const task = {todo_id: "todo_work", status: "open", claimed_by: "agent-a", text: body,
+    content_revision: contentRevision,
     note: "The final condition is to retain cancellation behavior."};
   const selected = {...task, text: "Keep every query result", _context_text_sha256:
-    "2b6ebbd1992bdcaea446043078139f3c4d9044ec487f01ab39806f75a78a5dec"};
+    createHash("sha256").update(body, "utf8").digest("hex")};
   const projected = projectInteractionWorkContext({required_reads: [read], selected_todo: selected,
     source_results: [{command: read.command, content: {matched: true, todo: task}}]});
   const context = projected.work_context as JsonObject;

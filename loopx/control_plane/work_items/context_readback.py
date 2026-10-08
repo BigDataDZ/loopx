@@ -161,7 +161,9 @@ def attach_work_context(payload: dict[str, Any], *, registry_path: Path,
     selected_todo = payload.get("selected_todo")
     if isinstance(selected_todo, dict):
         selected_todo.pop("content_revision", None)
-        work_context = channel.get("work_context")
+        selected_todo.pop("_context_text_sha256", None)
+        selected_todo.pop("_context_text_display_only", None)
+    work_context = channel.get("work_context")
     if isinstance(work_context, dict):
         sources = work_context.get("sources")
         for source in sources if isinstance(sources, list) else []:
@@ -169,8 +171,6 @@ def attach_work_context(payload: dict[str, Any], *, registry_path: Path,
             todo = content.get("todo") if isinstance(content, dict) else None
             if isinstance(todo, dict):
                 todo.pop("content_revision", None)
-        selected_todo.pop("_context_text_sha256", None)
-        selected_todo.pop("_context_text_display_only", None)
     if not projected["work_context"]["complete"]:
         channel["delivery_allowed"] = False
     # Bodies have one carrier. Historical pointers are not another instruction

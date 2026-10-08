@@ -342,6 +342,7 @@ def test_selected_todo_body_change_between_selection_and_readback_blocks_deliver
     assert channel["work_context"]["complete"] is False
     assert channel["delivery_allowed"] is False
 
+@pytest.mark.parametrize("provider", ["file", "sqlite"])
 def test_short_selected_todo_deduplicates_body_but_keeps_canonical_note(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str,
 ) -> None:
