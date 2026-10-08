@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import tarfile
 import tempfile
-from typing import Any
+from typing import Any, BinaryIO
 
 from . import __version__
 from .paths import select_default_runtime_root
@@ -431,6 +431,41 @@ def build_state_backup_plan(
     }
 
 
+class _BackupMemberReader:
+    """Witness the stream tarfile copies, without rereading a changing source."""
+
+    def __init__(self, source: BinaryIO) -> None:
+        self.source = source
+        self.digest = hashlib.sha256()
+        self.size = 0
+
+    def read(self, size: int) -> bytes:
+        data = self.source.read(size)
+        self.digest.update(data)
+        self.size += len(data)
+        return data
+
+
+class _BackupTarFile(tarfile.TarFile):
+    """Retain tarfile's link/metadata behavior and witness every copied member."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        self.file_members: list[dict[str, Any]] = []
+        super().__init__(*args, **kwargs)
+
+    def addfile(self, tarinfo: tarfile.TarInfo, fileobj: BinaryIO | None = None) -> None:
+        # The manifest contains this list; the whole-archive digest covers it.
+        if not tarinfo.isfile() or tarinfo.name == "manifest.json":
+            super().addfile(tarinfo, fileobj)
+            return
+        if fileobj is None:
+            raise ValueError("backup regular member requires its copied byte stream")
+        reader = _BackupMemberReader(fileobj)
+        super().addfile(tarinfo, reader)
+        self.file_members.append({"archive_path": tarinfo.name,
+            "size_bytes": reader.size, "sha256": reader.digest.hexdigest()})
+
+
 def _add_path_to_tar(
     tar: tarfile.TarFile, source: Path, archive_path: str, exclude_roots: list[Path],
     staging: Path, snapshots: dict[Path, tuple[Path, dict[str, Any]]],
@@ -468,6 +503,7 @@ def _add_path_to_tar(
                 snapshots[resolved] = snapshot
         if snapshot is not None:
             snapshot[1]["archive_paths"].append(archive_path)
+
             tar.add(snapshot[0], arcname=archive_path, recursive=False)
             return
     tar.add(source, arcname=archive_path, recursive=False)
@@ -513,7 +549,7 @@ def execute_state_backup_plan(payload: dict[str, Any]) -> dict[str, Any]:
         staging = Path(temporary)
         staged_archive = staging / "archive.tar.gz"
         snapshots: dict[Path, tuple[Path, dict[str, Any]]] = {}
-        with tarfile.open(staged_archive, "w:gz", dereference=False) as tar:
+        with _BackupTarFile.open(staged_archive, "w:gz", dereference=False) as tar:
             for item in included:
                 if not isinstance(item, dict):
                     continue
@@ -534,6 +570,9 @@ def execute_state_backup_plan(payload: dict[str, Any]) -> dict[str, Any]:
             tar.addfile(info, io.BytesIO(configuration_bytes))
             updated["execution"]["configuration_backup"] = verify_configuration_backup(configuration)
             updated["execution"]["sqlite_snapshots"] = [entry[1] for entry in snapshots.values()]
+            # manifest.json is deliberately excluded: it contains this list.
+            # The existing external archive checksum witnesses the whole tar.
+            updated["execution"]["file_members"] = tar.file_members
             manifest_bytes = json.dumps(updated, ensure_ascii=False, indent=2).encode("utf-8")
             info = tarfile.TarInfo("manifest.json")
             info.size = len(manifest_bytes)
