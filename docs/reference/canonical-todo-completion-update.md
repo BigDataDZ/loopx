@@ -395,6 +395,14 @@ removing a redundant check does not change replay identity or authorize a write.
 Requests with several invalid fields still fail; the reported error follows the
 complete create and input-validation order.
 
+Caller retirement must also preserve each field's original request behavior:
+creation compacts text and resolves priority/binding, preserves note bytes, and
+deduplicates capabilities in first-occurrence order. Sorting that list or using
+update-note compaction for an original create changes the receipt digest. Real
+File/SQLite CLI cases retry independently specified v1 requests after later
+canonical edits, checking the original receipt and unchanged newer data. This
+is a caller-compatibility gate, not full writer-retirement qualification.
+
 Validation content is prepared privately before create/revision dispatch. Its
 presence alone never activates a validator: the authoritative Todo selects its
 exact digest. Corrupt selected content fails closed. Legacy per-Todo sidecars
@@ -414,6 +422,11 @@ publication recovery, not cross-host distribution of private validation commands
 User gate 范围，移除重复的类别预检调用。独立 Markdown 添加 codec 仍为直接调用方
 保留类别检查；优先级规范化继续保持历史创建回执绑定的请求形态，不改变重放身份或
 写入准入。多个字段同时无效时，仍拒绝写入，错误由完整创建检查及输入检查顺序决定。
+
+退役调用方也须保留各字段的原请求行为：创建路径压缩文本、解析优先级与绑定，保留
+note 字节，按首次出现顺序对能力去重。能力排序或将更新时的 note 压缩套到历史创建
+会改变回执摘要。File/SQLite 真实 CLI 回归先提交独立指定的 v1 请求，在后续权威
+修改后重试，核对原回执与新数据保持；这是调用方兼容门，不代表完整 writer 退役。
 
 私有声明先持久保存，权威摘要再引用它；没有被权威 Todo 引用的内容不会成为验证要求。
 被选中内容损坏时仍拒绝执行。旧 sidecar 可继续读取，历史创建回执不能回滚新验证器。
