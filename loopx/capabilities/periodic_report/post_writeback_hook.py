@@ -298,8 +298,13 @@ def build_periodic_report_post_writeback_projection(
             break
     settled_obligation = None
     if settled_ack is not None:
+        semantic_delta = settled_ack.get("semantic_delta")
         settled_obligation = {
             "frontier_identity": settled_ack.get("frontier_identity"),
+            "obligation_id": (
+                semantic_delta.get("obligation_id")
+                if isinstance(semantic_delta, Mapping) else None
+            ),
             "agent_id": normalized_agent_id,
             "triggers": [{"kind": "vision_successor_required"}],
         }

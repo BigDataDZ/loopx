@@ -455,7 +455,12 @@ current vision, durable writeback, and one of these continuation settlements:
   the matching replan semantic delta was accepted, and the successor vision
   plus its owned frontier were durably established.
 
-The producer deduplicates by the closed-vision revision and frontier identity.
+The producer deduplicates by the closed-vision revision and settled continuation
+identity. Native Vision-successor ACKs use the matching accepted
+`semantic_delta.obligation_id`; they do not require a monitor's optional
+`frontier_identity`. Existing explicit frontier identities retain their receipt
+identity. The native ACK and successor Vision must come from the same durable
+writeback; a later unacknowledged Vision edit cannot reuse that acceptance.
 Ordinary Todo completion, Todo-count thresholds, elapsed time, setup work, and
 generic replan causes such as blockers, succession gaps, long Todo chains, or
 monitor exhaustion are evidence or control-plane context only; they never
