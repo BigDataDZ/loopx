@@ -341,6 +341,9 @@ export function planTodoAuthoringScope(value: unknown): JsonObject {
   if (command === "create" && status === "done") fail("todo add cannot create completed work; add it open and use `loopx todo complete`");
   if (command === "update" && role === "agent" && intent.status && status === "done") fail("agent todo completion must use complete_goal_todo " +
     "(CLI: `loopx todo complete`) so completion policy, successor, and no-follow-up contracts are enforced");
+  // Create owns the draft class check as well as the resolved-scope invariant.
+  // Keep its diagnostic before scope inference without a separate caller RPC.
+  if (command === "create") requireTaskClass(role, taskClass, intent.blocks_agent, intent.global_gate);
   const scope = planScope(command ?? "", role, taskClass, todo, intent, agents, string(request.goal_id, "goal_id") ?? "");
   const exclusions = intent.excluded_agents ?? todo.excluded_agents;
   const ownership = todoOwnershipViolations(role, intent.clear_claim ? null : intent.claimed_by || todo.claimed_by, exclusions);
