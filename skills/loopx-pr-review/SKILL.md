@@ -69,15 +69,11 @@ When `review_action_kind` is null, the row stays in `pull_requests` inventory bu
 1. Record the packet's exact head, then follow `review_execution_contract.decision_procedure`:
    the current goal and `problem_context` delivery judgment first, including on re-review,
    then `evidence_commands` and repository-native validation.
-2. Fill `review_plan.result_template`; preserve missing evidence as `unverified` and never
-   infer `verified` from metadata or CI. Execute its repository-reuse, default-off, authority
-   and real-path counterfactuals rather than repeating them as prose. Fill `result.reviewer`
-   per `review_execution_contract.reviewer_declaration`, open the body with its `body_marker`
-   line, and read `problem_context.spec_basis`'s specification before the diff.
-   When a row includes `repository_experience`, read its advisory guidance alongside
-   that frame. State adoption, rejection or irrelevance with current-head evidence
-   in the existing `problem_context` judgment; do not inherit a case's verdict or
-   treat context delivery as semantic application or demonstrated utility.
+2. Fill `review_plan.result_template`; missing evidence stays `unverified`, never `verified` from metadata or CI.
+   Execute repository-reuse, default-off, authority and real-path counterfactuals, not prose declarations.
+   Fill `result.reviewer` per `review_execution_contract.reviewer_declaration`; open with its `body_marker` line.
+   Read `problem_context.spec_basis`'s specification before the diff, plus any `repository_experience` advice.
+   In `problem_context`, state adoption, rejection or irrelevance with current-head evidence; do not inherit a case verdict or treat context delivery as semantic application or demonstrated utility.
 3. Apply `completion_gate` literally: save final Markdown in `review_body`, then check
    evidence and that exact body. Follow capability-owned floors and scope counterfactuals;
    prose cannot replace missing execution:

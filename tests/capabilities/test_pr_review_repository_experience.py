@@ -141,3 +141,26 @@ def test_cli_json_and_markdown_readback(tmp_path, capsys):
     assert value["pull_requests"][0]["repository_experience"]["decision"]["context_delivery_verified"] is True
     assert main([*common, "--format", "markdown"]) == 0
     assert "first useful user outcome" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("path, expected", [
+    ("docs/architecture/rfcs/recovery.md", "context_delivered"),
+    ("src/opaque_xyz.py", "empty"),
+])
+def test_cli_uses_normalized_changed_paths_with_an_ordinary_title(tmp_path, capsys, path, expected):
+    registry, _ = enabled_goal(tmp_path)
+    raw = rows()
+    raw[0]["title"] = "Adjust wording"
+    raw[0]["body"] = ""
+    raw[0]["files"][0]["path"] = path
+    fixture = tmp_path / "prs.json"
+    fixture.write_text(json.dumps({"pull_requests": raw}))
+    assert main(["--registry", str(registry), "pr-review", "--goal-id", "reward-memory-goal",
+                 "--agent-id", "pilot", "--repo", "loopx-project/loopx", "--fixture", str(fixture),
+                 "--format", "json"]) == 0
+    item = json.loads(capsys.readouterr().out)["pull_requests"][0]
+    assert "files" not in item
+    assert item["key_files"][0]["path"] == path
+    memory = item["repository_experience"]
+    assert memory["decision"]["status"] == expected
+    assert bool(memory["guidance"]) is (expected == "context_delivered")

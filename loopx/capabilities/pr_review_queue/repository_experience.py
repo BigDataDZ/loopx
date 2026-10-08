@@ -158,7 +158,7 @@ def attach_repository_review_experience(
             continue
         artifact = f"github:{repository}:pr:{item['number']}:{head}"
         query = " ".join([str(item.get("title") or ""), *[
-            str(entry.get("path") or "") for entry in item.get("files", [])]])[:500]
+            str(entry.get("path") or "") for entry in item.get("key_files", [])]])[:500]
         result = run_reward_memory_decision(recall_config, query_ready=bool(query),
             application_kind="context_delivery", apply_memory=deliver,
             surface_id=REPOSITORY_REVIEW_SURFACE_ID, base_output=[], workspace_ref=scope["workspace_ref"],
