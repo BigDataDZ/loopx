@@ -84,6 +84,26 @@ canonical 各自精确的历史字段清单，不接受任意子集或只增加�
 
 ## One edit, one terminal transaction
 
+The ordinary promoted update facade always reaches the existing typed decoder,
+including an empty edit. Empty or whitespace-only `--note` still means omission;
+the CLI retains its earlier missing-field check for absent/empty values.
+With no other edit, a whitespace-only note or direct empty facade edit reports
+`Todo update requires a non-empty patch` on File/SQLite
+without importing the legacy Markdown editor, committing a receipt or changing
+the record. This replaces the erroneous legacy-writer/fence diagnostic. A valid
+retry with the same operation id remains available. Unpromoted Goals retain
+their existing empty-edit no-change behavior. No provider or ownership default
+changes, and removing this Python routing predicate does not retire the source
+writer, capture/recovery readers or permanent Markdown display.
+
+普通 promoted 更新 facade 均交由既有 TS decoder，包括空修改。空白 `--note` 仍表示
+省略，不清除已有 note；CLI 对无字段和空字符串保留原参数检查。只有空白 note 或
+直接 facade 的空修改在 File/SQLite 返回明确的非空 patch 要求，不加载旧
+Markdown editor、不提交回执或修改记录。同一 operation id 仍可用于后续合法重试。
+这修正了误入旧 writer/fence 的诊断；未晋升 Goal 的空修改 no-change 行为保持。
+provider 与 ownership 默认不变，旧 writer、capture/恢复 reader 和永久 Markdown
+投影不因删除该 Python 路由判断而退役。
+
 The update decoder, authoring planner and record materializer are shared with
 ordinary edits. The terminal owner checks the **original** Todo's completion
 authority and the edited record's update authority; clearing a claim or binding
