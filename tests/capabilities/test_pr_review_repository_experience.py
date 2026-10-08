@@ -25,11 +25,11 @@ def enabled_goal(tmp_path):
     registry, _, _ = _experiment(tmp_path)
     config = _v1_config()
     review = deepcopy(config["surfaces"][0])
-    review["surface_id"] = source.SURFACE
+    review["surface_id"] = source.REPOSITORY_REVIEW_SURFACE_ID
     config["surfaces"].append(review)
     for entry in config["corpora"][:2]:
-        entry["corpus"]["scope"]["surface_ids"].append(source.SURFACE)
-        entry["standing_policy"]["scope"]["surface_ids"].append(source.SURFACE)
+        entry["corpus"]["scope"]["surface_ids"].append(source.REPOSITORY_REVIEW_SURFACE_ID)
+        entry["standing_policy"]["scope"]["surface_ids"].append(source.REPOSITORY_REVIEW_SURFACE_ID)
     _write_v1_config(registry, config)
     return registry, json.loads(registry.read_text())["goals"][0]
 

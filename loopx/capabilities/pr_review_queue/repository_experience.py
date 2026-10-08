@@ -26,9 +26,9 @@ from ..reward_memory.experiment import resolve_goal_reward_memory_experiment
 from ..reward_memory.registry import normalize_reward_memory_corpus
 
 
-SURFACE = "pull_request_review.review"
-CORPUS_ID = "repository_review_experiences"
-PROVIDER_ID = "repository_review_experience"
+REPOSITORY_REVIEW_SURFACE_ID = "pull_request_review.review"
+REPOSITORY_REVIEW_CORPUS_ID = "repository_review_experiences"
+REPOSITORY_REVIEW_PROVIDER_ID = "repository_review_experience"
 
 
 class _RepositoryExperienceReader:
@@ -86,7 +86,7 @@ class _RepositoryExperienceReader:
                                                        activated_at=request["observed_at"])
             items.append(ContextProviderItem(resource_ref=f"repository:{source.name}:{digest}",
                 summary=active["content_summary"], content=json.dumps(active), score=hit.score))
-        return ContextProviderRetrieval(provider=PROVIDER_ID, namespace=request["namespace"],
+        return ContextProviderRetrieval(provider=REPOSITORY_REVIEW_PROVIDER_ID, namespace=request["namespace"],
             status="completed", query_summary=request["query_summary"],
             observed_at=request["observed_at"], search_performed=True, read_performed=True,
             items=tuple(items), requested_limit=request["max_results"])
@@ -105,7 +105,7 @@ def attach_repository_review_experience(
     if config is None or status.get("automatic_recall") is not True:
         return
     # A configured provider or another module's recall route is insufficient.
-    if SURFACE not in config["surfaces"]:
+    if REPOSITORY_REVIEW_SURFACE_ID not in config["surfaces"]:
         return
     repository = str(packet.get("request", {}).get("repository") or "").casefold()
     if not re.fullmatch(r"[a-z0-9_.-]+/[a-z0-9_.-]+", repository) or any(
@@ -113,9 +113,9 @@ def attach_repository_review_experience(
     ):
         return
     scope = {"workspace_ref": f"goal:{goal['id']}", "project_ref": f"repository:{repository}",
-             "peer_ref": f"agent:{agent_id}", "surface_ids": [SURFACE]}
+             "peer_ref": f"agent:{agent_id}", "surface_ids": [REPOSITORY_REVIEW_SURFACE_ID]}
     corpus = normalize_reward_memory_corpus({
-        "corpus_id": CORPUS_ID, "class_id": "procedural_experience", "provider_id": PROVIDER_ID,
+        "corpus_id": REPOSITORY_REVIEW_CORPUS_ID, "class_id": "procedural_experience", "provider_id": REPOSITORY_REVIEW_PROVIDER_ID,
         "owner_ref": f"repository:{repository}", "source_of_truth": f"repository:{repository}:experiences",
         "read_authority": "actor_scoped", "write_authority": "read_only", "scope": scope,
         "freshness": {"mode": "source_truth_bound"},
@@ -133,13 +133,13 @@ def attach_repository_review_experience(
     # written. The existing opt-in admits this caller-owned context boundary.
     recall_config = {
         "automation": {"automatic_recall": True, "automatic_ingest": False, "fail_open": True},
-        "corpora": {CORPUS_ID: {"corpus": corpus, "standing_policy": {}, "provider_binding": {
-            "corpus_id": CORPUS_ID, "provider_id": PROVIDER_ID, "namespace": "reward_memory",
+        "corpora": {REPOSITORY_REVIEW_CORPUS_ID: {"corpus": corpus, "standing_policy": {}, "provider_binding": {
+            "corpus_id": REPOSITORY_REVIEW_CORPUS_ID, "provider_id": REPOSITORY_REVIEW_PROVIDER_ID, "namespace": "reward_memory",
             "scope_ref": f"repository:{repository}:experiences", "timeout_seconds": 5}}},
-        "surfaces": {SURFACE: {"corpus_ids": [CORPUS_ID], "ingest_corpus_id": CORPUS_ID,
+        "surfaces": {REPOSITORY_REVIEW_SURFACE_ID: {"corpus_ids": [REPOSITORY_REVIEW_CORPUS_ID], "ingest_corpus_id": REPOSITORY_REVIEW_CORPUS_ID,
             "adapter": "scoped_feedback", "recall_profile": {"profile_id": "repository_review",
                 "mode": "function_boundary", "max_queries": 1,
-                "limit": min(3, config["surfaces"][SURFACE]["recall_profile"]["limit"])}}},
+                "limit": min(3, config["surfaces"][REPOSITORY_REVIEW_SURFACE_ID]["recall_profile"]["limit"])}}},
     }
 
     def deliver(base: Any, items: tuple[Any, ...]) -> Mapping[str, Any]:
@@ -161,15 +161,15 @@ def attach_repository_review_experience(
             str(entry.get("path") or "") for entry in item.get("files", [])]])[:500]
         result = run_reward_memory_decision(recall_config, query_ready=bool(query),
             application_kind="context_delivery", apply_memory=deliver,
-            surface_id=SURFACE, base_output=[], workspace_ref=scope["workspace_ref"],
+            surface_id=REPOSITORY_REVIEW_SURFACE_ID, base_output=[], workspace_ref=scope["workspace_ref"],
             project_ref=scope["project_ref"], peer_ref=scope["peer_ref"], revision_ref=f"git:{head}",
             queries=[{"query": query, "query_summary": "Current PR title and changed paths; no historical verdict."}],
             observed_at=datetime.now(timezone.utc).isoformat(),
             freshness_context={"source_truth_current": True, "source_revision": f"git:{head}", "age_seconds": 0},
             conflict_state="clear", application_id=f"review:{item['number']}:{head}", artifact_ref=artifact,
-            read_authority_checkpoints={CORPUS_ID: {"verified": True, "corpus_id": CORPUS_ID,
+            read_authority_checkpoints={REPOSITORY_REVIEW_CORPUS_ID: {"verified": True, "corpus_id": REPOSITORY_REVIEW_CORPUS_ID,
                 "workspace_ref": scope["workspace_ref"], "project_ref": scope["project_ref"],
-                "peer_ref": scope["peer_ref"], "surface_id": SURFACE, "read_authority": "actor_scoped",
+                "peer_ref": scope["peer_ref"], "surface_id": REPOSITORY_REVIEW_SURFACE_ID, "read_authority": "actor_scoped",
                 "source_ref": f"registry:{goal['id']}:reward-memory"}}, provider=reader)
         if result is not None:
             item["repository_experience"] = {"decision": result.public_packet, "guidance": result.output}
