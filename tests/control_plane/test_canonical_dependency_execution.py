@@ -203,3 +203,103 @@ def test_explore_plans_follow_dependency_through_handoff_and_completion(canonica
     resumed = _acquire(cli, WAITING, "agent-a", "waiting-next", version=1)
     assert resumed["acquired"]
     assert _complete(cli, WAITING, "agent-a", "waiting-next", resumed["lease"]["version"])["completed"]
+
+
+def test_future_date_wait_fences_fresh_execution(canonical_dependency):
+    cli = canonical_dependency
+    first = _acquire(cli, WAITING, "agent-a", "timed-original")
+    assert first["acquired"]
+    armed = cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+                "--resume-when", "resume_at:2099-01-01T00:00:00Z",
+                "--task-lease-idempotency-key", "timed-original",
+                "--task-lease-expected-version", "1")
+    assert armed["status"] == "applied"
+    waiting = cli(["todo", "list"], WAITING)["todo"]
+    assert waiting["status"] == "open" and waiting["resume_ready"] is False
+    assert not _acquire(cli, WAITING, "agent-a", "timed-original", expected_exit=1)["ok"]
+    assert not cli(["task-lease", "renew"], WAITING, "--owner", "agent-a",
+                   "--idempotency-key", "timed-original", "--expected-version", "1",
+                   "--ttl-seconds", "600", expected_exit=1)["ok"]
+    rejected_completion = cli(["todo", "complete"], WAITING, "--agent-id", "agent-a",
+                              "--task-lease-idempotency-key", "timed-original",
+                              "--task-lease-expected-version", "1", "--no-follow-up",
+                              "--evidence", "validation://premature-date-completion", expected_exit=1)
+    assert rejected_completion["error_code"] == "todo_dependency_pending"
+    assert rejected_completion["failure_kind"] == "decision_rejection"
+    inspected = cli(["task-lease", "inspect"], WAITING)
+    assert inspected["lease"]["status"] == "active" and inspected["active"] is False
+    assert cli(["todo", "list"], WAITING)["todo"]["status"] == "open"
+    cli(["task-lease", "release"], WAITING, "--owner", "agent-a",
+        "--idempotency-key", "timed-original", "--expected-version", "1")
+    rejected = _acquire(cli, WAITING, "agent-a", "timed-next", version=1, expected_exit=1)
+    assert rejected["error_code"] == "todo_dependency_pending"
+    rejected_claim = cli(["todo", "claim"], WAITING, "--agent-id", "agent-a",
+                         "--claimed-by", "agent-a", "--claim-operation-id", "timed-claim",
+                         "--task-lease-idempotency-key", "timed-claim-execution",
+                         "--task-lease-expected-version", "1", expected_exit=1)
+    assert rejected_claim["error_code"] == "todo_dependency_pending"
+    assert cli(["task-lease", "inspect"], WAITING)["lease"]["status"] == "released"
+
+
+def test_owner_can_clear_or_edit_future_date_wait_before_execution(canonical_dependency):
+    cli = canonical_dependency
+    _acquire(cli, WAITING, "agent-a", "timed-repair")
+    cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+        "--resume-when", "resume_at:2099-01-01T00:00:00Z",
+        "--task-lease-idempotency-key", "timed-repair", "--task-lease-expected-version", "1")
+    repaired = cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+                   "--clear-resume-when", "--task-lease-idempotency-key", "timed-repair",
+                   "--task-lease-expected-version", "1")
+    assert repaired["status"] == "applied"
+    assert "resume_when" not in cli(["todo", "list"], WAITING)["todo"]
+    cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+        "--resume-when", "resume_at:2099-01-01T00:00:00Z",
+        "--task-lease-idempotency-key", "timed-repair", "--task-lease-expected-version", "1")
+    edited = cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+                 "--resume-when", "resume_at:2020-01-01T00:00:00Z",
+                 "--task-lease-idempotency-key", "timed-repair", "--task-lease-expected-version", "1")
+    assert edited["status"] == "applied"
+    assert cli(["todo", "list"], WAITING)["todo"]["resume_ready"] is True
+    cli(["task-lease", "release"], WAITING, "--owner", "agent-a",
+        "--idempotency-key", "timed-repair", "--expected-version", "1")
+    assert _acquire(cli, WAITING, "agent-a", "timed-after-repair", version=1)["acquired"]
+
+
+def test_due_date_wait_allows_new_execution(canonical_dependency):
+    cli = canonical_dependency
+    _acquire(cli, WAITING, "agent-a", "timed-due-original")
+    cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+        "--resume-when", "resume_at:2020-01-01T00:00:00Z",
+        "--task-lease-idempotency-key", "timed-due-original", "--task-lease-expected-version", "1")
+    cli(["task-lease", "release"], WAITING, "--owner", "agent-a",
+        "--idempotency-key", "timed-due-original", "--expected-version", "1")
+    assert cli(["todo", "list"], WAITING)["todo"]["resume_ready"] is True
+    assert _acquire(cli, WAITING, "agent-a", "timed-due-next", version=1)["acquired"]
+    assert _complete(cli, WAITING, "agent-a", "timed-due-next", 2)["completed"]
+
+
+def test_owner_can_pause_and_reopen_released_future_date_wait(canonical_dependency):
+    cli = canonical_dependency
+    _acquire(cli, WAITING, "agent-a", "timed-pause-original")
+    cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+        "--resume-when", "resume_at:2099-01-01T00:00:00Z",
+        "--task-lease-idempotency-key", "timed-pause-original", "--task-lease-expected-version", "1")
+    cli(["task-lease", "release"], WAITING, "--owner", "agent-a",
+        "--idempotency-key", "timed-pause-original", "--expected-version", "1")
+    waiting = cli(["todo", "list"], WAITING)
+    assert waiting["todo"]["resume_ready"] is False
+    revision = waiting["authority_read"]["provider_revision"]
+    paused = cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+                 "--status", "blocked", "--clear-resume-when", "--reason", "Owner paused the dated wait",
+                 "--update-operation-id", "timed-pause", "--update-expected-provider-revision", revision)
+    assert paused["status"] == "applied"
+    blocked = cli(["todo", "list"], WAITING)
+    assert blocked["todo"]["status"] == "blocked"
+    assert "resume_when" not in blocked["todo"]
+    assert cli(["task-lease", "inspect"], WAITING)["lease"]["status"] == "released"
+    reopened = cli(["todo", "update"], WAITING, "--agent-id", "agent-a",
+                   "--status", "open", "--clear-resume-when", "--reason", "Owner resumed the work",
+                   "--update-operation-id", "timed-reopen", "--update-expected-provider-revision",
+                   blocked["authority_read"]["provider_revision"])
+    assert reopened["status"] == "applied"
+    assert _acquire(cli, WAITING, "agent-a", "timed-after-reopen", version=1)["acquired"]
