@@ -829,6 +829,7 @@ def _structured_resume_source_items(
                 if item.get("archive_state") is not None
                 else TODO_ARCHIVE_STATE_ACTIVE
             ),
+            include_content_revision=True,
         )
         for item in (items or [])
         if isinstance(item, dict)
