@@ -237,8 +237,8 @@ def test_durable_run_history_derives_successor_boundary() -> None:
     assert receipt["completed_at"] == "2026-08-29T11:00:00Z"
 
 
-@pytest.mark.parametrize("later_unacknowledged_vision", [False, True])
-def test_native_ack_is_bound_to_its_successor_vision(later_unacknowledged_vision) -> None:
+@pytest.mark.parametrize("later_generated_at", [None, "2026-08-29T11:00:00Z", "2026-08-29T12:00:00Z"])
+def test_native_ack_is_bound_to_its_successor_vision(later_generated_at) -> None:
     values = _successor_inputs()
     values["replan_obligation"].pop("frontier_identity")
     values["replan_obligation"]["obligation_id"] = "replan-1234567890abcdef"
@@ -249,15 +249,17 @@ def test_native_ack_is_bound_to_its_successor_vision(later_unacknowledged_vision
         {"agent_vision": _vision(state="vision_closed", generated_at="2026-08-29T10:00:00Z"),
          "vision_checkpoint": _checkpoint()},
     ]
-    if later_unacknowledged_vision:
-        runs.insert(0, {"agent_vision": _vision(state="active", generated_at="2026-08-29T12:00:00Z")})
+    if later_generated_at is not None:
+        later_vision = _vision(state="active", generated_at=later_generated_at)
+        later_vision["vision_patch"] = {"acceptance_summary": "A separate unacknowledged edit."}
+        runs.insert(0, {"agent_vision": later_vision})
     receipt = derive_periodic_report_stage_completion_from_runs(
         latest_runs=runs, agent_id="case-analyst",
         goal_frontier_projection=values["successor_frontier"],
         settled_replan_obligation=values["replan_obligation"],
         settled_replan_ack=values["replan_ack"],
     )
-    assert (receipt is None) is later_unacknowledged_vision
+    assert (receipt is None) is (later_generated_at is not None)
 
 
 @pytest.mark.parametrize("foreign_evidence", ["different_delta", "run_agent", "ack_agent"])

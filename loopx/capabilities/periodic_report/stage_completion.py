@@ -214,6 +214,7 @@ def derive_periodic_report_stage_completion_from_runs(
         return None
     current_vision: Mapping[str, Any] | None = None
     successor_vision: Mapping[str, Any] | None = None
+    successor_run: Mapping[str, Any] | None = None
     closed_vision: Mapping[str, Any] | None = None
     outcome_checkpoint: Mapping[str, Any] | None = None
     for raw_run in latest_runs:
@@ -229,6 +230,7 @@ def derive_periodic_report_stage_completion_from_runs(
             vision.get("state")
         ):
             successor_vision = vision
+            successor_run = run
         checkpoint = _mapping(run.get("vision_checkpoint"))
         if (
             closed_vision is None
@@ -255,27 +257,18 @@ def derive_periodic_report_stage_completion_from_runs(
     ack = _mapping(settled_replan_ack)
     if not _text(ack.get("frontier_identity")):
         accepted_delta = _mapping(ack.get("semantic_delta"))
-        # A native ACK belongs to its own successor writeback. A later Vision
-        # edit cannot borrow that accepted delta to manufacture a new stage.
-        for raw_run in latest_runs:
-            run = _mapping(raw_run)
-            run_ack = normalize_projected_autonomous_replan_ack(
-                dict(_mapping(run.get("autonomous_replan_ack")))
-            )
-            if run_ack is None or run_ack.get("semantic_delta") != accepted_delta:
-                continue
-            if _text(run.get("agent_id")) not in {"", normalized_agent_id}:
-                continue
-            if _text(run_ack.get("agent_id") or run_ack.get("claimed_by")) not in {
-                "", normalized_agent_id,
-            }:
-                continue
-            vision = dict(_mapping(run.get("agent_vision")))
-            if not _text(vision.get("generated_at")):
-                vision["generated_at"] = _text(run.get("generated_at"))
-            if _vision_identity(vision) == _vision_identity(successor_vision):
-                break
-        else:
+        # The selected Vision and accepted ACK must occupy the same durable run.
+        run = _mapping(successor_run)
+        run_ack = normalize_projected_autonomous_replan_ack(
+            dict(_mapping(run.get("autonomous_replan_ack")))
+        )
+        if (
+            run_ack is None
+            or run_ack.get("semantic_delta") != accepted_delta
+            or _text(run.get("agent_id")) not in {"", normalized_agent_id}
+            or _text(run_ack.get("agent_id") or run_ack.get("claimed_by"))
+            not in {"", normalized_agent_id}
+        ):
             return None
     return derive_periodic_report_stage_completion(
         closed_vision=closed_vision,
