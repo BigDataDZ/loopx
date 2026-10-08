@@ -908,6 +908,63 @@ def test_turn_envelope_references_selected_todo_without_duplicate_context(
     assert "sources" not in work_context
 
 
+@pytest.mark.parametrize("surface_id", ["quota_should_run", "quota_should_run_turn_envelope"])
+def test_compact_selected_todo_markdown_preserves_work_context_instruction(
+    tmp_path: Path,
+    surface_id: str,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / surface_id) as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(
+            stable_root,
+            SCENARIOS[0],
+        )
+        if surface_id == "quota_should_run":
+            json_command = _surface_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="json",
+            )[surface_id]
+            markdown_command = _surface_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="markdown",
+            )[surface_id]
+        else:
+            json_command = _mode_variant_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="json",
+            )[surface_id]
+            markdown_command = _mode_variant_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="markdown",
+            )[surface_id]
+
+        json_exit_code, json_text = _invoke_cli(json_command)
+        markdown_exit_code, markdown_text = _invoke_cli(markdown_command)
+
+    assert json_exit_code == 0, json_text
+    assert markdown_exit_code == 0, markdown_text
+    payload = json.loads(json_text)
+    work_context = (
+        payload["interaction_contract"]["agent_channel"]["work_context"]
+        if surface_id == "quota_should_run"
+        else payload["work_context"]
+    )
+    instruction = work_context["instruction"]
+    assert instruction
+    assert markdown_text.count(instruction) == 1
+
+
 def _assert_scenario_matrix(scenarios: dict[str, dict[str, dict[str, dict]]]) -> None:
     """Keep the pytest and base/head probe on the same matrix assertions."""
 
