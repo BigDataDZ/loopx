@@ -60,12 +60,15 @@ def _result_status(*, interrupted, started, runtime_seconds):
     return "terminal" if runtime_seconds > 0 else "runner_failed"
 
 
-def _write_native_final_result(trial, result, *, status, agent, task, run_id, model, effort):
+def _write_native_final_result(trial, result, *, status, agent, task, run_id, model, effort, feedback="native"):
     """Match the native CLI's visualizer handoff after a completed run only."""
     if status != "terminal":
         return
     final = dict(agent=agent, task=task, run_id=run_id, model=model, effort=effort,
                  **result.to_dict())
+    if feedback == "best-only":
+        final["evaluation_coverage"] = "online_only"
+        final["offline_scoring_complete"] = False
     pending = trial / "final_result.json.tmp"
     pending.write_text(json.dumps(final, indent=2, ensure_ascii=False))
     pending.replace(trial / "final_result.json")
@@ -228,7 +231,7 @@ def main(argv=None):
                    best_score=result.best_score, total_rounds=result.total_rounds)
     _write_native_final_result(trial, result, status=status, agent=agent.name,
                                task=task.task_id, run_id=args.run_id,
-                               model=args.model, effort=args.effort)
+                               model=args.model, effort=args.effort, feedback=args.feedback)
     receipt_path.write_text(json.dumps(receipt, indent=2))
     print(json.dumps(receipt))
     return 0 if status == "terminal" else 130 if status == "cancelled" else 1

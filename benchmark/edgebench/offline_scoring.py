@@ -12,6 +12,7 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
+from sforge.harness import grading, run_evaluation, selection, task_spec
 from sforge.harness.benchmark import load_benchmark
 from sforge.harness.config import load_config, create_backend_from_config
 from sforge.harness.run_evaluation import judge_submission
@@ -34,6 +35,8 @@ def score_captures(trial, task, config, backend):
     identities = [r["capture_id"] for r in records]
     if len(set(identities)) != len(identities) or any(not re.fullmatch(r"capture-[0-9]+", x) for x in identities):
         raise ValueError("Capture index has duplicate or unsafe identities")
+    evaluator_digest = hashlib.sha256(b"".join(Path(module.__file__).read_bytes()
+        for module in (grading, run_evaluation, selection, task_spec))).hexdigest()
     destination = trial / "offline-scoring"
     destination.mkdir(exist_ok=True)
     entries = []
@@ -49,11 +52,13 @@ def score_captures(trial, task, config, backend):
         result_path = directory / "score.json"
         if result_path.is_file():
             entry = json.loads(result_path.read_text())
-            if entry["source_sha256"] != digest or entry["task_sha256"] != receipt["task_sha256"]:
+            if (entry["source_sha256"] != digest or entry["task_sha256"] != receipt["task_sha256"]
+                    or entry.get("evaluator_sha256") != evaluator_digest):
                 raise ValueError("Offline score provenance differs from the trial")
         else:
             entry = dict(type="submission", round=identifier, source_sha256=digest,
-                         task_sha256=receipt["task_sha256"], captured_at=record["captured_at"])
+                         task_sha256=receipt["task_sha256"], evaluator_sha256=evaluator_digest,
+                         captured_at=record["captured_at"])
             try:
                 report = judge_submission(task_spec=task, archive=archive, config=config,
                     backend=backend, submission_id=identifier, log_dir=directory / "native",
