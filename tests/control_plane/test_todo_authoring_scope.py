@@ -127,7 +127,7 @@ def test_execution_exclusion_registration_and_claim_conflict_preserve_source(exe
     _, state, cli = execution_exclusion_goal
     create = ("add", "--role", "agent", "--text", "Review the current change",
               "--task-class", "advancement_task",
-              "--claimed-by", "agent-a")
+              "--claimed-by", "\u001cAGENT\u0085A\u001f")
     before = state.read_bytes()
     for excluded in ("unknown-agent", "agent-a", "invalid/token"):
         code, rejected = cli(*create, "--excluded-agent", excluded)
@@ -135,7 +135,7 @@ def test_execution_exclusion_registration_and_claim_conflict_preserve_source(exe
         assert state.read_bytes() == before
         assert cli("list")[1]["todo_count"] == 0
 
-    code, created = cli(*create, "--excluded-agent", " agent-b ", "--excluded-agent", "agent-b")
+    code, created = cli(*create, "--excluded-agent", "\u001cAGENT\u0085B\u001f", "--excluded-agent", "agent-b")
     assert code == 0, created
     todo_id = created["todo_id"]
     code, listed = cli("list", "--todo-id", todo_id)

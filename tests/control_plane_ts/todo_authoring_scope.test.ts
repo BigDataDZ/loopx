@@ -41,6 +41,25 @@ test("explicit all-agent intent is accepted without turning authorship into lane
   }
 });
 
+test("create returns normalized author and claim without granting execution", () => {
+  const raw = "\u001cAGENT\u0085A\u001f";
+  const result = plan({actor_agent_id: raw, claimed_by: raw}, {role: "agent"});
+  assert.equal(result.actor_agent_id, "agent-a");
+  assert.equal(result.claimed_by, "agent-a");
+  assert.equal(result.bound_agent, null);
+  const anonymous = plan({}, {role: "agent"});
+  assert.equal(anonymous.actor_agent_id, null);
+  assert.equal(anonymous.claimed_by, null);
+  for (const field of ["actor_agent_id", "claimed_by"]) {
+    assert.throws(() => plan({[field]: "missing-agent"}, {role: "agent"}), /not registered/);
+    assert.throws(() => plan({[field]: raw}, {role: "agent", registered_agents: []}),
+      /loopx configure-goal --goal-id goal-a --registered-agent agent-a --execute/);
+  }
+  const edited = plan({}, {command: "update", role: "agent"});
+  assert.equal(Object.hasOwn(edited, "actor_agent_id"), false);
+  assert.equal(Object.hasOwn(edited, "claimed_by"), false);
+});
+
 test("explicit continuation and gate constraints cannot silently overwrite each other", () => {
   for (const command of ["create", "update"]) for (const intent of [
     {global_gate: true, bound_agent: "agent-a"},

@@ -388,7 +388,10 @@ canonical idempotency.
 
 Public creation validates task class, role and User gate scope together through
 the existing typed create-authoring plan before provider dispatch. It no longer
-makes a separate class-only preflight call. The standalone Markdown add codec
+makes a separate class-only preflight call. The same plan returns normalized
+author and claim identities from one registry snapshot, removing repeated Python
+registration reads; the canonical transaction retains its fresh source fence.
+The standalone Markdown add codec
 retains its class check for callers outside that facade. Priority normalization
 still preserves the create request bound by historical operation receipts;
 removing a redundant check does not change replay identity or authorize a write.
@@ -420,7 +423,9 @@ publication recovery, not cross-host distribution of private validation commands
 
 公开创建入口在 provider 调用之前，通过现有 TS 创建规划一并检查任务类别、角色与
 User gate 范围，移除重复的类别预检调用。独立 Markdown 添加 codec 仍为直接调用方
-保留类别检查；优先级规范化继续保持历史创建回执绑定的请求形态，不改变重放身份或
+保留类别检查。完整创建规划从一次注册表快照返回规范化的作者与认领身份，删除
+Python 重复注册读取；canonical 事务仍保留自己的新鲜来源检查。优先级规范化继续
+保持历史创建回执绑定的请求形态，不改变重放身份或
 写入准入。多个字段同时无效时，仍拒绝写入，错误由完整创建检查及输入检查顺序决定。
 
 退役调用方也须保留各字段的原请求行为：创建路径压缩文本、解析优先级与绑定，保留

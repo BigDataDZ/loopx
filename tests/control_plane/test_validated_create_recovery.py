@@ -81,6 +81,17 @@ def intent(registry):
          "claimed_by": "agent-a", "priority": "P1", "title": "Check the artifact",
          "text": "[P1] Check the artifact"},
     ),
+    (
+        {"role": "user", "task_class": "user_action", "text": "Read the artifact",
+         "agent_id": "\u001cAGENT\u0085A\u001f"},
+        {"role": "user", "task_class": "user_action", "text": "Read the artifact",
+         "bound_agent": "agent-a"},
+    ),
+    (
+        {"role": "agent", "text": "Validate the artifact", "claimed_by": "\u001cAGENT\u0085A\u001f"},
+        {"role": "agent", "text": "Validate the artifact", "claimed_by": "agent-a",
+         "task_class": "advancement_task"},
+    ),
 ])
 def test_public_cli_replays_prior_normalized_create_without_replacing_new_data(promoted, options, normalized):
     registry, runtime, _ = promoted
@@ -121,7 +132,7 @@ def test_public_cli_replays_prior_normalized_create_without_replacing_new_data(p
             for entry in value if isinstance(value, list) else [value]:
                 # CLI's capability option is singular and repeatable.
                 command.extend(["--required-capability" if field == "required_capabilities" else flag, entry])
-    if options["role"] == "user":
+    if options["role"] == "user" and "agent_id" not in options:
         command.extend(["--agent-id", "agent-a"])
     retried = subprocess.run(command, capture_output=True, text=True, timeout=60)
     assert retried.returncode == 0, retried.stdout + retried.stderr
