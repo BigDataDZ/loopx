@@ -930,6 +930,17 @@ provider. This is a bounded App companion, not full old-source/Host upgrade or
 D2/release-default qualification. Continue those original acceptance frontiers
 and retire each last caller separately.
 
+Cold-import preservation checkpoint (R5/D1, T4/C1): full-state backups now
+witness each saved regular member's bytes in their existing manifests, including
+raw Markdown history, lease/receipt files, SQLite snapshots and stored
+configuration. Hashing the copied stream avoids binding a reviewed backup to a
+later source reread; failed reads retain the previous backup. This is the backup
+binding prerequisite, not cold-import qualification. Continue the same reviewed
+source import through inventory/quiescence, lease/outbox disposition, immutable
+preview, explicit confirm, writer fence, File/SQLite import/readback and original
+operation recovery on the installed CLI and packaged App. Do not retire the last
+normal Markdown writer or claim the released SQLite default from this checkpoint.
+
 The qualified shadow→canonical archive→isolated File/SQLite restore path retains
 committed dependency archives, terminal lease facts and later canonical writes.
 It does not preserve every unreferenced old-source archive or raw historical
