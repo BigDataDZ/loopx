@@ -90,6 +90,7 @@ const DECLARED_UNFOLDABLE: Record<string, { count: number; reason: string }> = {
 /** Every module that reads the owner, pinned so that dropping an import is loud. */
 const CANONICAL_CONSUMERS = [
   "control_plane/agents/supervisor_event_append.ts",
+  "control_plane/capabilities/change_quality_validation.ts",
   "control_plane/capabilities/external_evidence.ts",
   "control_plane/collaboration/chat_mode.ts",
   "control_plane/collaboration/delegation.ts",
@@ -100,6 +101,7 @@ const CANONICAL_CONSUMERS = [
   "control_plane/collaboration/semantic_request.ts",
   "control_plane/coordination/authority_archive_read.ts",
   "control_plane/coordination/authority_source.ts",
+  "control_plane/coordination/cold_source_import.ts",
   "control_plane/coordination/legacy_writer_fence.ts",
   "control_plane/coordination/local_authority_migration.ts",
   "control_plane/coordination/local_authority_shadow.ts",
@@ -122,6 +124,7 @@ const CANONICAL_CONSUMERS = [
   "control_plane/goals/shared_goal_alignment.ts",
   "control_plane/goals/source_session_lifetime.ts",
   "control_plane/governed_capability.ts",
+  "control_plane/presentation/action_review_plan.ts",
   "control_plane/quota/refresh_external_delivery.ts",
   "control_plane/runtime/execution_identity.ts",
   "control_plane/runtime/usage_statistics_cycles.ts",

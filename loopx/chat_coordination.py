@@ -52,6 +52,7 @@ def apply_context_handoff(
         controller.registry_path,
         session=session,
         turn=turn,
+        source_store=controller.store,
         response=response,
         source_authorized=lambda: scope["kind"] != "external_audience"
         or manager_authorization_scope_is_current(
@@ -106,7 +107,8 @@ def prepare_turn_context(controller, adapter, session, turn_id, event_sink, *, s
                 if controller.adapters.get(session_id) is adapter:
                     controller.adapters.pop(session_id, None)
             manager_runtime = controller.manager_runtime_profile(
-                str(session.get("channel_id") or "manager")
+                str(session.get("channel_id") or "manager"),
+                steward_context=session.get("steward_context"),
             )
             adapter = controller._start_adapter(
                 agent_id=str(session["agent_id"]),
