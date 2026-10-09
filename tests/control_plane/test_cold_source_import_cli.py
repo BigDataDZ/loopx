@@ -48,10 +48,10 @@ def workspace(tmp_path, monkeypatch):
     shutil.copytree(package, receiver / "loopx", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     env = {**os.environ, "PYTHONPATH": str(receiver)}
 
-    def cli(action, *args, success=True, output_format="json"):
+    def cli(action, *args, success=True, output_format="json", runtime_override=None):
         child = subprocess.run([sys.executable, "-c",
             "import loopx,runpy,sys; print(loopx.__file__,file=sys.stderr); runpy.run_module('loopx.cli',run_name='__main__')",
-            "--registry", str(registry), "--runtime-root", str(runtime), "--format", output_format,
+            "--registry", str(registry), "--runtime-root", str(runtime_override or runtime), "--format", output_format,
             "coordination-shadow", action, "--goal-id", "cold", "--operation-id", "cold-original", *map(str, args)],
             cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
         assert str(receiver / "loopx/__init__.py") in child.stderr
@@ -121,3 +121,20 @@ def test_archive_source_map_cannot_be_forged_in_external_manifest(tmp_path, monk
     path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="cold_import_backup_source_map_changed"):
         read_cold_source_backup(path)
+
+
+def test_runtime_path_alias_uses_the_same_backed_up_source(tmp_path, monkeypatch):
+    cli, state, backup, _, runtime, _, _ = workspace(tmp_path, monkeypatch)
+    alias = tmp_path / "runtime-alias"
+    alias.symlink_to(runtime, target_is_directory=True)
+    prepared = cli("prepare-import", "--backup-manifest", backup["manifest_path"],
+        "--provider", "sqlite", "--target-handoff-mode", "soft_claim",
+        runtime_override=alias)["cold_import"]
+    assert prepared["status"] == "prepared", prepared
+    applied = cli("apply-import", "--plan-sha256", prepared["plan_sha256"],
+        "--writers-stopped", "--execute", runtime_override=alias)["cold_import"]
+    assert applied["status"] == "applied", applied
+    state.unlink()
+    recovered = cli("recover-import", "--plan-sha256", prepared["plan_sha256"],
+        "--execute", runtime_override=alias)["cold_import"]
+    assert recovered["status"] == "replayed", recovered

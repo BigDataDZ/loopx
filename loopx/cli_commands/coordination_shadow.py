@@ -247,6 +247,9 @@ def handle_coordination_shadow_command(
             raise ValueError(f"goal {args.goal_id!r} is not present in the registry")
         runtime_root = resolve_runtime_root(registry, runtime_root_arg, registry_path=registry_path)
         if args.coordination_shadow_command in {"prepare-import", "apply-import", "recover-import"}:
+            # Backup/source codecs bind physical Host paths. Resolve aliases at
+            # this IO boundary, retaining the same identity across all phases.
+            runtime_root = runtime_root.resolve()
             from ..control_plane.coordination.local_authority_shadow_projection import source_effect_runtime_result
             request = {"schema_version": "loopx_cold_source_import_request_v0",
                 "runtime_root": str(runtime_root.expanduser().absolute()), "goal_id": args.goal_id,
