@@ -68,6 +68,19 @@ reads that same operation. Archiving is not proof of settlement or import
 readiness. These paths are covered with the old producers physically absent
 from a disposable receiver, not a declaration that they can all be deleted yet.
 
+For proved original Todo writes, the disposition and cold-import paths are now
+qualified together on File and SQLite: retain a full backup of the pending
+source, drain through the original TS owner, inspect the exact original receipt,
+then use revision-bound capture rollback to retain that receipt and stop capture.
+Make a fresh full backup before the [reviewed cold import](local-authority-provider-selection.md).
+An empty queue with active capture still refuses import. The import has its own
+operation and receipt; abandoned writes remain absent, committed writes appear
+once, and retrying import after later canonical writes preserves the current
+provider state and original archived bytes. This covers four interrupted-write
+windows with the old normal producers absent from the receiver. It does not
+qualify ambiguous-source settlement, automatic Host shutdown, lease release or
+live reactivation of a restored Goal. Keep those original acceptance boundaries.
+
 In the App, open **Goal settings → Task ownership → Goal data storage** to read
 the same verified inventory. It shows task/archive and unsettled-lease counts
 and retained capture/outbox presence, without exposing source text, local paths

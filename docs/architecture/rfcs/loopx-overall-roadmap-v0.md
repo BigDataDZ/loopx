@@ -948,7 +948,13 @@ Host processes and native source leases on File/SQLite: process exit and lease
 release remain separate, expired active leases refuse import, and the old grant
 cannot launch a Host after cutover. This proves the existing supervisor/lease
 boundary with synthetic work, not automatic Host discovery or live model use.
-Continue pending outbox disposition, App loading with the old normal writer
+Proved original Todo outbox disposition now composes with cold import on both
+File and SQLite: four interrupted-write windows retain pending-source backups,
+exact original receipts and revision-bound rollback archives. Active capture
+still refuses import after its queue drains; a fresh post-disposition backup
+binds the reviewed import. Import replay preserves later canonical writes and
+the original archived bytes with the old normal producers absent in the receiver.
+Continue ambiguous-source disposition, App loading with the old normal writer
 absent and authorized full-state reactivation in R5. The
 installed cold-import CLI uses the existing selected dispatcher and
 Goal path resolver; real File/SQLite import and original-receipt recovery pass

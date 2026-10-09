@@ -617,7 +617,10 @@ L3 检查点：独立领取/接管、原子 claim 准入与维护共用 typed le
 owned Host 进程、未晋升源的原生租约和 File/SQLite 验证：进程退出不释放租约，
 过期 active 租约仍拒绝导入；原生释放后保留历史身份，切换后旧 grant 在 Host 启动前
 拒绝。这是合成工作对既有 supervisor/lease 边界的验证，不是自动发现/停止 Host
-或 live 模型验收。pending outbox 逐项处置、旧正常 writer 物理缺席的 App 加载、
+或 live 模型验收。可证明的原 Todo outbox 现与 File/SQLite 冷导入串联：四种中断窗口
+保留待处理源备份、精确原回执及绑定 revision 的 rollback 归档；队列 drain 后 capture
+仍活跃则继续拒绝导入。处置后重新备份并审核导入，原操作重试保留后续 canonical
+新写入和原归档字节，接收端旧正常生产者物理缺席。歧义来源处置、旧正常 writer 物理缺席的 App 加载、
 完整状态重新激活继续开放；协调源备份验证不结算完整恢复。详见
 [冷源导入与支持边界](../../reference/local-authority-provider-selection.md)。
 

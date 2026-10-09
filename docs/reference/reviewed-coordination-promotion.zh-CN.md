@@ -50,6 +50,14 @@ candidate 的原回执只 replay，不产生第二次效果。OS-lock Host 适�
 保留 candidate/outbox，重试读回同一操作；归档不证明结算或导入就绪。独立接收端中
 物理移除旧生产者后的测试覆盖了这些路径，尚不代表可以删除全部旧 writer。
 
+对于可证明的原 Todo 写入，File／SQLite 已串联验收原操作处置与冷导入：先完整备份
+待处理来源，经原 TS owner drain，核验精确原回执，再用绑定 revision 的 capture
+rollback 保留回执并停止捕获；[审核冷导入](local-authority-provider-selection.md)前
+重新完整备份。队列为空而 capture 仍活跃时，导入仍拒绝。导入使用自己的操作和回执；
+未发生的写入不出现，已提交写入只出现一次。后续 canonical 新写入后重试导入，当前
+provider 数据及原归档字节均保留。接收端物理移除旧正常生产者后，覆盖四种中断窗口。
+这不替代歧义来源结算、自动停止 Host、lease release 或恢复 Goal 的实际重新启用验收。
+
 App 中打开 **Goal 设置 → 任务所有权 → Goal 数据存储**，读取同一 TS owner 核验的
 盘点。页面只显示当前／归档任务及未结算 lease 数量、原 capture/outbox 文件是否存在，
 不暴露源正文、本机路径或执行密钥。“读回当前存储”重新观察，失败时清除旧数量。
