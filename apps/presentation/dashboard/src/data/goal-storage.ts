@@ -4,10 +4,16 @@ import {ChatApiError, requestJson} from "./chat";
 // provider graph into the browser; this schema validates its HTTP projection.
 const provider = z.enum(["file", "sqlite"]);
 export type MigrationProvider = z.infer<typeof provider>;
-export const storageCarrierSchema = z.object({
+const migrationCarrierSchema = z.object({
   goal_id: z.string().min(1), preview_id: z.string().regex(/^[a-f0-9]{32}$/),
   plan_sha256: z.string().regex(/^[a-f0-9]{64}$/),
 });
+// Reuse the cold-import owner's operation identity; old migration carriers
+// remain readable without a new protocol discriminator or guessed source.
+export const storageCarrierSchema = z.union([migrationCarrierSchema, z.object({
+  goal_id: z.string().min(1), operation_id: z.string().regex(/^[a-f0-9]{32}$/),
+  plan_sha256: z.string().regex(/^[a-f0-9]{64}$/),
+})]);
 export type StorageCarrier = z.infer<typeof storageCarrierSchema>;
 export const storageSourceSchema = z.object({
   goal_id: z.string(), canonical: z.boolean(), provider: provider.nullable(),
@@ -31,6 +37,14 @@ export const storageResultSchema = z.object({
   }).optional(),
   recovery: z.object({phase: z.enum(["prepared", "completed"]), target_store_identity: z.string(), archive_sha256: z.string()}).nullable().optional(),
   reason_code: z.string().optional(),
+  operation_id: z.string().regex(/^[a-f0-9]{32}$/).optional(),
+  target_handoff_mode: z.enum(["soft_claim", "hard_lease"]).optional(),
+  source_inventory: z.object({todo_count: z.number().int().nonnegative(),
+    archived_todo_count: z.number().int().nonnegative(), lease_count: z.number().int().nonnegative(),
+    source_handoff_mode: z.string()}).optional(),
+  legacy_writer_fenced: z.boolean().nullable().optional(),
+  coordination_source_backup_verified: z.boolean().optional(),
+  complete_goal_backup_verified: z.literal(false).optional(),
 });
 export type StorageResult = z.infer<typeof storageResultSchema>;
 
@@ -44,9 +58,14 @@ async function read(url: string, init?: RequestInit): Promise<StorageResult> {
 export function fetchGoalStorage(goalId: string) {
   return read(`/api/chat/goal-storage?${new URLSearchParams({goal_id: goalId})}`);
 }
-export function previewGoalStorage(goalId: string, target: MigrationProvider) {
+export function previewGoalStorage(goalId: string, target: MigrationProvider, mode?: "soft_claim" | "hard_lease") {
+  if (mode) return read("/api/chat/goal-storage/import/preview", {method: "POST",
+    body: JSON.stringify({goal_id: goalId, provider: target, handoff_mode: mode})});
   return read("/api/chat/goal-storage/preview", {method: "POST", body: JSON.stringify({goal_id: goalId, provider: target})});
 }
 export function recoverGoalStorage(carrier: StorageCarrier, apply = false) {
+  const saved = storageCarrierSchema.parse(carrier);
+  if ("operation_id" in saved) return read(`/api/chat/goal-storage/import/${apply ? "apply" : "recover"}`, {
+    method: "POST", body: JSON.stringify({...saved, ...(apply ? {writers_stopped: true} : {})})});
   return read(`/api/chat/goal-storage/${apply ? "apply" : "recover"}`, {method: "POST", body: JSON.stringify(storageCarrierSchema.parse(carrier))});
 }
