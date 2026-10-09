@@ -12,9 +12,10 @@ integrity boundaries. This packaged skill is its task-triggered Agent playbook.
 An assigned solver follows its task instructions and current execution contract.
 The words “benchmark”, “evaluation”, or “submission” in that task do not grant
 the operator role or require experiment-board discovery. Use this workflow when
-the requested work actually includes run management or post-run analysis; an
-explicit request to use the skill still applies. Keep the solver's task-local
-validation and authorized submission path distinct from experiment management.
+the requested work actually includes run management, analysis of an active run,
+or post-run analysis; an explicit request to use the skill still applies. Keep
+the solver's task-local validation and authorized submission path distinct from
+experiment management.
 
 The capability is catalog-ready without a per-Goal enable switch. Installing
 this skill does not grant runner, shell, network, credential, private-evidence,
