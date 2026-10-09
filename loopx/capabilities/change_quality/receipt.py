@@ -223,7 +223,9 @@ def build_change_quality_prepare_packet(
                 "LoopX derives guardrail status from sparse risks[] and validation[]; the Agent does not author guardrail states.",
                 "Use blocker only for concrete correctness, security, privacy, contract, or required-validation failures.",
                 "Use repository-native tests, linters, type checkers, and build tools as language-specific oracles.",
-                "Failed validators remain failed. Only optional validation may be nonblocking through exact-scope change_quality_baseline_attribution_v0: independent immutable base/head runs of the same command, identical full failure-signature/fixture/environment digests, causal analysis and passed required validators covering all changed paths. Required checks, frozen criteria, missing evidence and introduced or worsened failures stay blocking. Execution and causal evidence must be independently reviewed; shape checks do not prove a run occurred.",
+                *([
+                    "Failed validators remain failed. Only optional validation may be nonblocking through exact-scope change_quality_baseline_attribution_v0: independent immutable base/head runs of the same command, identical full failure-signature/fixture/environment digests, causal analysis and passed required validators covering all changed paths. Required checks, frozen criteria, missing evidence and introduced or worsened failures stay blocking. Execution and causal evidence must be independently reviewed; shape checks do not prove a run occurred."
+                ] if policy["enabled"] else []),
                 (
                     "One bounded safe-fix pass is allowed; rerun prepare after edits and review the final scope."
                     if policy["safe_fix"]

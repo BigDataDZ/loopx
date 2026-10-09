@@ -14,6 +14,21 @@ from loopx.capabilities.change_quality.receipt import (
 from test_change_quality import GOAL_ID, _enable, _fixture, _git, _result
 
 
+def test_attribution_instructions_only_enter_enabled_goal_packets(tmp_path):
+    repo, registry, _ = _fixture(tmp_path)
+    (repo / "app.py").write_text("value = 2\n")
+    kwargs = dict(registry_path=registry, goal_id=GOAL_ID, repo_path=repo, base_ref="HEAD")
+    disabled = build_change_quality_prepare_packet(**kwargs)
+    assert disabled["status"] == "disabled"
+    assert not any("change_quality_baseline_attribution_v0" in line
+                   for line in disabled["agent_contract"]["instructions"])
+    _enable(registry)
+    enabled = build_change_quality_prepare_packet(**kwargs)
+    assert enabled["status"] == "review_required"
+    assert any("change_quality_baseline_attribution_v0" in line
+               for line in enabled["agent_contract"]["instructions"])
+
+
 def _case(tmp_path: Path):
     repo, registry, runtime = _fixture(tmp_path)
     _enable(registry)
