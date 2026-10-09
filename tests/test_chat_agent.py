@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import queue
+import stat
 import threading
 import time
 from types import SimpleNamespace
@@ -71,11 +72,104 @@ class _FakeAppServerProcess:
         self.returncode = -1
 
 
+def _system_toolchain_fixture(monkeypatch, *, selected="/Library/Developer/CommandLineTools",
+                              uid=0, writable=False, symlink=False, mutable_parent=False):
+    root = Path(selected)
+    binary = root / "usr/bin/git"
+    checked_paths = {root, root / "usr", binary.parent, binary}
+    real_stat, real_resolve = Path.stat, Path.resolve
+    real_run, real_access = chat_agent.subprocess.run, chat_agent.os.access
+    probes = []
+
+    def run(command, **kwargs):
+        if command != ["/usr/bin/xcode-select", "--print-path"]:
+            return real_run(command, **kwargs)
+        probes.append((command, kwargs))
+        return SimpleNamespace(returncode=0, stdout=selected + "\n")
+
+    def metadata(path, *args, **kwargs):
+        if path in checked_paths:
+            mode = (stat.S_IFREG if path == binary else stat.S_IFDIR) | 0o755
+            unsafe = writable or (mutable_parent and path == binary.parent)
+            return SimpleNamespace(st_uid=uid, st_mode=mode | (0o020 if unsafe else 0))
+        return real_stat(path, *args, **kwargs)
+
+    def resolve(path, *args, **kwargs):
+        if path in checked_paths:
+            return Path("/private/toolchain") if symlink else path
+        return real_resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(chat_agent.sys, "platform", "darwin")
+    monkeypatch.setattr(chat_agent.subprocess, "run", run)
+    monkeypatch.setattr(Path, "stat", metadata)
+    monkeypatch.setattr(Path, "resolve", resolve)
+    monkeypatch.setattr(chat_agent.os, "access", lambda path, mode:
+                        True if path == binary else real_access(path, mode))
+    return root, probes
+
+
+@pytest.mark.parametrize("selected", ["/Library/Developer/CommandLineTools",
+                                      "/Applications/Xcode.app/Contents/Developer"])
+def test_workspace_macos_toolchain_is_read_only_and_keeps_core_isolation(monkeypatch, tmp_path, selected):
+    from loopx.capabilities.native_chat.project_context import ChatProjectContexts
+    from loopx.control_plane.effect_runtime import effect_runtime_result
+    context = ChatProjectContexts([tmp_path], filesystem_scope="workspace_only").available()[0]
+    policy = effect_runtime_result("collaboration.project.session_identity", {"context": context})
+    original = policy["host_config"]
+    snapshot = json.loads(json.dumps(original))
+    root, probes = _system_toolchain_fixture(monkeypatch, selected=selected)
+    monkeypatch.setenv("DEVELOPER_DIR", "/private/account-toolchain")
+    result = chat_agent._workspace_system_tools(original, policy["permissions_profile"])
+    profile = result["permissions"][policy["permissions_profile"]]
+    assert original == snapshot
+    assert profile["filesystem"] == {**snapshot["permissions"][policy["permissions_profile"]]["filesystem"],
+                                     str(root): "read"}
+    assert profile["network"] == {"enabled": False}
+    assert result["skills"] == snapshot["skills"]
+    assert result["allow_login_shell"] is False
+    assert result["shell_environment_policy"] == {
+        **snapshot["shell_environment_policy"],
+        "set": {"PATH": str(root / "usr/bin") + ":/usr/bin:/bin:/usr/sbin:/sbin"},
+    }
+    assert probes[0][0] == ["/usr/bin/xcode-select", "--print-path"]
+    assert "DEVELOPER_DIR" not in probes[0][1]["env"]
+    assert probes[0][1]["timeout"] == 2
+
+
+@pytest.mark.parametrize("options", [
+    {"selected": "/private/account-toolchain"},
+    {"selected": "/Applications/Private.app/Contents/Developer"},
+    {"uid": 501}, {"writable": True}, {"symlink": True}, {"mutable_parent": True},
+])
+def test_workspace_macos_toolchain_rejects_private_or_mutable_dependencies(monkeypatch, options):
+    _system_toolchain_fixture(monkeypatch, **options)
+    config = {"sentinel": "unchanged"}
+    assert chat_agent._workspace_system_tools(config, "profile") is config
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError(), chat_agent.subprocess.TimeoutExpired("xcode-select", 2)])
+def test_workspace_macos_missing_toolchain_keeps_existing_profile(monkeypatch, error):
+    monkeypatch.setattr(chat_agent.sys, "platform", "darwin")
+    def run(*args, **kwargs):
+        raise error
+    monkeypatch.setattr(chat_agent.subprocess, "run", run)
+    config = {"sentinel": "unchanged"}
+    assert chat_agent._workspace_system_tools(config, "profile") is config
+
+
+def test_non_macos_workspace_does_not_discover_macos_tools(monkeypatch):
+    monkeypatch.setattr(chat_agent.sys, "platform", "linux")
+    monkeypatch.setattr(chat_agent.subprocess, "run", lambda *args, **kwargs: pytest.fail("unexpected host probe"))
+    config = {"sentinel": "unchanged"}
+    assert chat_agent._workspace_system_tools(config, "profile") is config
+
+
 @pytest.mark.parametrize("grant", ["workspace_read", "workspace_write"])
 @pytest.mark.parametrize("resume", [False, True])
 def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_turn(monkeypatch, tmp_path, grant, resume):
     from loopx.capabilities.native_chat.project_context import ChatProjectContexts
     context = ChatProjectContexts([tmp_path], workspace_grant=grant, filesystem_scope="workspace_only").available()[0]
+    toolchain, _ = _system_toolchain_fixture(monkeypatch)
     profile = "loopx_workspace_only_" + ("write" if grant == "workspace_write" else "read")
     process = _FakeAppServerProcess(config_response={"config": {"mcp_servers": {"managed_fixture": {"command": "private-command"}}}},
         thread_response={"thread": {"id": "thread-loopx-chat"},
@@ -106,6 +200,7 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
         assert params["permissions"] == session.permissions_profile == profile
         assert "sandbox" not in params and params["approvalPolicy"] == "never"
         assert params["config"]["permissions"][profile]["network"]["enabled"] is False
+        assert params["config"]["permissions"][profile]["filesystem"][str(toolchain)] == "read"
         assert params["config"]["default_permissions"] == profile
         assert params["config"]["skills"]["include_instructions"] is False
         assert params["config"]["project_doc_max_bytes"] == 0
@@ -119,6 +214,7 @@ def test_project_filesystem_scope_is_verified_on_start_resume_and_pinned_per_tur
         environment = params["config"]["shell_environment_policy"]
         assert environment["inherit"] == "none" and environment["include_only"] == ["PATH"]
         assert environment["experimental_use_profile"] is False
+        assert environment["set"]["PATH"].startswith(str(toolchain / "usr/bin") + ":")
         assert "PRIVATE_FIXTURE" not in environment.get("set", {})
         sent = []
         monkeypatch.setattr(session, "_request", lambda method, params, **kw:
