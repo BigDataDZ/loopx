@@ -166,6 +166,36 @@ already assigned to the eligible receiver. Without `--transfer-claim`, transfer 
 claim. Neither form overrides an exclusion or widens write scopes. Use the actual readback
 versions, not these example numbers.
 
+### Action help and argument recovery
+
+Use `loopx task-lease renew --help` to inspect only that action's options;
+all five lease actions support scoped help. Todo `list`, `claim`, `receipt`,
+`result-read`, `plan` and `project-markdown` also show scoped help. Parent help
+and the other Todo actions retain the full option list. Help reads no Goal or
+lease state; conditional requirements and authority checks still apply.
+
+Lease argument errors return `recovery.requires_flags`, `remove_flags` and
+`cli_args`. Review the removed flags, supply missing values, then invoke the
+returned argument tokens. The repair preserves registry/runtime routing,
+caller identities, execution keys and supplied CAS versions. It does not
+execute a retry or authorize work. Irrelevant flags that were previously
+ignored are now rejected before runtime resolution, including an explicit
+zero version on `inspect`. Valid lifecycle requests still use the existing
+lease authority: exact idempotent retries may replay their receipt, while new
+intent cannot bypass the current version or owner checks.
+
+使用 `loopx task-lease renew --help` 只查看当前动作的选项，五种 lease 动作均支持。
+Todo 的 `list`、`claim`、`receipt`、`result-read`、`plan` 和 `project-markdown`
+也支持动作专属帮助；父命令与其他 Todo 动作保留完整选项列表。帮助不读取 Goal
+或租约状态，条件必填项和权限检查仍然有效。
+
+租约参数错误会返回缺失项 `recovery.requires_flags`、冲突项 `remove_flags`
+和重试参数 `cli_args`。先确认删除项、补齐缺失值，再调用这些参数；恢复提示保留
+注册表与运行目录路由、调用者身份、执行 key 和已提供的 CAS 版本，不自动重试，
+也不授予执行权限。此前被忽略的无关选项现在会在解析运行状态之前被拒绝，包括
+`inspect` 上显式提供的零版本。有效请求仍由原租约规则裁决：完全相同的重试可
+重放已有回执，新意图不能绕过当前版本或 owner 检查。
+
 ## What inspection proves
 
 `task-lease inspect` uses one TS read owner for legacy files and selected
