@@ -14,8 +14,8 @@ from typing import Any
 from uuid import uuid4
 
 from ...agent_registry import load_goal_from_registry, registered_agent_ids_for_goal
+from ...paths import effective_runtime_root
 from ..coordination.local_authority import local_authority_is_promoted
-from ..coordination.local_authority_shadow_adapter import effective_runtime_root
 from ..effect_runtime import (
     CANONICAL_AUTHORITY_WRITE_TIMEOUT_SECONDS,
     effect_runtime_result,
