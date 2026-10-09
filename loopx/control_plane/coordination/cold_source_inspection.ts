@@ -12,7 +12,7 @@ import {withShadowMaintenanceLock, ShadowManagementError, readShadowManagementSt
 import {readLocalAuthorityShadow, LOCAL_AUTHORITY_SHADOW_READ_REQUEST_SCHEMA} from "./local_authority_shadow.ts";
 import {drainInventory} from "./shadow_drain_files.ts";
 import {planShadowDrain, SHADOW_DRAIN_PLAN_REQUEST_SCHEMA} from "./shadow_drain_plan.ts";
-import {localAuthorityProviderPaths} from "./local_authority_provider.ts";
+import {decodeLocalAuthoritySelection, localAuthorityProviderPaths, openLocalAuthorityStoreHandle} from "./local_authority_provider.ts";
 import {FileAuthorityStore} from "./file_authority_store.ts";
 
 export const COLD_SOURCE_INSPECTION_REQUEST_SCHEMA = "loopx_cold_source_inspection_request_v0";
@@ -64,7 +64,23 @@ export async function inspectColdCoordinationSource(value: unknown): Promise<Jso
         if (fence.status !== "missing") throw new ShadowManagementError(
           fence.status === "loaded" ? "legacy_authority_already_promoted" : fence.reason_code);
         const paths = localAuthorityProviderPaths(request.runtime_root, request.goal_id);
-        for (const path of [paths.marker, new FileAuthorityStore(paths.file, request.goal_id, {existingOnly: true}).path]) {
+        // A reviewed preview may bind an empty SQLite target before cutover.
+        // A selector alone is not a canonical head. Reuse the provider owner
+        // to verify its existing identity; never create or fall back on error.
+        let selected: string | null = null;
+        try { selected = await readFile(paths.marker, "utf8"); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        if (selected !== null) {
+          let selection: ReturnType<typeof decodeLocalAuthoritySelection>;
+          try { selection = decodeLocalAuthoritySelection(JSON.parse(selected), request.goal_id); }
+          catch { throw new ShadowManagementError("cold_source_canonical_authority_present"); }
+          if (selection.provider !== "sqlite") throw new ShadowManagementError("cold_source_canonical_authority_present");
+          const opened = await openLocalAuthorityStoreHandle(request.runtime_root, request.goal_id, {}, {existingOnly: true});
+          if ((await opened.store.loadAuthority()).status !== "missing") {
+            throw new ShadowManagementError("cold_source_canonical_authority_present");
+          }
+        }
+        for (const path of [new FileAuthorityStore(paths.file, request.goal_id, {existingOnly: true}).path]) {
           try { await lstat(path); }
           catch (error) {
             if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
