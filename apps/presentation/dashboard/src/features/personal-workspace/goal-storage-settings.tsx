@@ -13,6 +13,7 @@ export function GoalStorageSettings({goalId, onChanged}: {goalId: string; onChan
   const [carrier, setCarrier] = useState<StorageCarrier | null>(null);
   const [result, setResult] = useState<StorageResult | null>(null);
   const [target, setTarget] = useState<MigrationProvider>("sqlite");
+  const [mode, setMode] = useState<"" | "soft_claim" | "hard_lease">("");
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +23,7 @@ export function GoalStorageSettings({goalId, onChanged}: {goalId: string; onChan
   const generation = useRef(0);
   useEffect(() => {
     const token = ++generation.current;
-    setCurrent(null); setCold(undefined); setResult(null); setCarrier(null); setConfirmed(false); setInvalidSaved(false); setError(null); setBusy(true);
+    setCurrent(null); setCold(undefined); setResult(null); setCarrier(null); setConfirmed(false); setMode(""); setInvalidSaved(false); setError(null); setBusy(true);
     let saved: StorageCarrier | null = null;
     try {
       const raw = localStorage.getItem(key);
@@ -54,11 +55,13 @@ export function GoalStorageSettings({goalId, onChanged}: {goalId: string; onChan
   }, [goalId, key, reload, t]);
 
   async function submit(apply: boolean) {
-    if (inFlight.current || busy || invalidSaved || (apply && (!carrier || !confirmed))) return;
+    if (inFlight.current || busy || invalidSaved || (apply && (!carrier || !confirmed)) ||
+      (!apply && !current?.canonical && !mode)) return;
     inFlight.current = true; setBusy(true); setError(null);
     const token = generation.current;
     try {
-      const next = apply ? await recoverGoalStorage(carrier!, true) : await previewGoalStorage(goalId, target);
+      const next = apply ? await recoverGoalStorage(carrier!, true) : await previewGoalStorage(goalId, target,
+        current?.canonical ? undefined : mode || undefined);
       if (token !== generation.current) return;
       setResult(next);
       if (!apply && next.ok) {
@@ -87,7 +90,9 @@ export function GoalStorageSettings({goalId, onChanged}: {goalId: string; onChan
     catch { setError(t("storage.savedInvalid")); return; }
     setCarrier(null); setResult(null); setConfirmed(false); setInvalidSaved(false); setError(null);
   }
-  const completed = result?.recovery?.phase === "completed";
+  const coldCarrier = carrier && "operation_id" in carrier;
+  const completed = result?.recovery?.phase === "completed" || (coldCarrier &&
+    (result?.status === "applied" || result?.status === "recovered" || result?.status === "replayed"));
   return <section className="personal-cadence-settings" aria-label={t("storage.title")}>
     <div className="personal-cadence-form">
       <h3>{t("storage.title")}</h3>
@@ -103,28 +108,33 @@ export function GoalStorageSettings({goalId, onChanged}: {goalId: string; onChan
           <p>{t("storage.coldBoundary")}</p>
         </>}
       </div> : null}
-      {current?.canonical || carrier ? <>
-        {carrier ? <p>{t("storage.reviewed", {source: result?.reviewed_source?.provider ?? "?", target: result?.target_provider ?? "?", cursor: result?.reviewed_source?.cursor ?? "?"})}</p>
+      {current || carrier ? <>
+        {carrier ? <p>{coldCarrier ? t("storage.coldReviewed", {target: result?.target_provider ?? "?", mode: result?.target_handoff_mode ? t(`ownership.${result.target_handoff_mode}`) : "?"}) : t("storage.reviewed", {source: result?.reviewed_source?.provider ?? "?", target: result?.target_provider ?? "?", cursor: result?.reviewed_source?.cursor ?? "?"})}</p>
           : <label>{t("storage.target")}<select aria-label={t("storage.target")} value={target} disabled={busy} onChange={e => setTarget(e.target.value as MigrationProvider)}>
             <option value="sqlite">SQLite</option><option value="file">File</option></select></label>}
-        {carrier && !completed ? <label><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)} />{t("storage.confirm")}</label> : null}
+        {!carrier && !current?.canonical ? <label>{t("ownership.target")}<select aria-label={t("ownership.target")} value={mode} disabled={busy} onChange={e => setMode(e.target.value as typeof mode)}>
+          <option value="" disabled>{t("storage.choosePolicy")}</option>
+          <option value="soft_claim">{t("ownership.soft_claim")}</option><option value="hard_lease">{t("ownership.hard_lease")}</option>
+        </select></label> : null}
+        {result?.source_inventory ? <p>{t("storage.coldInventory", {todos: result.source_inventory.todo_count, archived: result.source_inventory.archived_todo_count, leases: result.source_inventory.lease_count})}</p> : null}
+        {carrier && !completed ? <label><input type="checkbox" checked={confirmed} disabled={busy} onChange={e => setConfirmed(e.target.checked)} />{t(coldCarrier ? "storage.coldConfirm" : "storage.confirm")}</label> : null}
         <div className="personal-cadence-actions">
-          {carrier ? <><button className="is-primary" disabled={busy || !confirmed || completed || !result?.ok} onClick={() => void submit(true)} type="button">{t("storage.apply")}</button>
+          {carrier ? <><button className="is-primary" disabled={busy || !confirmed || completed || !result?.ok} onClick={() => void submit(true)} type="button">{t(coldCarrier ? "storage.coldApply" : "storage.apply")}</button>
             <button disabled={busy} onClick={discard} type="button">{t("storage.fresh")}</button></>
-            : <button className="is-primary" disabled={busy || invalidSaved || !current?.provider || target === current.provider} onClick={() => void submit(false)} type="button">{t("storage.preview")}</button>}
+            : <button className="is-primary" disabled={busy || invalidSaved || (current?.canonical ? !current.provider || target === current.provider : !mode)} onClick={() => void submit(false)} type="button">{t(current?.canonical ? "storage.preview" : "storage.coldPreview")}</button>}
         </div>
       </> : null}
       <div className="personal-cadence-actions">
         {invalidSaved ? <button disabled={busy} onClick={discard} type="button">{t("storage.fresh")}</button> : null}
         <button disabled={busy} onClick={() => setReload(n => n + 1)} type="button">{t(carrier ? "storage.recover" : "storage.refresh")}</button>
       </div>
-      {completed ? <p role="status">{t("storage.completed")}</p> : null}
-      {result?.recovery?.phase === "prepared" ? <p role="status">{t("storage.prepared")}</p> : null}
+      {completed ? <p role="status">{t(coldCarrier ? "storage.coldCompleted" : "storage.completed")}</p> : null}
+      {result?.recovery?.phase === "prepared" || (coldCarrier && result?.status === "prepared") ? <p role="status">{t("storage.prepared")}</p> : null}
       {error ? <p className="personal-machine-error" role="alert">{error}</p> : null}
       {result?.reason_code ? <p><code>{result.reason_code}</code></p> : null}
       {current?.canonical || carrier ? <details><summary>{t("storage.details")}</summary>
         {current?.canonical ? <p>{current.store_identity} · {current.provider_revision} · {current.cursor}</p> : null}
-        {carrier ? <p>{carrier.preview_id} · {carrier.plan_sha256}</p> : null}
+        {carrier ? <p>{"operation_id" in carrier ? carrier.operation_id : carrier.preview_id} · {carrier.plan_sha256}</p> : null}
       </details> : null}
       {busy ? <p aria-live="polite">{t("common.loading")}</p> : null}
     </div>
