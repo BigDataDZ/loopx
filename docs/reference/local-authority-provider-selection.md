@@ -406,11 +406,21 @@ the existing Goal path resolver; its File/SQLite import and original-receipt
 recovery run with `todos.py`, `bootstrap.py`, `runtime_shadow_writer_adapter.py`
 and `local_authority_shadow_outbox.py` physically absent in a disposable package.
 This proves that command's independence, not that other commands or supported
-writers can lose those files. Retained prose-write guards have live callers and
-must move to their owning boundary before their adapter is removed.
-The packaged App uses the real File/SQLite backend; App loading with those old
-modules absent remains a separate acceptance. This stage does not qualify
-supported old-writer retirement,
+writers can lose those files. The retained prose-write guard now belongs to the
+existing source/fence boundary and shares the source partition projector with
+capture. Its old import remains compatible. Configuration and the guard load
+with both capture modules absent. Pure runtime-root routing now belongs to
+`paths.effective_runtime_root`; canonical Todo, terminal lifecycle, acceptance,
+Chat and CLI callers import that owner directly. The old adapter reexports the
+same function for supported capture callers. Source and fresh-wheel File/SQLite
+HTTP import, process restart, original-operation recovery, later writes and
+canonical prose checks use the same oracle with both capture modules present
+and physically absent. Project-relative routes, explicit override precedence,
+source identity, maintenance, Todo/handoff, JSON type and failed-write protections
+remain intact. Historical outbox disposition and independent data/history
+recovery retain their separate qualifications; authorized reactivation and
+remaining App writer callers still need their original acceptance. This stage
+does not qualify supported old-writer retirement,
 release default or historical support cutoff.
 Source checks accept registered runtime directory aliases only when both paths
 resolve to the same physical directory. Retargeting an alias after preview still
