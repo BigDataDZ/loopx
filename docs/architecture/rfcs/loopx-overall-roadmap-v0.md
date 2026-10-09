@@ -890,6 +890,21 @@ provider. This is a bounded App companion, not full old-source/Host upgrade or
 D2/release-default qualification. Continue those original acceptance frontiers
 and retire each last caller separately.
 
+Cold-source import now has a bounded CLI/coordination stage: complete source
+records, an immutable source/target carrier bound to actual backup member bytes,
+explicit operator shutdown attestation, revalidation before the durable writer
+fence, and original-receipt recovery through the existing File/SQLite owners.
+It refuses unresolved capture/outbox and unsettled leases, including expired
+active and orphan records, without manufacturing shadow qualification. A killed
+fenced process can resume without rereading Markdown; original-receipt replay
+preserves later canonical writes. Coordination-source backup verification
+**does not qualify complete Goal recovery**. Continue the packaged App
+confirmation, attached-Host shutdown/restart, independent full-backup recovery
+and producer-free CLI entry in R5. Keep T4 retirement on actual callers: the
+retained Python prose-write guard still serves live callers and its obligation
+must survive adapter removal. This partial stage does not retire the supported
+old writer or qualify a released default.
+
 New-Goal App recovery is a separate bounded R5/T4 gap: after Goal/Todo commit,
 Host startup or a lost response must resume the frozen original operation,
 without regenerating a creator or duplicating its Todo/Session/Turn. Reuse the
