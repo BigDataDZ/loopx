@@ -899,8 +899,12 @@ active and orphan records, without manufacturing shadow qualification. A killed
 fenced process can resume without rereading Markdown; original-receipt replay
 preserves later canonical writes. Coordination-source backup verification
 **does not qualify complete Goal recovery**. Continue the packaged App
-confirmation, attached-Host shutdown/restart, independent full-backup recovery
-and producer-free CLI entry in R5. Keep T4 retirement on actual callers: the
+confirmation, attached-Host shutdown/restart and independent full-backup recovery
+in R5. The installed cold-import CLI uses the existing selected dispatcher and
+Goal path resolver; real File/SQLite import and original-receipt recovery pass
+with the four old normal producer modules physically absent in a disposable
+package. This qualifies that command's loading boundary, not every other CLI
+caller or removal of those modules. Keep T4 retirement on actual callers: the
 retained Python prose-write guard still serves live callers and its obligation
 must survive adapter removal. This partial stage does not retire the supported
 old writer or qualify a released default.

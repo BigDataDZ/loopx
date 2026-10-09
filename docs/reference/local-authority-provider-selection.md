@@ -362,9 +362,14 @@ whole-Goal restore, and replacing the binary cannot clear the writer fence.
 `coordination_source_backup_verified=true` qualifies the prepared coordination
 source witness only. `complete_goal_backup_verified=false` preserves the full
 backup and original-history recovery acceptance. The packaged Goal storage
-settings confirmation journey, attached-Host shutdown/restart and producer-free
-full CLI entry still need qualification. Retained prose-write guards have live
-callers and must move to their owning boundary before their adapter is removed.
+settings confirmation journey and attached-Host shutdown/restart still need
+qualification. The cold-import CLI reuses the selected command dispatcher and
+the existing Goal path resolver; its File/SQLite import and original-receipt
+recovery run with `todos.py`, `bootstrap.py`, `runtime_shadow_writer_adapter.py`
+and `local_authority_shadow_outbox.py` physically absent in a disposable package.
+This proves that command's independence, not that other commands or supported
+writers can lose those files. Retained prose-write guards have live callers and
+must move to their owning boundary before their adapter is removed.
 This stage does not qualify App adoption, supported old-writer retirement,
 release default or historical support cutoff.
 
