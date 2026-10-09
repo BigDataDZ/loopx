@@ -345,7 +345,7 @@ def _build_runtime_shadow_source_snapshot(
     """
     from ...rollout_event_log import ROLLOUT_EVENT_SCHEMA_VERSION, rollout_event_log_path
     from ...paths import resolve_runtime_root
-    from ...state_refresh import resolve_goal_state
+    from ..goals.state_resolution import resolve_goal_state
     from ..goals.legacy_event_source import state_event_log_candidates
     from ..todos.active_state_todo_parser import parse_active_state_todos
     from ..todos.goal_todo_projection import todo_summaries_from_fields
