@@ -93,7 +93,7 @@ depending on the executor:
 The product defaults to review after **5 settled effective work Turns** in both
 standard and fine-grained modes. This replaces the previous default of five
 completed Todos, so review can occur while a long Todo remains open. Benchmark
-runners deliberately use **3** effective Turns for earlier experimental review.
+runners configure **6** effective Turns to reduce periodic interruptions.
 TurnEnvelope is not required. These are deterministic thresholds, not random
 averages or counts of model messages, tool calls, or heartbeat wakeups.
 
@@ -104,12 +104,16 @@ writebacks and missing settlement receipts cannot. At the threshold, the next
 quota evaluation creates `periodic_review_due` through the existing replan path.
 An evidence-linked review may retain the current approach; it does not require
 inventing a new plan, completing the open Todo, or declaring the Goal achieved.
+Review evidence from settled work for current source and acceptance applicability
+before running another probe. Reuse applicable evidence; missing, stale or
+insufficient evidence needs targeted verification. Do not repeat unchanged checks
+only to produce another review artifact. Explicit validation gates still apply.
 The cadence does not interrupt a host, schedule a Turn, spend quota or grant
 authority. The executor must settle work and re-enter quota before starting the
 next work Turn for the review obligation to take effect.
 
 ```bash
-# Preview, apply, and read back an explicit Goal threshold (supported: 1–5).
+# Preview, apply, and read back an explicit Goal threshold (supported: 1–6).
 loopx configure-goal --goal-id example --execution-replan-after-turns 5
 loopx configure-goal --goal-id example --execution-replan-after-turns 5 --execute
 loopx configure-goal --goal-id example
