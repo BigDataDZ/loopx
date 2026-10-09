@@ -311,7 +311,7 @@ renewal receipt schema, identity and digest encoding remain compatible.
 
 For maintenance, `status=replayed` and `idempotent=true` return historical results even after a
 later renewal, transfer, release or expiry. They do not grant present execution
-rights or renew again. A newly pending or invalid canonical `todo_done` wait
+rights or renew again. A newly pending or invalid canonical `todo_done` or `resume_at` wait
 rejects renew/transfer retries as well as new requests; the original receipt is
 retained, and release remains available. Freeze the original request after a lost/ambiguous
 response; recover its receipt, then inspect current state before new work.
@@ -356,14 +356,18 @@ Switching away from `hard_lease` also invalidates atomic claim/acquire success.
 | `owner_conflicts_with_claim` | Current Todo ownership changed | Let the current owner continue or use an authorized handover. |
 | `canonical_acquire_readback_required` | History is known, current proof is unavailable | Restore the provider and retry the same operation. |
 | Acceptance/source rejection | Current control-plane authority changed | Resolve that boundary before attempting work. |
-| `todo_dependency_pending` / `todo_dependency_invalid` | The canonical completion prerequisite is unfinished or invalid | Complete the actual prerequisite, or repair the wait through its authorized Todo owner. |
+| `todo_dependency_pending` / `todo_dependency_invalid` | The canonical prerequisite is unfinished, the scheduled resume time has not arrived, or the condition is invalid | Complete the actual prerequisite, wait until the scheduled time, or repair the condition through its authorized Todo owner. |
 
 For canonical File, SQLite and PostgreSQL Goals, `resume_when=todo_done:todo_prerequisite`
-now fences execution as well as runnable selection. The existing TypeScript resume
+and `resume_when=resume_at:<timezone-aware-rfc3339-timestamp>` fence execution as
+well as runnable selection. The existing TypeScript resume
 rule reads the exact prerequisite from the same provider head: its actual `done`
 status satisfies the wait, including retained archived completion. A cached
 `resume_ready=true`, an old acquisition receipt, or a superseded prerequisite
 cannot authorize execution. Missing targets and unfinished dependency cycles fail closed.
+Date waits use the operation's runtime-clock snapshot and become eligible at or
+after the scheduled instant. An old projected ready flag cannot replace that
+evaluation; reaching the time does not bypass the other authority checks.
 
 While the wait is unsatisfied, standalone and atomic claim/acquire, renew/transfer,
 continuation adoption, Monitor execution and new completion reject it. Inspection
@@ -373,20 +377,42 @@ assignment and wait editing retain their existing authority. Other resume-condit
 their existing behavior; this repair does not introduce governed amendments.
 
 Inspect the waiting task with `loopx todo list --goal-id example-goal --todo-id todo_work`.
-Complete its prerequisite through the normal validation and lease owner, then
+Complete its prerequisite through the normal validation and lease owner, or wait
+until its scheduled resume time, then
 read the same task again: `resume_ready=true` allows acquisition under the usual
 owner/key/version checks. If the wait itself needs correction, use the existing
 authorized `todo update --resume-when ...` or `--clear-resume-when` operation;
 neither inspecting nor editing the wait grants execution authority.
+In hard-lease mode, ordinary edits still need an active execution proof. After
+release or expiry, use the existing narrow owner pause/reopen lifecycle, with a
+stable operation id, current provider revision and explicit reason:
 
-在 canonical File、SQLite 和 PostgreSQL Goal 中，`todo_done` 等待现在同时约束
+```bash
+loopx todo update --goal-id example-goal --todo-id todo_work --agent-id owner \
+  --status blocked --clear-resume-when --reason 'Correct the scheduled wait' \
+  --update-operation-id pause-wait --update-expected-provider-revision <readback-revision>
+loopx todo update --goal-id example-goal --todo-id todo_work --agent-id owner \
+  --status open --clear-resume-when --reason 'Resume after correcting the wait' \
+  --update-operation-id reopen-wait --update-expected-provider-revision <fresh-readback-revision>
+```
+
+Read back between operations and acquire a fresh lease before executing. Do not
+attach an old lease proof or bundle ownership, text or work-requirement edits.
+
+在 canonical File、SQLite 和 PostgreSQL Goal 中，`todo_done` 和 `resume_at` 等待同时约束
 实际执行入口，而不只是候选任务展示。必须由真实前置 Todo 的 `done` 状态满足条件，
 保留的已归档完成记录仍有效；缓存的 ready 标志、旧领取收据和 superseded 状态不能
-代替完成。等待期间，领取／原子认领、续租／转交、继续执行、Monitor 执行和新完成均
+代替完成。日期等待使用本次操作的 runtime-clock 快照，到达指定时刻后才满足条件；
+旧 ready 投影不能代替实时判断，到期也不跳过其他权限检查。
+等待期间，领取／原子认领、续租／转交、继续执行、Monitor 执行和新完成均
 被拒绝；新等待也会拒绝续租／转交的重试，原收据仍保留。检查保留原 lease 记录，
 但有效 `active=false`。释放、历史完成读回、授权 supersede、普通分配和等待修复
-沿用原规则。前置任务正常完成后，重新读回并按原 owner、key、
+沿用原规则。前置任务正常完成或到达指定恢复时刻后，重新读回并按原 owner、key、
 version 规则继续执行。其他恢复条件及 governed amendment 的边界保持独立。
+hard-lease 普通编辑仍须提供有效执行 proof。租约释放或到期后，可按上面的既有窄范围
+流程，以明确理由、稳定操作 ID 和当前 provider revision 暂停并清除等待；读回后再用
+新 revision 明确重新打开，最后领取新租约。不能附带旧 proof、文案、归属或工作要求修改，
+也不能把暂停或重新打开当作执行授权。
 
 A successful readback is still a point-in-time proof, not a lock over subsequent
 external effects. Execution must retain its existing mutation fences; this
