@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import os
+import shlex
 import socket
 import tarfile
 import threading
@@ -52,6 +53,115 @@ def agent_image():
     finally:
         client.images.remove(image.id)
         client.close()
+
+
+def test_native_execution_disposition_uses_real_docker_exit(tmp_path, agent_image):
+    from benchmark.runtime.sforge_backend import RecordingDockerBackend
+    from benchmark.edgebench.run import _result_status, _write_native_final_result
+    from sforge.harness.run_agent import RunResult
+
+    backend = RecordingDockerBackend(log_dir=tmp_path / "collected",
+        logger=logging.getLogger("execution-status-smoke"), oauth_proxy=True)
+    handle = backend.create_container(agent_image.id, "execution-smoke-" + uuid.uuid4().hex[:10],
+                                      cpu_limit=1, mem_limit="256m")
+    backend.start_container(handle)
+    try:
+        for command, expected_exit, expected_status, timeout in [
+            ('python3 -c "print(\'done\'); raise SystemExit(7)"', 7, "runner_failed", 20),
+            ('python3 -c "print(\'failure-looking prose\')"', 0, "terminal", 20),
+            ('python3 -c "import time; time.sleep(10)"', None, "terminal", 1),
+        ]:
+            backend.execution_command = command
+            observed = backend.exec_run_with_timeout(handle, ["/bin/bash", "-c", command], timeout)
+            if expected_exit is None:
+                assert observed.timed_out
+            else:
+                assert observed.exit_code == expected_exit and not observed.timed_out
+            receipt = json.loads((tmp_path / "execution-receipt.json").read_text())
+            assert receipt == backend.execution_receipt
+            status = _result_status(interrupted=False, started=True,
+                runtime_seconds=observed.elapsed_seconds, exit_code=receipt["exit_code"],
+                timed_out=receipt["timed_out"])
+            assert status == expected_status
+            if status == "runner_failed":
+                _write_native_final_result(tmp_path, RunResult(runtime_seconds=observed.elapsed_seconds),
+                    status=status, agent="fixture", task="fixture", run_id="fixture",
+                    model="fixture", effort="xhigh")
+                assert not (tmp_path / "final_result.json").exists()
+    finally:
+        backend.cleanup_container(handle)
+        backend.client.close()
+
+
+def test_sforge_trial_deadline_requires_execution_entry(tmp_path, agent_image, monkeypatch):
+    """Exercise the actual formatted shell, including its inner GNU timeout."""
+    from sforge.harness.config import SForgeConfig
+    from sforge.harness.run_agent import RunResult
+    from benchmark.runtime.sforge import SForgeWorker, BenchmarkCodex
+    from benchmark.runtime.harbor import _PYTHON
+    from benchmark.runtime.sforge_backend import RecordingDockerBackend
+    from benchmark.edgebench.run import _result_status, _write_native_final_result
+
+    monkeypatch.setenv("CODEX_AUTH_JSON_PATH", "/synthetic-credential")
+    async def installed(self, environment):
+        pass
+    monkeypatch.setattr(BenchmarkCodex, "install", installed)
+    worker = SForgeWorker(SForgeConfig(agent_model="fixture", agent_effort="xhigh"),
+                         profile="heartbeat-resume", cwd="/tmp", task_entry="loopx-planned")
+    worker.install_stop_hook(None, None, tmp_path, None)
+    worker.prepared = True
+    # Substitute only the model transport; keep the production deadline shell.
+    monkeypatch.setattr("benchmark.runtime.sforge.worker_command",
+                        lambda *args, **kwargs: ["/bin/sh", "/tmp/entry"])
+    backend = RecordingDockerBackend(log_dir=tmp_path / "collected",
+                                    logger=logging.getLogger("trial-deadline-smoke"), oauth_proxy=True)
+    worker.backend = backend
+    command = worker.format_run_cmd("/tmp/task.md")
+    command = command.replace(f"{_PYTHON}/bin/python3 -m benchmark.runtime.sforge_entry ", "")
+    assert "benchmark.runtime.sforge_entry" not in command
+    handle = backend.create_container(agent_image.id, "deadline-smoke-" + uuid.uuid4().hex[:10],
+                                      cpu_limit=1, mem_limit="256m")
+    backend.start_container(handle)
+    control = "/opt/loopx-benchmark/control"
+    try:
+        assert backend.exec_run(handle, ["sh", "-c", f"mkdir -p {control}; chmod 0777 {control}"],
+                                user="root").exit_code == 0
+        for name, seconds, prior_entry, body, expected_status, transport_timeout in [
+            ("expired-before-entry", -1, False, "touch /tmp/solver-entered", "runner_failed", 45),
+            ("planning-budget-exhausted", 10, False, "sleep 30", "runner_failed", 45),
+            ("execution-budget-exhausted", 10, False,
+             f"touch {control}/execution-started; sleep 30", "terminal", 45),
+            ("resumed-after-deadline", -1, True, "touch /tmp/solver-entered", "terminal", 45),
+            ("early-exit-124", 30, False,
+             f"touch {control}/execution-started; exit 124", "runner_failed", 45),
+            ("outer-timeout-during-planning", 120, False, "sleep 30", "runner_failed", 10),
+            ("outer-timeout-after-execution", 120, False,
+             f"touch {control}/execution-started; sleep 30", "terminal", 10),
+        ]:
+            setup = (f"rm -f {control}/execution-started /tmp/solver-entered; "
+                     f"echo $(( $(date +%s) + {seconds} )) > {control}/phase-deadline; "
+                     f"printf '%s\\n' {shlex.quote(body)} > /tmp/entry; chmod 0755 /tmp/entry; "
+                     + (f"touch {control}/execution-started" if prior_entry else "true"))
+            assert backend.exec_run(handle, ["sh", "-c", setup]).exit_code == 0
+            backend.execution_command = command
+            observed = backend.exec_run_with_timeout(handle, ["/bin/bash", "-c", command],
+                                                    timeout=transport_timeout)
+            assert observed.timed_out is (transport_timeout < seconds)
+            receipt = backend.execution_receipt
+            status = _result_status(interrupted=False, started=True, runtime_seconds=observed.elapsed_seconds,
+                                    exit_code=receipt["exit_code"], timed_out=receipt["timed_out"],
+                                    execution_started=receipt["execution_started"])
+            assert status == expected_status, (name, receipt, observed.output)
+            if seconds < 0:
+                assert backend.exec_run(handle, ["test", "-f", "/tmp/solver-entered"]).exit_code != 0
+            trial = tmp_path / name
+            trial.mkdir()
+            _write_native_final_result(trial, RunResult(runtime_seconds=observed.elapsed_seconds),
+                status=status, agent="fixture", task="fixture", run_id=name, model="fixture", effort="xhigh")
+            assert (trial / "final_result.json").exists() is (expected_status == "terminal")
+    finally:
+        backend.cleanup_container(handle)
+        backend.client.close()
 
 
 @pytest.mark.parametrize("selection", ["score_first", "pass_rate_first"])
