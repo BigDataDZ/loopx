@@ -70,6 +70,11 @@ for (const provider of ["file", "sqlite"] as const) {
     const prepared = await executeColdSourceImport(f.prepare);
     assert.equal(prepared.status, "prepared", JSON.stringify(prepared));
     assert.equal(prepared.complete_goal_backup_verified, false);
+    const originalRead = await executeColdSourceImport({...f.operation("recover", prepared.plan_sha256), action: "readback"});
+    assert.equal(originalRead.status, "prepared");
+    assert.equal(originalRead.authority_changed, false);
+    assert.equal(originalRead.legacy_writer_fenced, false);
+    assert.equal((await f.f.store.loadAuthority()).status, "missing");
     assert.equal((await executeColdSourceImport(f.operation("recover", prepared.plan_sha256))).reason_code,
       "cold_import_recovery_requires_fence");
     assert.equal((await executeColdSourceImport(f.operation("apply", prepared.plan_sha256, false))).reason_code,
@@ -106,6 +111,10 @@ for (const provider of ["file", "sqlite"] as const) {
     assert.deepEqual(current.head, later);
     assert.equal(current.cursor, "2");
     assert.equal((await opened.store.readReceipt("cold-import:original")).status, "found");
+    const readback = await executeColdSourceImport({...f.operation("recover", prepared.plan_sha256), action: "readback"});
+    assert.equal(readback.status, "replayed");
+    assert.equal(readback.authority_changed, false);
+    assert.deepEqual((await opened.store.loadAuthority()), current);
   });
 }
 
@@ -197,6 +206,8 @@ test("corrupt carrier and completed authority loss are fail-closed", async t => 
   const opened = await openLocalAuthorityStoreHandle(f.f.root, "goal-a");
   assert.ok(opened.store instanceof FileAuthorityStore);
   await rm((opened.store as FileAuthorityStore).path);
+  assert.equal((await executeColdSourceImport({...f.operation("recover", prepared.plan_sha256), action: "readback"})).reason_code,
+    "cold_import_completed_authority_missing");
   const result = await executeColdSourceImport(f.operation("recover", prepared.plan_sha256));
   assert.equal(result.reason_code, "cold_import_completed_authority_missing", JSON.stringify(result));
   await assert.rejects(readFile((opened.store as FileAuthorityStore).path), {code: "ENOENT"});
@@ -233,6 +244,12 @@ test("killed fenced process recovers the original operation without reading Mark
     await releaseFileMutationLock(store.path, lock.token);
   }
   await rm(f.f.statePath);
+  const observed = await executeColdSourceImport({...f.operation("recover", prepared.plan_sha256), action: "readback"});
+  assert.equal(observed.status, "prepared");
+  assert.equal(observed.legacy_writer_fenced, true);
+  assert.equal(observed.authority_changed, false);
+  assert.equal((await store.loadAuthority()).status, "missing");
+  await assert.rejects(readFile(`${f.carrier}.completed.json`), {code: "ENOENT"});
   const recovered = await executeColdSourceImport(f.operation("recover", prepared.plan_sha256));
   assert.equal(recovered.status, "applied", JSON.stringify(recovered));
   assert.equal((await executeColdSourceImport(f.operation("recover", prepared.plan_sha256))).status, "replayed");
@@ -241,6 +258,18 @@ test("killed fenced process recovers the original operation without reading Mark
   if (head.status !== "loaded") throw new Error("cold recovery head missing");
   assert.equal(head.cursor, "1");
   assert.deepEqual(head.head.todos, [f.active, f.archived]);
+});
+
+test("readback rejects a changed completion marker without repairing it", async t => {
+  const f = await fixture(t);
+  const prepared = await executeColdSourceImport(f.prepare);
+  assert.equal((await executeColdSourceImport(f.operation("apply", prepared.plan_sha256))).status, "applied");
+  const path = `${f.carrier}.completed.json`;
+  await writeFile(path, JSON.stringify({operation_id: "another-operation"}));
+  const damaged = await readFile(path);
+  assert.equal((await executeColdSourceImport({...f.operation("recover", prepared.plan_sha256), action: "readback"})).reason_code,
+    "cold_import_completion_identity_changed");
+  assert.deepEqual(await readFile(path), damaged);
 });
 
 test("released orphan lease bytes stay in the source witness without entering the execution graph", async t => {
