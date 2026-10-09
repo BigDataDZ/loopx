@@ -27,7 +27,7 @@ from ..control_plane.coordination.shadow_goal_scope import shadow_goal_scope
 from ..control_plane.projects.registry_codec import load_project_registry
 from ..paths import resolve_runtime_root
 from ..registry import find_registry_goal
-from ..state_refresh import resolve_goal_state
+from ..control_plane.goals.state_resolution import resolve_goal_state
 
 
 PrintPayload = Callable[

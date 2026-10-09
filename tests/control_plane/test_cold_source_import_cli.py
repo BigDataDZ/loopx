@@ -1,8 +1,8 @@
 """Real cold import CLI with native backup, source adapter and File/SQLite.
 
-Synthetic disposable Goals; this is not attached-Host stop, last-writer removal
-or full recovery qualification. The full CLI still imports retained producer
-modules through unrelated commands; the native-runtime test covers their absence.
+Synthetic disposable Goals; the cold-import command runs with the old normal
+producers physically absent. This does not qualify attached-Host stop, removal
+of their remaining callers, or full Goal history recovery.
 """
 from __future__ import annotations
 
@@ -62,9 +62,81 @@ def workspace(tmp_path, monkeypatch):
     return cli, state, backup, body, runtime, receiver, env
 
 
+def test_coordination_command_help_and_rejections_match_full_cli(tmp_path):
+    # Independently compare the existing compatibility parser/handler with the
+    # selected dispatcher, including diagnostics that deliberately fall back.
+    arguments = [["coordination-shadow", "--help"],
+        ["coordination-shadow", "prepare-import", "--help"],
+        ["coordination-shadow", "apply-import", "--help"],
+        ["coordination-shadow", "recover-import", "--help"],
+        ["coordination-shadow", "promote", "--help"],
+        ["coordination-shadow", "unknown-action"],
+        ["coordination-shadow", "prepare-import"],
+        ["coordination-shadow", "prepare-import", "--goal-id", "cold", "--operation-id", "original",
+         "--backup-manifest", "backup.json", "--provider", "sqlite", "--target-handoff-mode", "legacy"],
+        ["coordination-shadow", "recover-import", "--goal-id", "cold", "--operation-id", "original",
+         "--plan-sha256", "abc", "--exec"]]
+    observations = []
+    package = Path(os.environ.get("LOOPX_COLD_IMPORT_PACKAGE", str(REPO / "loopx")))
+    for module in ("loopx.entrypoint", "loopx.cli"):
+        script = f"""
+import contextlib,io,json,sys,loopx
+from {module} import main
+sys.argv[0] = 'loopx'
+observations = []
+for argv in {arguments!r}:
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            code = main(argv)
+        except SystemExit as exc:
+            code = exc.code
+    observations.append([code, out.getvalue(), err.getvalue()])
+print(json.dumps({{'package': loopx.__file__, 'observations': observations}}))
+"""
+        child = subprocess.run([sys.executable, "-c", script], cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": str(package.parent)}, capture_output=True, text=True, check=True, timeout=60)
+        result = json.loads(child.stdout)
+        assert Path(result["package"]).parent == package
+        observations.append(result["observations"])
+    assert observations[0] == observations[1]
+    assert all(row[0] == 0 for row in observations[0][:5])
+    assert all(row[0] == 2 for row in observations[0][5:])
+
+
+def test_unconfigured_shadow_inspection_matches_full_cli_without_import(tmp_path, monkeypatch):
+    _, state, _, _, runtime, receiver, env = workspace(tmp_path, monkeypatch)
+    registry = tmp_path / "project/.loopx/registry.json"
+    original = state.read_bytes()
+    observations = []
+    for module in ("loopx.entrypoint", "loopx.cli"):
+        child = subprocess.run([sys.executable, "-c",
+            f"import loopx,sys; print(loopx.__file__,file=sys.stderr); from {module} import main; raise SystemExit(main())",
+            "--registry", str(registry), "--runtime-root", str(runtime), "--format", "json",
+            "coordination-shadow", "inspect", "--goal-id", "cold"],
+            cwd=tmp_path, env=env, capture_output=True, text=True, timeout=60)
+        assert str(receiver / "loopx/__init__.py") in child.stderr
+        assert "Traceback" not in child.stderr
+        assert child.returncode == 1
+        observations.append(child.stdout)
+    assert observations[0] == observations[1]
+    result = json.loads(observations[0])
+    assert result["error_code"] == "coordination_shadow_not_enabled"
+    assert result["executed"] is False
+    assert state.read_bytes() == original
+    assert not (runtime / "authority-transition").exists()
+
+
 @pytest.mark.parametrize("provider", ["file", "sqlite"])
-def test_cold_cli_import_and_source_free_original_recovery(tmp_path, monkeypatch, provider):
+@pytest.mark.parametrize("old_producers_present", [True, False])
+def test_cold_cli_import_and_source_free_original_recovery(
+    tmp_path, monkeypatch, provider, old_producers_present,
+):
     cli, state, backup, body, runtime, receiver, env = workspace(tmp_path, monkeypatch)
+    if not old_producers_present:
+        for path in ("todos.py", "bootstrap.py", "control_plane/coordination/runtime_shadow_writer_adapter.py",
+                     "control_plane/coordination/local_authority_shadow_outbox.py"):
+            (receiver / "loopx" / path).unlink()
     original = state.read_bytes()
     prepared = cli("prepare-import", "--backup-manifest", backup["manifest_path"],
         "--provider", provider, "--target-handoff-mode", "hard_lease")["cold_import"]
