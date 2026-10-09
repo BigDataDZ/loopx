@@ -154,6 +154,9 @@ def _discover_targets(
         warnings.extend(target_warnings)
 
     add("runtime_root", runtime_root, "runtime-root")
+    # Import must bind the original registry bytes, even when its caller-owned
+    # route lives outside .loopx; configuration projection is not that source.
+    add("configuration_source_registry", configuration_source_registry, "configuration/registry.source.json")
     add("project_loopx", project / ".loopx", "project/.loopx")
     add("project_codex_goals", project / ".codex" / "goals", "project/.codex/goals")
     add("project_claude_goals", project / ".claude" / "goals", "project/.claude/goals")

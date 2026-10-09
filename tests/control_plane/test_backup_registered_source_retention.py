@@ -5,11 +5,12 @@ import sqlite3
 import subprocess
 import sys
 import tarfile
+from pathlib import Path
 
 import pytest
 
 from loopx.control_plane.effect_runtime import restart_effect_runtime
-from loopx.state_backup import build_state_backup_plan
+from loopx.state_backup import build_state_backup_plan, execute_state_backup_plan
 from tests.control_plane.canonical_authority_fixture import isolate_sqlite_runtime
 
 
@@ -119,3 +120,21 @@ def test_global_inventory_still_follows_registered_other_project(tmp_path):
     plan = build_state_backup_plan(project=project, runtime_root=runtime,
         include_skills=False, include_automations=False)
     assert any(row["key"] == "registry_active_state:other" for row in plan["included"])
+
+
+def test_backup_retains_original_registry_outside_conventional_directories(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    runtime = tmp_path / "runtime"
+    runtime.mkdir()
+    registry = tmp_path / "original-registry.json"
+    original = b'{"goals": [], "common_runtime_root": "retained route"}\n'
+    registry.write_bytes(original)
+    result = execute_state_backup_plan(build_state_backup_plan(project=project, runtime_root=runtime,
+        output_dir=tmp_path / "saved", backup_id="original-registry", include_automations=False,
+        include_skills=False, include_registry_projects=False, registry_path=registry))
+    assert result["ok"]
+    manifest = json.loads(Path(result["manifest_path"]).read_text())
+    source = next(item for item in manifest["included"] if item["source_path"] == str(registry))
+    with tarfile.open(result["archive_path"], "r:gz") as archive:
+        assert archive.extractfile(source["archive_path"]).read() == original

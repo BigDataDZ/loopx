@@ -9,8 +9,9 @@ import {join, relative} from "node:path";
 import test, {type TestContext} from "node:test";
 import type {JsonObject} from "../../loopx/control_plane/effect_program.ts";
 import {COLD_SOURCE_IMPORT_REQUEST_SCHEMA, executeColdSourceImport} from "../../loopx/control_plane/coordination/cold_source_import.ts";
+import {inspectColdCoordinationStorage, COLD_SOURCE_INSPECTION_REQUEST_SCHEMA} from "../../loopx/control_plane/coordination/cold_source_inspection.ts";
 import {FileAuthorityStore} from "../../loopx/control_plane/coordination/file_authority_store.ts";
-import {openLocalAuthorityStoreHandle, selectLocalAuthorityTarget} from "../../loopx/control_plane/coordination/local_authority_provider.ts";
+import {localAuthorityProviderPaths, openLocalAuthorityStoreHandle, selectLocalAuthorityTarget} from "../../loopx/control_plane/coordination/local_authority_provider.ts";
 import {checkLegacyCoordinationWriteAllowed, legacyCoordinationWriterFencePath,
   LEGACY_COORDINATION_WRITE_CHECK_REQUEST_SCHEMA} from "../../loopx/control_plane/coordination/legacy_writer_fence.ts";
 import {shadowManagementDirectory} from "../../loopx/control_plane/coordination/shadow_management.ts";
@@ -62,6 +63,38 @@ async function fixture(t: TestContext, provider: "file" | "sqlite" = "file") {
     `${canonicalAuthoritySha256(prepare.operation_id)}.json`);
   return {f, source, prepare, operation, carrier, active, archived};
 }
+
+test("empty selected SQLite preview remains inspectable, without accepting a lost or committed target", async t => {
+  const f = await fixture(t, "sqlite");
+  const prepared = await executeColdSourceImport(f.prepare);
+  assert.equal(prepared.status, "prepared");
+  const inspect = {...f.source, schema_version: COLD_SOURCE_INSPECTION_REQUEST_SCHEMA};
+  const observed = await inspectColdCoordinationStorage(inspect);
+  assert.equal(observed.ok, true, JSON.stringify(observed));
+  assert.equal((observed.current as JsonObject).canonical, false);
+  assert.equal(observed.execution_authority_granted, false);
+  const opened = await openLocalAuthorityStoreHandle(f.f.root, "goal-a");
+  assert.equal((await opened.store.loadAuthority()).status, "missing");
+  const sqlitePath = localAuthorityProviderPaths(f.f.root, "goal-a").sqlite;
+  await rm(sqlitePath, {recursive: true});
+  const lost = await inspectColdCoordinationStorage(inspect);
+  assert.equal(lost.ok, false);
+  assert.equal(lost.current, null);
+  // Missing identity must not be recreated by a read.
+  await assert.rejects(() => openLocalAuthorityStoreHandle(f.f.root, "goal-a"));
+});
+
+test("unfenced committed SQLite and malformed selectors still refuse old-source inspection", async t => {
+  const f = await fixture(t, "sqlite");
+  const inspect = {...f.source, schema_version: COLD_SOURCE_INSPECTION_REQUEST_SCHEMA};
+  const opened = await openLocalAuthorityStoreHandle(f.f.root, "goal-a");
+  const committed = await opened.store.commitAuthority({expected_provider_revision: null,
+    operation_id: "unfenced-existing-head", next_projection: f.f.baseline, events: [], receipts: []});
+  assert.equal(committed.status, "applied");
+  assert.equal((await inspectColdCoordinationStorage(inspect)).reason_code, "cold_source_canonical_authority_present");
+  await writeFile(localAuthorityProviderPaths(f.f.root, "goal-a").marker, "{unreadable original selector");
+  assert.equal((await inspectColdCoordinationStorage(inspect)).ok, false);
+});
 
 for (const provider of ["file", "sqlite"] as const) {
   test(`${provider}: cold cutover retains records and original receipt after later writes`, async t => {
