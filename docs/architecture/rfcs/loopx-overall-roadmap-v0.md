@@ -930,6 +930,16 @@ provider. This is a bounded App companion, not full old-source/Host upgrade or
 D2/release-default qualification. Continue those original acceptance frontiers
 and retire each last caller separately.
 
+The qualified shadow→canonical archive→isolated File/SQLite restore path retains
+committed dependency archives, terminal lease facts and later canonical writes.
+It does not preserve every unreferenced old-source archive or raw historical
+receipt. R5/T4 full-source import must retain and independently recover those
+original bytes before deleting caller chains that still own their recovery;
+source hashes and canonical archive verification cannot substitute for that
+acceptance. Supported backup-format and original-receipt recovery retain their
+separate upgrade boundary. See the
+[archive scope](../../reference/authority-archive.md).
+
 Reviewed source admission now rejects unsupported lease JSON filenames,
 non-regular records and linked source subtrees instead of silently omitting or
 following them. The existing typed coordination owner verifies exact source
