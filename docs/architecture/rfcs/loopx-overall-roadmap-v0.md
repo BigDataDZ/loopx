@@ -890,7 +890,7 @@ provider. This is a bounded App companion, not full old-source/Host upgrade or
 D2/release-default qualification. Continue those original acceptance frontiers
 and retire each last caller separately.
 
-Cold-source import now has a bounded CLI/coordination stage: complete source
+Cold-source import now has a bounded CLI/App coordination stage: complete source
 records, an immutable source/target carrier bound to actual backup member bytes,
 explicit operator shutdown attestation, revalidation before the durable writer
 fence, and original-receipt recovery through the existing File/SQLite owners.
@@ -898,9 +898,14 @@ It refuses unresolved capture/outbox and unsettled leases, including expired
 active and orphan records, without manufacturing shadow qualification. A killed
 fenced process can resume without rereading Markdown; original-receipt replay
 preserves later canonical writes. Coordination-source backup verification
-**does not qualify complete Goal recovery**. Continue the packaged App
-confirmation, attached-Host shutdown/restart and independent full-backup recovery
-in R5. The installed cold-import CLI uses the existing selected dispatcher and
+**does not qualify complete Goal recovery**. Packaged Goal storage settings
+reuse that transaction for private backup, inventory, explicit policy/stop
+confirmation and original-operation readback. Reload is read-only, including a
+fenced but uncommitted operation; applying the original carrier requires fresh
+confirmation. File/SQLite HTTP qualification preserves later writes and refuses
+source/backup drift. Continue attached-Host shutdown/restart, App loading with
+the old normal writer absent and independent full-backup recovery in R5. The
+installed cold-import CLI uses the existing selected dispatcher and
 Goal path resolver; real File/SQLite import and original-receipt recovery pass
 with the four old normal producer modules physically absent in a disposable
 package. This qualifies that command's loading boundary, not every other CLI

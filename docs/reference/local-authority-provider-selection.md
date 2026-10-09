@@ -362,15 +362,36 @@ whole-Goal restore, and replacing the binary cannot clear the writer fence.
 `coordination_source_backup_verified=true` qualifies the prepared coordination
 source witness only. `complete_goal_backup_verified=false` preserves the full
 backup and original-history recovery acceptance. The packaged Goal storage
-settings confirmation journey and attached-Host shutdown/restart still need
-qualification. The cold-import CLI reuses the selected command dispatcher and
+settings use the same transaction for cold import:
+
+1. Select the Goal and open **Goal settings → Task ownership → Data storage**.
+   Choose File or SQLite and an explicit supported execution policy.
+2. **Back up and preview import** creates a private local archive using the
+   existing backup owner, then displays the complete active/archive inventory.
+   Preview does not import, stop a Host, settle leases or grant execution.
+3. Stop affected writers/Hosts and settle/dispose of the refused work through
+   its owning workflow. Confirm **Import reviewed Markdown source**. Apply
+   rechecks the bound original source and backup; a changed source needs a new
+   reviewed preview.
+4. After a lost response or reload, **Read original preview and current storage**
+   observes the saved operation and current store independently. Reload never
+   completes an unfinished import. Confirm again to retry the original operation;
+   do not discard its carrier while the commit is ambiguous.
+
+Only Goal/operation/digest identifiers survive in browser storage. Full plans,
+source bytes and backup paths stay local to the server. Completed receipt
+readback neither overwrites later writes nor reselects a provider.
+Attached-Host shutdown/restart and full-history restore remain unqualified. The
+cold-import CLI reuses the selected command dispatcher and
 the existing Goal path resolver; its File/SQLite import and original-receipt
 recovery run with `todos.py`, `bootstrap.py`, `runtime_shadow_writer_adapter.py`
 and `local_authority_shadow_outbox.py` physically absent in a disposable package.
 This proves that command's independence, not that other commands or supported
 writers can lose those files. Retained prose-write guards have live callers and
 must move to their owning boundary before their adapter is removed.
-This stage does not qualify App adoption, supported old-writer retirement,
+The packaged App uses the real File/SQLite backend; App loading with those old
+modules absent remains a separate acceptance. This stage does not qualify
+supported old-writer retirement,
 release default or historical support cutoff.
 
 Deliver complete, reversible PR packages in this order:
