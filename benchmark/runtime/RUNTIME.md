@@ -273,8 +273,9 @@ Harbor LoopX modes (`heartbeat`, `turn`, `loopx-goal`) default to
 control plane still owns which settled work Turns count; adapters do not count
 records or completed Todos themselves.
 
-Omitting both cadence options selects six effective work Turns; the
-product default remains five. The previous benchmark default was three effective work Turns.
+Omitting both cadence options selects six effective work Turns, matching the
+product default. The previous benchmark default was three effective work Turns;
+the previous product default was five. Explicit settings retain their values.
 Idle wakes, tool calls and the planning checkpoint do
 not count as effective work Turns; this is a deterministic threshold rather than
 a per-wake probability, and other replan triggers can act sooner.
