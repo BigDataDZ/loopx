@@ -526,6 +526,28 @@ Canary 使用启动 LoopX 的 `sys.executable` 执行 Python 检查，显示的 
 目标 worktree。已有兼容虚拟环境也可用 `python -m pip install -e ".[test]"` 安装源码，
 随后直接使用该环境的命令。
 
+Canary is a repository development tool even when its CLI comes from a wheel.
+Run `premerge`, `run` and `smoke-suite` inside the intended source checkout
+(a subdirectory is also supported):
+the catalog, discovered examples, subprocess cwd and tracked-write guard share
+that checkout root. `canary premerge --catalog PATH` overrides the catalog only;
+it does not change the execution root or authorize commands outside its examples.
+Standalone read-only catalog commands retain their default catalog resolution;
+use their existing `--catalog PATH` when invoking an installed CLI.
+The wheel does not bundle the repository's docs/examples. Missing development
+inputs fail with a checkout/catalog recovery instruction, rather than an empty
+successful validation. `--no-execute` still previews; required CQR verification
+and merge authority remain separate gates.
+
+即使用 wheel 的 CLI，Canary 仍是仓库开发工具。`premerge`、`run`、`smoke-suite`
+在目标完整源码 checkout
+（也支持子目录）后运行；catalog、example 发现、子进程 cwd 与 tracked 写入保护
+共用该仓库根。`canary premerge --catalog PATH` 仅指定 catalog，不切执行根，也不
+授权执行 examples 之外的命令。独立的只读 catalog 命令保留既有默认解析，安装态
+可用其现有 `--catalog PATH` 指定输入。wheel 不携带仓库 docs/examples；缺少输入时明确
+提示补齐 checkout/catalog，不会以空检查冒充成功。`--no-execute` 仍是预览，
+required CQR 校验与合并权限继续分别判断。
+
 The repository does not currently track `.python-version` or `uv.lock`. `uv`
 creates a local lockfile during resolution; keep that generated file out of
 unrelated PRs. Introducing a shared lock or interpreter pin is a separate
