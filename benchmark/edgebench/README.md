@@ -327,6 +327,8 @@ failures retry before committing an improvement. The host-only `best-only-host`
 artifacts record file publication and health; never mount or copy them into the
 worker. Worker-local session hook receipts under `/logs/agent/best-feedback-delivery`
 record emission, not model acknowledgement.
+Each hook reads the current packet while holding its session delivery lock, so a
+waiting reader cannot overwrite a newer delivery cursor and replay old feedback.
 Treat missing archive/delivery evidence as an unqualified treatment, not as a
 successful best-only trial. Public notifications do not include these errors.
 

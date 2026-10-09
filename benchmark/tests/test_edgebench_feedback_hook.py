@@ -4,10 +4,12 @@ import hashlib
 import json
 import os
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event, current_thread
 
 import pytest
 
 from benchmark.edgebench.feedback_hook import deliver, install
+from benchmark.edgebench import feedback_hook
 
 
 def packet(root, n=2):
@@ -52,6 +54,42 @@ def test_parallel_tools_resume_and_new_session(tmp_path):
     assert call('SessionStart', 's2')  # A fresh context still receives current evidence.
     packet(root, 3)
     assert call('UserPromptSubmit') and not call()
+
+
+@pytest.mark.parametrize('event_name', ['PostToolUse', 'SessionStart', 'UserPromptSubmit'])
+def test_waiting_reader_cannot_rewind_newer_delivery(tmp_path, monkeypatch, event_name):
+    root, receipts = tmp_path / 'feedback', tmp_path / 'receipts'
+    packet(root, 2)
+    waiting, resume = Event(), Event()
+    flock = feedback_hook.fcntl.flock
+
+    def delayed_lock(fd, operation):
+        if current_thread().name.startswith('stale-reader'):
+            waiting.set()
+            assert resume.wait(5), 'reader was not released'
+        return flock(fd, operation)
+
+    monkeypatch.setattr(feedback_hook.fcntl, 'flock', delayed_lock)
+
+    def call():
+        stream = io.StringIO()
+        deliver({'hook_event_name': event_name, 'session_id': 'same-session'},
+                root, receipts, output=stream)
+        return stream.getvalue()
+
+    with ThreadPoolExecutor(1, thread_name_prefix='stale-reader') as executor:
+        old_reader = executor.submit(call)
+        try:
+            assert waiting.wait(5), 'reader did not reach the session lock'
+            newest = packet(root, 3)['latest']
+            assert 'evaluated snapshot auto-3 ' in call()
+        finally:
+            resume.set()
+        assert not old_reader.result(timeout=5)
+
+    cursor = json.loads(next(receipts.glob('*.json')).read_text())
+    assert cursor['identity'] == f"auto-3:{newest['source_sha256']}:{newest['result_sha256']}"
+    assert not call()  # A later hook must not replay the newest result either.
 
 
 def test_empty_and_malformed_do_not_disclose(tmp_path):
