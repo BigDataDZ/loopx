@@ -903,8 +903,13 @@ reuse that transaction for private backup, inventory, explicit policy/stop
 confirmation and original-operation readback. Reload is read-only, including a
 fenced but uncommitted operation; applying the original carrier requires fresh
 confirmation. File/SQLite HTTP qualification preserves later writes and refuses
-source/backup drift. Continue attached-Host shutdown/restart, App loading with
-the old normal writer absent and independent full-backup recovery in R5. The
+source/backup drift. The operator-led POSIX stop path now exercises actual owned
+Host processes and native source leases on File/SQLite: process exit and lease
+release remain separate, expired active leases refuse import, and the old grant
+cannot launch a Host after cutover. This proves the existing supervisor/lease
+boundary with synthetic work, not automatic Host discovery or live model use.
+Continue pending outbox disposition, App loading with the old normal writer
+absent and independent full-backup recovery in R5. The
 installed cold-import CLI uses the existing selected dispatcher and
 Goal path resolver; real File/SQLite import and original-receipt recovery pass
 with the four old normal producer modules physically absent in a disposable

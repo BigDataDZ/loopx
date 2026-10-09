@@ -324,11 +324,17 @@ acceptance for this one. Once this route qualifies, an old Goal's next normal
 write requires reviewed import; installing the binary alone does not migrate it.
 
 The CLI stage uses the typed `coordination.cold_source.import` transaction
-(`loopx_cold_source_import_request_v0`). Start with an executed `backup-state`
-archive containing the source state, registry, coordination evidence and runtime
-root. Stop the source writers through their owning Host before confirming the
-import; `--writers-stopped` records an operator attestation, not an automatic
-process stop. For example, from the registered project:
+(`loopx_cold_source_import_request_v0`). First stop affected writers through
+their owning Host and verify that their processes have exited. Inspect each
+retained task lease and release it through `task-lease release`, using its
+original owner/key and current `--expected-version`. An expired lease is still
+unsettled; stopping a process does not release its lease. Dispose of pending
+capture/outbox through its owning workflow before preparing this import.
+Then execute `backup-state` with the source state, registry, coordination
+evidence and runtime root. Lease release after a saved preview changes its
+source: make a fresh backup and reviewed preview. `--writers-stopped` records
+an operator attestation, not an automatic process stop. For example, after
+shutdown and settlement, from the registered project:
 
 ```bash
 loopx --format json backup-state --project . --execute --no-automations --no-skills
@@ -366,11 +372,13 @@ settings use the same transaction for cold import:
 
 1. Select the Goal and open **Goal settings → Task ownership → Data storage**.
    Choose File or SQLite and an explicit supported execution policy.
-2. **Back up and preview import** creates a private local archive using the
+2. Stop affected writers/Hosts, verify their exit and settle/dispose of refused
+   work through its owning workflow. The preview refuses unsettled leases,
+   including expired active records; a checkbox cannot bypass this refusal.
+3. **Back up and preview import** creates a private local archive using the
    existing backup owner, then displays the complete active/archive inventory.
    Preview does not import, stop a Host, settle leases or grant execution.
-3. Stop affected writers/Hosts and settle/dispose of the refused work through
-   its owning workflow. Confirm **Import reviewed Markdown source**. Apply
+   Confirm **Import reviewed Markdown source**. Apply
    rechecks the bound original source and backup; a changed source needs a new
    reviewed preview.
 4. After a lost response or reload, **Read original preview and current storage**
@@ -381,7 +389,13 @@ settings use the same transaction for cold import:
 Only Goal/operation/digest identifiers survive in browser storage. Full plans,
 source bytes and backup paths stay local to the server. Completed receipt
 readback neither overwrites later writes nor reselects a provider.
-Attached-Host shutdown/restart and full-history restore remain unqualified. The
+The operator-led POSIX stop path is exercised with actual owned Host processes
+and native unpromoted-source leases on File/SQLite: import refuses while the
+Host runs and after it exits with an active lease; native release permits
+cutover. The imported released lease retains its identity and history, and a
+restart using the old grant is rejected before the actual Host launches.
+This does not qualify automatic Host discovery/stop, pending outbox disposition,
+live model sessions or full-history restore. The
 cold-import CLI reuses the selected command dispatcher and
 the existing Goal path resolver; its File/SQLite import and original-receipt
 recovery run with `todos.py`, `bootstrap.py`, `runtime_shadow_writer_adapter.py`
