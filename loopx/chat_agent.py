@@ -116,7 +116,7 @@ def _workspace_system_tools(config: dict[str, Any], profile_id: str) -> dict[str
         selected = subprocess.run(
             ["/usr/bin/xcode-select", "--print-path"], cwd="/",
             env={"PATH": os.defpath}, stdin=subprocess.DEVNULL,
-            capture_output=True, text=True, timeout=2, check=False,
+            capture_output=True, text=True, encoding="utf-8", timeout=2, check=False,
         )
         root = Path(selected.stdout.strip())
         if selected.returncode or root not in {
@@ -125,11 +125,14 @@ def _workspace_system_tools(config: dict[str, Any], profile_id: str) -> dict[str
         }:
             return config
         binary = root / "usr/bin/git"
-        for path in (root, root / "usr", binary.parent, binary):
+        # A writable ancestor can replace an otherwise root-owned descendant.
+        # Check the complete canonical chain, including effective ACL access.
+        for path in (binary, *binary.parents):
             metadata = path.stat()
             expected_type = stat.S_ISREG if path == binary else stat.S_ISDIR
             if (path.resolve() != path or metadata.st_uid != 0
                     or metadata.st_mode & (stat.S_IWGRP | stat.S_IWOTH)
+                    or os.access(path, os.W_OK)
                     or not expected_type(metadata.st_mode)):
                 return config
         if not os.access(binary, os.X_OK):
