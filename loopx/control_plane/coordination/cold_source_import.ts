@@ -9,6 +9,7 @@ import {join, isAbsolute, relative, resolve} from "node:path";
 import type {JsonObject} from "../effect_program.ts";
 import {durableWriteJson} from "../effect_runtime_io.ts";
 import {requireJsonObject} from "../runtime_decode.ts";
+import {BARE_SHA256_PATTERN} from "../content_digest.ts";
 import {canonicalAuthorityBytes, canonicalAuthorityObject, canonicalAuthoritySha256,
   hasExactAuthorityKeys, requireAuthorityStoreId} from "./authority_store_codec.ts";
 import {FileAuthorityStore} from "./file_authority_store.ts";
@@ -101,7 +102,7 @@ async function verifySourceBackup(value: unknown, root: string, sources: JsonObj
     const path = backup[`${kind}_path`];
     const expected = backup[`${kind}_sha256`];
     if (typeof path !== "string" || !isAbsolute(path) || typeof expected !== "string" ||
-        !/^[a-f0-9]{64}$/.test(expected)) reject("cold_import_backup_invalid");
+        !BARE_SHA256_PATTERN.test(expected)) reject("cold_import_backup_invalid");
     if (!(await lstat(path)).isFile()) reject("cold_import_backup_unsafe");
     const hash = createHash("sha256");
     for await (const chunk of createReadStream(path)) hash.update(chunk);
@@ -112,7 +113,7 @@ async function verifySourceBackup(value: unknown, root: string, sources: JsonObj
   const members = new Map<string, string>();
   for (const item of backup.members as JsonObject[]) {
     if (!hasExactAuthorityKeys(item, ["archive_path", "sha256"]) || typeof item.archive_path !== "string" ||
-        typeof item.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(item.sha256) ||
+        typeof item.sha256 !== "string" || !BARE_SHA256_PATTERN.test(item.sha256) ||
         members.has(item.archive_path)) reject("cold_import_backup_invalid");
     members.set(item.archive_path, item.sha256);
   }
