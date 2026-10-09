@@ -23,6 +23,7 @@ import {readShadowManagementState, ShadowManagementError, shadowManagementDirect
 import {verifyShadowSourceSnapshot, withShadowSourceLocks, type ShadowRequest} from "./runtime_shadow.ts";
 import {planHandoffPolicyMigration} from "./handoff_policy_migration.ts";
 import {canonicalTaskLease} from "./task_lease_state.ts";
+import {indexCoordinationProjection} from "./coordination_projection.ts";
 import {commitPromotionAndReadBack, readPromotionReceipt} from "./promotion_receipt.ts";
 
 export const COLD_SOURCE_IMPORT_REQUEST_SCHEMA = "loopx_cold_source_import_request_v0";
@@ -34,6 +35,12 @@ function digest(bytes: Buffer): string { return `sha256:${createHash("sha256").u
 function same(left: unknown, right: unknown): boolean { return canonicalAuthorityBytes(left).equals(canonicalAuthorityBytes(right)); }
 function carrierPath(root: string, goal: string, operation: string): string {
   return join(shadowManagementDirectory(root, goal), "cold-imports", `${canonicalAuthoritySha256(operation)}.json`);
+}
+function sourceInventory(projection: JsonObject, goal: string): JsonObject {
+  const index = indexCoordinationProjection(projection, goal);
+  return {todo_count: index.todos.size,
+    archived_todo_count: [...index.todos.values()].filter(row => row.archive_state === "archive").length,
+    lease_count: index.leases.size, source_handoff_mode: projection.handoff_mode};
 }
 async function optionalJson(path: string): Promise<JsonObject | null> {
   try { return canonicalAuthorityObject(JSON.parse(await readFile(path, "utf8")), "import carrier"); }
@@ -177,7 +184,7 @@ export async function executeColdSourceImport(value: unknown,
     const input = requireJsonObject(value, "cold source import request");
     const action = input.action;
     if (input.schema_version !== COLD_SOURCE_IMPORT_REQUEST_SCHEMA ||
-        (action !== "prepare" && action !== "apply" && action !== "recover") ||
+        (action !== "prepare" && action !== "apply" && action !== "recover" && action !== "readback") ||
         !hasExactAuthorityKeys(input, action === "prepare"
           ? ["schema_version", "action", "runtime_root", "goal_id", "operation_id", "projection", "source_snapshot", "target_handoff_mode", "target_provider", "source_backup"]
           : action === "apply"
@@ -235,8 +242,9 @@ export async function executeColdSourceImport(value: unknown,
           if (existing !== null && !same(existing, carrier)) reject("cold_import_operation_conflict");
           if (existing === null) await durableWriteJson(path, carrier);
           verifyCarrier((await optionalJson(path))!, root, goal, operation, carrier.plan_sha256);
-          return {schema_version: RESULT_SCHEMA, status: "prepared", operation_id: operation,
+          return {schema_version: RESULT_SCHEMA, ok: true, status: "prepared", operation_id: operation,
             plan_path: path, plan_sha256: carrier.plan_sha256, target_provider: opened.provider,
+            source_inventory: sourceInventory(source.projection, goal), authority_changed: false,
             target_handoff_mode: targetMode, legacy_writer_fenced: false,
             execution_authority_granted: false, coordination_source_backup_verified: true, complete_goal_backup_verified: false};
         });
@@ -255,6 +263,26 @@ export async function executeColdSourceImport(value: unknown,
       const identity = {operation_id: operation, projection_sha256: canonicalAuthoritySha256(projection),
         receipt: {schema_version: "loopx_cold_source_import_receipt_v0", goal_id: goal,
           operation_id: operation, import_plan_sha256: raw.plan_sha256, source_projection_sha256: canonicalAuthoritySha256(source.projection)}};
+      const marker = {operation_id: operation, import_plan_sha256: raw.plan_sha256,
+        target_store_identity: targetIdentity.store_identity, receipt_sha256: canonicalAuthoritySha256(identity.receipt)};
+      const completed = await optionalJson(`${path}.completed.json`);
+      if (completed !== null && !same(completed, marker)) reject("cold_import_completion_identity_changed");
+      if (action === "readback") {
+        // Page reload observes the original intent; it never completes a
+        // partially committed operation or treats a preview as confirmation.
+        const original = prior.status === "loaded" ? await readPromotionReceipt(opened.store, identity) : null;
+        if (!original?.matched) {
+          if (completed !== null) reject("cold_import_completed_authority_missing");
+          const head = await opened.store.loadAuthority();
+          if (head.status !== "missing") reject(original?.reason_code ?? "cold_import_target_not_empty");
+        }
+        return {schema_version: RESULT_SCHEMA, ok: true,
+          status: original?.matched ? "replayed" : "prepared",
+          operation_id: operation, plan_sha256: raw.plan_sha256, target_provider: opened.provider,
+          target_handoff_mode: projection.handoff_mode, source_inventory: sourceInventory(source.projection, goal),
+          legacy_writer_fenced: prior.status === "loaded", authority_changed: false,
+          execution_authority_granted: false, complete_goal_backup_verified: false};
+      }
       // File's selected identity already exists; allow only the first head in
       // that exact identity, never recreation of a lost identity.
       const store = opened.provider === "file" && dependencies.createStore === undefined
@@ -262,10 +290,6 @@ export async function executeColdSourceImport(value: unknown,
         : opened.store;
       const complete = async () => {
         const original = await readPromotionReceipt(store, identity);
-        const marker = {operation_id: operation, import_plan_sha256: raw.plan_sha256,
-          target_store_identity: targetIdentity.store_identity, receipt_sha256: canonicalAuthoritySha256(identity.receipt)};
-        const completed = await optionalJson(`${path}.completed.json`);
-        if (completed !== null && !same(completed, marker)) reject("cold_import_completion_identity_changed");
         if (original.matched) {
           if (completed === null) await durableWriteJson(`${path}.completed.json`, marker);
           return {status: "replayed", ...original};
@@ -300,14 +324,17 @@ export async function executeColdSourceImport(value: unknown,
           return await complete();
         });
       }
-      return {schema_version: RESULT_SCHEMA, ...result, operation_id: operation,
+      return {schema_version: RESULT_SCHEMA, ok: true, ...result, operation_id: operation,
+        authority_changed: attempted, target_handoff_mode: projection.handoff_mode,
+        source_inventory: sourceInventory(source.projection, goal),
         executed: attempted,
         plan_sha256: raw.plan_sha256, target_provider: opened.provider, legacy_writer_fenced: true,
         stop_confirmation_source: "operator_attestation", execution_authority_granted: false,
         complete_goal_backup_verified: false, legacy_fallback_used: false};
     });
   } catch (error) {
-    return {schema_version: RESULT_SCHEMA, status: "failed", executed: attempted,
+    return {schema_version: RESULT_SCHEMA, ok: false, status: "failed", executed: attempted,
+      authority_changed: attempted ? null : false, execution_authority_granted: false,
       reason_code: error instanceof ShadowManagementError ? error.reason_code : "cold_import_unavailable",
       reason: error instanceof Error ? error.message : "cold import unavailable",
       legacy_writer_fenced: fenced, legacy_fallback_used: false, ...localAuthorityOpenFailure(error)};
