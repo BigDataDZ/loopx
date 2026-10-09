@@ -201,7 +201,7 @@ function writebackProjection(required: SemanticOutcome[], externalReview: boolea
         vision_authoring: visionAuthoringContract(),
         required_fields: ["vision_patch.acceptance_summary", "path_delta.outcome", "path_delta.evidence_refs"],
         path_outcomes: [...FRESH_PATH_DISPOSITIONS],
-        rule: "Author the JSON file from observed evidence, then execute the bound refresh and spend. This path requires an acceptance summary and evidence-linked path outcome; an unchanged reason alone is insufficient. Other required_any_of exits remain subject to their typed contracts.",
+        rule: "Review available evidence against the current source and acceptance first. Reuse applicable evidence; run additional checks when evidence is missing, stale or insufficient to decide the triggered obligation. Do not repeat unchanged checks solely to create a new review artifact. Author an acceptance summary and evidence-linked path outcome, then execute the bound refresh and spend; an unchanged reason alone is insufficient. Explicit validation gates and other required_any_of exits retain their typed contracts.",
       },
     };
   }
