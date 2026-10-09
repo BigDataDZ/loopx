@@ -108,7 +108,7 @@ def todo_replan_cadence_machine_configuration_namespace() -> (
         title="Goal review cadence",
         description=(
             "Live review threshold for Goals without an explicit cadence override. "
-            "Defaults to five settled work Turns; completed Todos remain an explicit option. "
+            "Defaults to six settled work Turns; completed Todos remain an explicit option. "
             "It does not create "
             "turns, spend quota, or grant authority."
         ),

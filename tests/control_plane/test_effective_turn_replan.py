@@ -29,7 +29,7 @@ from loopx.control_plane.work_items.semantic_replan_writeback import (
 
 
 @pytest.mark.parametrize("threshold_override,device_count,threshold", [
-    (None, None, 5), (2, 3, 2), (None, 3, 3), (6, None, 6), (None, 6, 6),
+    (None, None, 6), (2, 3, 2), (None, 3, 3), (5, 6, 5), (None, 5, 5), (6, None, 6), (None, 6, 6),
 ])
 def test_open_todo_settled_turn_cadence_and_evidence_linked_review(
     tmp_path: Path, threshold_override: int | None, device_count: int | None,
@@ -285,7 +285,7 @@ def test_open_todo_settled_turn_cadence_and_evidence_linked_review(
                 json.loads(registry.read_text())["goals"][0], runtime,
             ), runtime,
         )["threshold"]
-        == (device_count or 5)
+        == (device_count or 6)
     )
 
 

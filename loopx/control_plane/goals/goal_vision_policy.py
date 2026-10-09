@@ -14,7 +14,7 @@ GOAL_VISION_ADVANCEMENT_POLICY_CHOICES = tuple(
 )
 
 # Default review cadence counts settled work Turns, not Todo size.
-DEFAULT_EFFECTIVE_TURN_REPLAN_THRESHOLD = 5
+DEFAULT_EFFECTIVE_TURN_REPLAN_THRESHOLD = 6
 MAX_EFFECTIVE_TURN_REPLAN_THRESHOLD = 6
 
 # Explicit completed-Todo cadence remains bounded by the retained evidence

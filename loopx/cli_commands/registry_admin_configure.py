@@ -32,7 +32,7 @@ def register_configure_goal_command(subparsers: argparse._SubParsersAction) -> N
         choices=TURN_GRANULARITY_CHOICES,
         help=(
             "Set sticky goal turn granularity. fine plans small checkpoints within "
-            "a coherent work slice; review defaults to 5 settled work Turns in both modes."
+            "a coherent work slice; review defaults to 6 settled work Turns in both modes."
         ),
     )
     configure_goal_parser.add_argument(

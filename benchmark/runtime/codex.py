@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-# New benchmark runs review less often; the product default remains five.
+# New benchmark runs and the product both default to six settled work Turns.
 DEFAULT_REPLAN_AFTER_TURNS = 6
 
 
