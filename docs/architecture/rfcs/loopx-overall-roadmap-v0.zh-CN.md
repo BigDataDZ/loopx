@@ -621,6 +621,12 @@ owned Host 进程、未晋升源的原生租约和 File/SQLite 验证：进程�
 完整 Goal 历史与备份恢复继续开放；协调源备份验证不结算完整恢复。详见
 [冷源导入与支持边界](../../reference/local-authority-provider-selection.md)。
 
+冷旧源保留检查点：本项目全量备份现盘点注册的自定义状态与来源 registry 路由。
+真实 CLI 备份和独立静态解包保留完整 Markdown 字节、未引用的归档 Todo 与 runtime
+原始历史，包含 SQLite snapshot。这只修复路由遗漏，不代表审核式冷导入或完整状态
+重新激活已完成。继续既有 R5/T4 的导入 plan/确认、writer/Host/outbox fence 和 packaged
+App 验收，通过后才退役受影响旧 writer；D2 与发布默认值继续开放。
+
 [Goal instance/recovery RFC](goal-instance-identity-and-orphan-recovery-v0.zh-CN.md)
 为 R2/R3 retirement 和迟到结果安全提供有界 R5 依赖。Codec 和 source-session lifetime
 transaction 已存在；attached Chat、handoff、Turn journal 的 fence 已分别资格化，
