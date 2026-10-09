@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import tarfile
 import tempfile
-from typing import Any, BinaryIO
+from typing import Any, Protocol
 
 from . import __version__
 from .paths import select_default_runtime_root
@@ -447,15 +447,19 @@ def build_state_backup_plan(
     }
 
 
+class _BackupReadStream(Protocol):
+    def read(self, size: int = -1, /) -> bytes: ...
+
+
 class _BackupMemberReader:
     """Witness the stream tarfile copies, without rereading a changing source."""
 
-    def __init__(self, source: BinaryIO) -> None:
+    def __init__(self, source: _BackupReadStream) -> None:
         self.source = source
         self.digest = hashlib.sha256()
         self.size = 0
 
-    def read(self, size: int) -> bytes:
+    def read(self, size: int = -1, /) -> bytes:
         data = self.source.read(size)
         self.digest.update(data)
         self.size += len(data)
@@ -469,7 +473,7 @@ class _BackupTarFile(tarfile.TarFile):
         self.file_members: list[dict[str, Any]] = []
         super().__init__(*args, **kwargs)
 
-    def addfile(self, tarinfo: tarfile.TarInfo, fileobj: BinaryIO | None = None) -> None:
+    def addfile(self, tarinfo: tarfile.TarInfo, fileobj: _BackupReadStream | None = None) -> None:
         # The manifest contains this list; the whole-archive digest covers it.
         if not tarinfo.isfile() or tarinfo.name == "manifest.json":
             super().addfile(tarinfo, fileobj)
@@ -519,7 +523,6 @@ def _add_path_to_tar(
                 snapshots[resolved] = snapshot
         if snapshot is not None:
             snapshot[1]["archive_paths"].append(archive_path)
-
             tar.add(snapshot[0], arcname=archive_path, recursive=False)
             return
     tar.add(source, arcname=archive_path, recursive=False)
