@@ -466,6 +466,7 @@ export function createEffectRuntimeHandlers(
     ["coordination.runtime_shadow.commit_entry", lazyHandler(() => import("./coordination/shadow_entry_delivery.ts"), ({deliverShadowEntry}) => deliverShadowEntry)],
     ["coordination.runtime_shadow.outbox_read", lazyHandler(() => import("./coordination/local_authority_shadow.ts"), ({readLocalAuthorityShadow}) => readLocalAuthorityShadow)],
     ["coordination.runtime_shadow.drain", lazyHandler(() => import("./coordination/shadow_drain.ts"), ({drainShadowOutbox}) => drainShadowOutbox)],
+    ["coordination.cold_source.import", lazyHandler(() => Promise.all([import("./coordination/cold_source_import.ts"), import("./coordination/source_transfer.ts")]), ([{executeColdSourceImport}, {withCoordinationSourceTransfer}]) => withCoordinationSourceTransfer("coordination.cold_source.import", executeColdSourceImport))],
     [
       "effect.program_from_ordered_steps",
       (params) => effectProgramFromOrderedSteps(
