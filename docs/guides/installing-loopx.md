@@ -325,6 +325,33 @@ If both default runtime roots contain state, implicit routing refuses the
 conflict; use explicit `--registry` and `--runtime-root` for diagnosis or
 independent work until the conflict is resolved.
 
+### Recovering From The Legacy Replan Stall Matcher (Releases Through 0.4.5)
+
+Releases through 0.4.5 inferred autonomous-replan stalls from free-form run
+summaries with a substring matcher, so successful run records containing words
+such as `installed` or `installation completed` could produce a
+`no_progress_streak` trigger and an erroneous `autonomous_replan_required`
+decision. Release 0.4.6 removed the matcher, and stall classification on
+current main is typed-only.
+
+If an install still runs 0.4.5 or earlier and shows this symptom, upgrade
+through the channel that install used:
+
+- Snapshot and source-checkout installs from that era: the `loopx update`
+  command exists there with flag-style actions - run `loopx update --check`
+  for the read-only plan, then `loopx update --execute` to apply. The
+  positional `loopx update check` / `loopx update apply` spelling is a later
+  addition and is rejected by these releases.
+- PyPI installs (0.4.8 and later on the 0.4.x line): `pip install --upgrade
+  loopx`.
+
+Confirm the running version afterwards with `loopx --version` and
+`loopx doctor`. The
+diagnostic on the affected release cannot name this defect - the fix and the
+guidance ship together - so treat a successful run being marked
+`autonomous_replan_required` right after an installation-related action as
+the signal to upgrade.
+
 For archive installs, `update apply` downloads the bootstrap installer to a
 private temporary file before executing it. Downloading is limited to three
 attempts, a 60-second total download budget (or the smaller command timeout),
