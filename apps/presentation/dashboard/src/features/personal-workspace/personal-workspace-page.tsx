@@ -35,7 +35,7 @@ import {
   type ManagerRuntimeSessionReadback,
   type TypedActionProposal,
 } from "../../data/chat";
-import { useTypedActionReadback } from "../../data/use-typed-action-readback";
+import { useTypedActionReadback, useTypedActionProposalReadback } from "../../data/use-typed-action-readback";
 
 import { ChannelHeader } from "./channel-header";
 import { GoalLoopXMode } from "./goal-loopx-mode";
@@ -678,7 +678,9 @@ function workspaceProposal(proposal: TypedActionProposal, t: WorkspaceTranslate)
       : proposal.action_kind === "team.plan"
       ? teamPlanFields(proposal.normalized_parameters, t)
       : decision ? []
-      : proposalFields(proposal.normalized_parameters, t),
+      : proposalFields(proposal.normalized_parameters, t).filter(field => !reviewPlan.creationProgress?.goalId
+        || proposal.status === "applied"
+        || ["objective", "completion_criteria", "execution_boundary", "permission", "workspace_ref"].includes(field.key)),
     goalId: typeof proposal.normalized_parameters.goal_id === "string" ? proposal.normalized_parameters.goal_id : undefined,
     impact: reviewPlan.retryOriginal ? t(`actionReview.${reviewPlan.reason}`) : proposal.action_kind === "operation.execute"
       ? operationFrame?.kind === "inactive" ? t(`actionReview.${operationFrame.reason}`)
@@ -1140,6 +1142,20 @@ export function PersonalWorkspacePage({
     return currentRun ? { item: currentRun.run, kind: "run" } : selection;
   }, [items, selection, proposals, workspaceGoals, model.attentionHistory, model.userTodos]);
 
+  const creationProposalId = drawerSelection?.kind === "proposal"
+    && drawerSelection.item.actionKind === "goal.create"
+    && !drawerSelection.item.previewId.startsWith("workspace-choice-")
+      ? drawerSelection.item.previewId : null;
+  const proposalReadback = useTypedActionProposalReadback(readOnly, creationProposalId);
+  useEffect(() => {
+    if (readOnly || !proposalReadback.isSuccess || !proposalReadback.data) return;
+    const canonical = proposalReadback.data;
+    // Readback updates an existing card only; it never discovers foreign cards
+    // or changes the conversation that originally offered this operation.
+    setProposals(current => current[canonical.proposal_id]
+      ? { ...current, [canonical.proposal_id]: workspaceProposal(canonical, t) } : current);
+  }, [readOnly, proposalReadback.data, proposalReadback.dataUpdatedAt, proposalReadback.isSuccess, t]);
+
   useEffect(() => {
     if (readOnly) {
       setGoalContexts({});
@@ -1405,7 +1421,12 @@ export function PersonalWorkspacePage({
         actionKind: "todo.update",
         context: { goal_id: todo.goalId, kind: "todo", todo_id: todo.todoId },
         idempotencyKey: `workspace-todo-${todo.todoId}-complete-${Date.now().toString(36)}`,
-        normalizedParameters: { goal_id: todo.goalId, operation: "complete", todo_id: todo.todoId },
+        normalizedParameters: {
+          ...(todo.claimedBy ? { agent_id: todo.claimedBy } : {}),
+          goal_id: todo.goalId,
+          operation: "complete",
+          todo_id: todo.todoId,
+        },
         summary: t("tasks.markComplete", { name: todo.text }),
       });
       setActionFeedback(null);
@@ -1516,7 +1537,7 @@ export function PersonalWorkspacePage({
       setActionFeedback(t("feedback.completed", { title: applied.title }));
       // Keep the success receipt visible for reviewed actions. Direct actions
       // surface the same result through the persistent feedback receipt.
-      if (applied.actionKind === "todo.create") {
+      if (applied.actionKind === "todo.create" || applied.actionKind === "goal.create") {
         await callbacks.onRefresh?.();
       }
       if (applied.actionKind === "goal.lifecycle" && (applied.lifecycleOperation === "stop" || applied.lifecycleOperation === "delete")) {
@@ -1535,8 +1556,12 @@ export function PersonalWorkspacePage({
       if (error instanceof ChatApiError && error.payload.error_code === "protected_action") {
         const rawGate = error.payload.gate;
         const gate = rawGate && typeof rawGate === "object" ? rawGate as Record<string, unknown> : {};
+        const returned = typedActionProposalSchema.safeParse(error.payload.proposal);
+        const observed = returned.success && returned.data.proposal_id === proposal.previewId
+          && returned.data.action_kind === proposal.actionKind && returned.data.normalized_parameters.goal_id === proposal.goalId
+          ? workspaceProposal(returned.data, t) : proposal;
         const gated = {
-          ...proposal,
+          ...observed,
           reviewPlan: proposal.reviewPlan ? { ...proposal.reviewPlan, retryOriginal: undefined, interaction: "gated" as const, reason: "authority_gate" as const, canApply: false as const } : undefined,
           impact: proposal.reviewPlan?.retryOriginal ? "" : proposal.impact,
           primaryLabel: proposal.reviewPlan?.retryOriginal ? undefined : proposal.primaryLabel,
@@ -1565,19 +1590,20 @@ export function PersonalWorkspacePage({
       const returned = error instanceof ChatApiError
         ? typedActionProposalSchema.safeParse(error.payload.proposal) : null;
       let stored = returned?.success ? returned.data : undefined;
-      if (!stored && proposal.actionKind === "team.plan" && !readbackMismatch) {
+      if (!stored && ["team.plan", "goal.create"].includes(proposal.actionKind) && !readbackMismatch) {
         const readback = await actionReadback.refetch();
         // Query errors retain cached data; it cannot certify this attempt.
         if (readback.isSuccess) stored = readback.data?.find(item => item.proposal_id === proposal.previewId);
       }
       if (stored?.proposal_id === proposal.previewId && stored.action_kind === proposal.actionKind
-        && (proposal.actionKind !== "team.plan" || stored.normalized_parameters.goal_id === proposal.goalId)) {
+        && (!["team.plan", "goal.create"].includes(proposal.actionKind) || stored.normalized_parameters.goal_id === proposal.goalId)) {
         await actionReadback.acceptProposal(stored);
         const observed = workspaceProposal(stored, t);
         const reconciled = { ...observed, errorMessage: observed.status === "error"
           ? error instanceof Error ? error.message : String(error) : undefined };
         setProposals(current => ({ ...current, [proposal.previewId]: reconciled }));
         setSelection({ item: reconciled, kind: "proposal" });
+        if (observed.reviewPlan?.creationProgress?.goalId) void callbacks.onRefresh?.();
         setActionFeedback(stored.status === "stale" ? t("feedback.stale")
           : observed.reviewPlan?.interaction === "completed" ? t("feedback.completed", { title: observed.title })
           : t("feedback.executionFailed", { error: error instanceof Error ? error.message : String(error) }));
@@ -1909,9 +1935,11 @@ export function PersonalWorkspacePage({
         todoReadbackUnavailable={drawerSelection.kind === "todo" && !workspaceGoals.some((goal) =>
           goal.goalId === drawerSelection.item.goalId && (drawerSelection.item.detailMode === "request_only" || drawerSelection.item.done
             || goal.agentTodos.some((todo) => todo.todoId === drawerSelection.item.todoId)))}
-        proposalReadbackUnavailable={actionReadback.isError || !actionReadback.data
-          || (drawerSelection.kind === "proposal" && !actionReadback.data.some(proposal => proposal.proposal_id === drawerSelection.item.previewId))}
-        proposalReadbackFetching={actionReadback.isFetching} onRetryProposalReadback={() => void actionReadback.refetch()} onClose={() => {
+        proposalReadbackUnavailable={creationProposalId ? proposalReadback.isError || !proposalReadback.data
+          : actionReadback.isError || !actionReadback.data
+            || (drawerSelection.kind === "proposal" && !actionReadback.data.some(proposal => proposal.proposal_id === drawerSelection.item.previewId))}
+        proposalReadbackFetching={creationProposalId ? proposalReadback.isFetching : actionReadback.isFetching}
+        onRetryProposalReadback={() => void (creationProposalId ? proposalReadback.refetch() : actionReadback.refetch())} onClose={() => {
         if (drawerSelection.kind === "proposal"
           && ["applied", "rejected"].includes(drawerSelection.item.status)
           && !(drawerSelection.item.status === "applied" && ["heartbeat.bind", "team.plan"].includes(drawerSelection.item.actionKind))) {

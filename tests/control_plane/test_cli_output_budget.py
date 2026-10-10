@@ -845,6 +845,126 @@ def test_real_cli_output_stays_inside_baseline_and_growth_contracts(
     _assert_scenario_matrix(scenarios)
 
 
+def test_diagnose_keeps_selected_reads_once_and_out_of_the_goal_overview(
+    tmp_path: Path,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "diagnose-selected-read") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(stable_root, SCENARIOS[0])
+        command = _surface_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="json",
+        )["diagnose"]
+        exit_code, text = _invoke_cli(command)
+
+    assert exit_code == 0, text
+    payload = json.loads(text)
+    assert payload["selected"]["interaction_contract"]["agent_channel"]["required_reads"]
+    assert "required_reads" not in payload["goals"][0]["interaction_contract"]["agent_channel"]
+
+
+def test_quota_packet_drops_transient_path_but_keeps_verified_todo_reference(
+    tmp_path: Path,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "quota-goal-read") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(stable_root, SCENARIOS[0])
+        command = _surface_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="json",
+        )["quota_should_run"]
+        exit_code, text = _invoke_cli(command)
+
+    assert exit_code == 0, text
+    payload = json.loads(text)
+    assert "goal_state_file" not in payload
+    assert payload["interaction_contract"]["agent_channel"]["work_context"]["selected_todo_ref"] == "selected_todo"
+
+
+def test_turn_envelope_references_selected_todo_without_duplicate_context(
+    tmp_path: Path,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / "turn-envelope-selected-read") as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(stable_root, SCENARIOS[0])
+        command = _mode_variant_commands(
+            project=project,
+            runtime=runtime,
+            registry_path=registry_path,
+            state_file=state_file,
+            output_format="json",
+        )["quota_should_run_turn_envelope"]
+        exit_code, text = _invoke_cli(command)
+
+    assert exit_code == 0, text
+    payload = json.loads(text)
+    assert payload["action"]["selected_todo"]["text_ref"] == "action.recommended_action"
+    work_context = payload["work_context"]
+    assert work_context["selected_todo_ref"] == "selected_todo"
+    assert work_context["selected_todo_authority"].startswith("markdown_active_state@sha256:")
+    assert "sources" not in work_context
+
+
+@pytest.mark.parametrize("surface_id", ["quota_should_run", "quota_should_run_turn_envelope"])
+def test_compact_selected_todo_markdown_preserves_work_context_instruction(
+    tmp_path: Path,
+    surface_id: str,
+) -> None:
+    with _stable_budget_fixture_root(tmp_path / surface_id) as stable_root:
+        project, runtime, registry_path, state_file = _write_fixture(
+            stable_root,
+            SCENARIOS[0],
+        )
+        if surface_id == "quota_should_run":
+            json_command = _surface_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="json",
+            )[surface_id]
+            markdown_command = _surface_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="markdown",
+            )[surface_id]
+        else:
+            json_command = _mode_variant_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="json",
+            )[surface_id]
+            markdown_command = _mode_variant_commands(
+                project=project,
+                runtime=runtime,
+                registry_path=registry_path,
+                state_file=state_file,
+                output_format="markdown",
+            )[surface_id]
+
+        json_exit_code, json_text = _invoke_cli(json_command)
+        markdown_exit_code, markdown_text = _invoke_cli(markdown_command)
+
+    assert json_exit_code == 0, json_text
+    assert markdown_exit_code == 0, markdown_text
+    payload = json.loads(json_text)
+    work_context = (
+        payload["interaction_contract"]["agent_channel"]["work_context"]
+        if surface_id == "quota_should_run"
+        else payload["work_context"]
+    )
+    instruction = work_context["instruction"]
+    assert instruction
+    assert markdown_text.count(instruction) == 1
+
+
 def _assert_scenario_matrix(scenarios: dict[str, dict[str, dict[str, dict]]]) -> None:
     """Keep the pytest and base/head probe on the same matrix assertions."""
 
@@ -925,6 +1045,8 @@ def test_quota_cli_keeps_full_agent_todo_diagnostics_on_explicit_cold_path(
 
     assert default_exit_code == 0, default_text
     assert detail_exit_code == 0, detail_text
+    assert '"content_revision"' not in default_text
+    assert '"content_revision"' not in detail_text
     default_payload = json.loads(default_text)
     detail_payload = json.loads(detail_text)
     default_summary = default_payload["agent_todo_summary"]
@@ -1045,7 +1167,7 @@ def test_malformed_todo_state_fails_closed_without_dropping_bounded_detail(
         assert default_payload.get(key) == detail_payload.get(key)
 
 
-def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
+def test_quota_cli_keeps_required_authoring_inline_and_diagnostic_audit_cold(
     tmp_path: Path,
 ) -> None:
     with _stable_budget_fixture_root(tmp_path / "quota-vision-detail") as stable_root:
@@ -1074,9 +1196,10 @@ def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
 
     assert default_exit_code == 0, default_text
     assert detail_exit_code == 0, detail_text
-    # Pinned base/head emit 41,503 chars on the same 36-Todo / 12-run vision
-    # fixture. Keep complete decision semantics; 42k leaves 497 chars.
-    assert len(default_text) <= 42_000
+    # Same 36-Todo / 12-run command: 41,176 -> 44,225 chars (+7.4%).
+    # Required authoring replaces a second diagnostic read; preserve its rules
+    # and field limits. This fixed allowance does not relax other lane budgets.
+    assert len(default_text) <= 45_000
     default_payload = json.loads(default_text)
     detail_payload = json.loads(detail_text)
     compact_audit = default_payload["vision_continuation_audit"]
@@ -1090,16 +1213,8 @@ def test_quota_cli_bounds_real_scale_vision_audit_and_keeps_cold_detail(
     assert "registry_read_instruction" in detailed_audit["vision_gap_judge"]
     compact_replan = default_payload["replan_action_packet"]
     detailed_replan = detail_payload["replan_action_packet"]
-    assert compact_replan["payload_compaction"] == {
-        "schema_version": "quota_cli_replan_action_compaction_v0",
-        "mode": "compact_hot_path",
-        "compacted_fields": ["writeback_contract.vision_authoring"],
-        "full_detail_cold_path": "quota should-run --include-detail vision",
-    }
-    assert "vision_authoring" not in compact_replan["writeback_contract"]
-    assert compact_replan["writeback_contract"]["vision_authoring_detail_ref"] == (
-        "quota should-run --include-detail vision"
-    )
+    assert compact_replan["writeback_contract"] == detailed_replan["writeback_contract"]
+    assert "payload_compaction" not in compact_replan
     assert detailed_replan["writeback_contract"]["vision_authoring"][
         "schema_version"
     ] == "goal_vision_replan_contract_v0"

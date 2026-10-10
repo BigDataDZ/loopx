@@ -72,8 +72,8 @@ class BenchmarkCodex(CodexOffline):
             task_entry,
             turn_envelope,
         )
-        self.planning_timeout = float(planning_timeout_sec)
-        if not 0 < self.planning_timeout < float("inf"):
+        self.planning_timeout = None if planning_timeout_sec is None else float(planning_timeout_sec)
+        if self.planning_timeout is not None and not 0 < self.planning_timeout < float("inf"):
             raise ValueError("planning timeout must be finite and positive")
         self.scheduler_timeout = int(scheduler_timeout_sec)
         if self.scheduler_timeout <= self.execution.timeout_seconds + 150:
@@ -84,8 +84,8 @@ class BenchmarkCodex(CodexOffline):
             raise ValueError("Choose replan_after_turns or replan_after_todos, not both")
         if replan_after_turns is not None:
             if (type(replan_after_turns) is not int or
-                    not 1 <= replan_after_turns <= 5):
-                raise ValueError("replan_after_turns must be an integer between 1 and 5")
+                    not 1 <= replan_after_turns <= 6):
+                raise ValueError("replan_after_turns must be an integer between 1 and 6")
             if not self.execution.uses_loopx:
                 raise ValueError("replan_after_turns requires a LoopX execution mode")
         if replan_after_turns is None and replan_after_todos is None and self.execution.uses_loopx:
@@ -165,6 +165,9 @@ class BenchmarkCodex(CodexOffline):
             "LOOPX_INSTALL_OPENCODE": "0",
             "LOOPX_INSTALL_CLAUDE": "0",
             "LOOPX_SKILL_DEDUPE_OTHER_ROOT": "0",
+            # Research trials do not send background usage statistics. Keep
+            # setup and control commands under the same trial policy as tools.
+            "LOOPX_USAGE_PING": "0",
             # Codex tool calls use `bash -lc`, whose login profile may replace
             # PATH. BASH_ENV restores staged tools and the task image toolchain.
             "BASH_ENV": _BASH_ENV,
@@ -271,6 +274,7 @@ class BenchmarkCodex(CodexOffline):
             "task_entry": self.execution.task_entry,
             **({"turn_envelope": True} if self.execution.turn_envelope else {}),
             "home_scope": "trial",
+            "loopx_usage_ping_enabled": False,
             "login_shell_node_path": _BASH_ENV,
             "scheduler_terminal_packet_compatibility": True,
             **self._replan_receipt(),
@@ -645,7 +649,9 @@ class BenchmarkCodex(CodexOffline):
             env = self._worker_env(cwd=cwd)
             if self.execution.task_entry == "loopx-planned":
                 result_path = f"{_CONTROL}/planning-phase-{self._phase_number:03d}.json"
-                planning_timeout = min(self.planning_timeout, deadline - time.monotonic() - 30)
+                planning_timeout = deadline - time.monotonic() - 30
+                if self.planning_timeout is not None:
+                    planning_timeout = min(self.planning_timeout, planning_timeout)
                 if planning_timeout <= 0:
                     raise TimeoutError("Task budget exhausted before planning")
                 await self.exec_as_agent(

@@ -543,6 +543,34 @@ def test_turn_context_audit_count_compatibility(counts, omitted):
     assert len(result["findings"]) == 3
 
 
+def test_turn_context_preserves_wait_conditions_and_total_omissions():
+    from loopx.capabilities.explore.todo_branch_plan import build_explore_todo_branch_plan
+
+    plan = build_explore_todo_branch_plan(
+        goal_id="research", agent_id="worker", width=3,
+        orchestration={"explore_harness": {"enabled": True}},
+        todos=[{
+            "todo_id": f"todo_waiting_{index}", "text": "Use the prepared artifact",
+            "status": "open", "task_class": "advancement_task", "priority": "P0",
+            "resume_when": "todo_done:todo_prepare", "resume_ready": False,
+        } for index in range(12)],
+    )
+    packet = effect_runtime_result("explore.turn_context", {
+        "goal_id": "research", "agent_id": "worker", "route": ["loopx"],
+        "harness_gate": {"enabled": True}, "graph_enabled": False,
+        "projection": {}, "plan": plan,
+    })
+    context = packet["harness"]
+    assert context["selected_branches"] == []
+    assert len(context["rejected_candidates"]) == 3
+    assert context["omitted_rejected_candidates"] == 9
+    for row in context["rejected_candidates"]:
+        assert row["actionable_open"] is False
+        assert row["resume_ready"] is False
+        assert row["resume_when"] == "todo_done:todo_prepare"
+    assert "todo-branch-plan" in context["plan_command"]
+
+
 @pytest.mark.parametrize("kind", ["findings", "edges"])
 def test_turn_context_rejects_negative_evidence_count(kind):
     with pytest.raises(EffectRuntimeRejected, match=f"Explore {kind} count must be nonnegative") as rejected:
@@ -555,3 +583,25 @@ def test_turn_context_rejects_negative_evidence_count(kind):
         })
     assert rejected.value.error_kind == "request_rejected"
     assert rejected.value.diagnostic_code == "invalid_request"
+
+
+def test_many_durable_refs_keep_bounded_audit_and_full_cold_read(tmp_path):
+    path = registry(tmp_path, planning=True)
+    refs = [f"unknown-{i}" for i in range(40)]
+    add_goal_todo(registry_path=path, goal_id="research", role="agent",
+                  text="Inspect unresolved evidence", claimed_by="worker",
+                  explore_result_node_refs=refs)
+    packet = explore_turn_context(registry_path=path, runtime_root=tmp_path / "runtime",
+                                  goal_id="research", agent_id="worker")
+    audit = packet["harness"]["selected_branches"][0]["typed_evidence_audit"]
+    for field in ("requested_node_refs", "unknown_node_refs"):
+        assert audit[field] == refs[:8]
+        assert audit[f"omitted_{field}"] == 32
+    assert "unknown_result_node_ref" in audit["hazards"]
+    # Follow the actual full-audit command carried by the compact packet.
+    command = packet["harness"]["plan_command"]
+    result = subprocess.run([sys.executable, "-m", "loopx.cli", *command[1:]],
+                            capture_output=True, text=True, check=True)
+    full = json.loads(result.stdout)["selected_branches"][0]["typed_evidence_audit"]
+    assert full["requested_node_refs"] == full["unknown_node_refs"] == refs
+    assert full["score_delta"] == 0

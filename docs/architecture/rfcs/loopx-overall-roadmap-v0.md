@@ -3,7 +3,7 @@
 - Status: Accepted
 - Supersedes / closes: none
 - Scope baseline: architecture audit at 2026-09-16, `0aa6179de`; RFC inventory
-  updated through 2026-09-28, `6643f3670`; steward reproduction baseline is
+  updated through 2026-10-08 against `82d1b8374`; steward reproduction baseline is
   preserved separately in Section 8.
 - Ownership: overall product outcomes, cross-domain dependencies, priorities and portfolio acceptance here; concrete rules in domain RFCs/stable protocols; execution state in canonical Todos.
 - Language: [中文版](loopx-overall-roadmap-v0.zh-CN.md) is the semantic mirror.
@@ -96,7 +96,7 @@ These directly determine whether a long-running team is usable. A directory or R
 | [Goal Vision/replan](../../reference/protocols/goal-vision-replan-contract-v0.md), [work graph](../../reference/protocols/task-graph-projection-v0.md), [peer runtime](../../reference/protocols/peer-agent-runtime-v1.md), [supervisor](../../reference/protocols/peer-supervisor-v0.md) | S2/S3 | Exercise dependencies, replanning, acceptance and handoff in one real case; aggregate closeout consumes acceptance facts |
 | [Quota](../../quota-allocation.md), [cadence](../../operations/long-task-cadence-policy.md), [attention](../../operations/attention-queue.md) | S5/S7 | Budget exhaustion, deferral and blocking expose next triggers/readback; scale without frequent full-state polling |
 | [Material lifecycle](../../reference/protocols/material-lifecycle-architecture-v0.md), [material frontier](../../reference/protocols/agent-material-frontier-v0.md), [authority registration](../../operations/authority-source-registration.md) | S6 | Agents discover roadmap/RFC revisions and record reads; reading grants neither agreement nor authority; archival preserves raw-source ownership |
-| [Decision Context](../../../loopx/capabilities/decision_context/README.md), [Reward Memory](../../../loopx/capabilities/reward_memory/README.md), [Semantic Preference](../../../loopx/capabilities/semantic_preference/README.md), [Turn Recall](../../../loopx/capabilities/agent_turn_recall/README.md) | S6/S11 | Distinguish facts/preferences/advice/attribution/authority; scoped recall, expiry and outcome-feedback counterexamples first |
+| [Decision Context](../../../loopx/capabilities/decision_context/README.md), [Reward Memory](../../../loopx/capabilities/reward_memory/README.md), [Semantic Preference](../../../loopx/capabilities/semantic_preference/README.md), [Turn Recall](../../../loopx/capabilities/agent_turn_recall/README.md) | S6/S11 | Distinguish facts/preferences/advice/attribution/authority; scoped recall, expiry and outcome-feedback counterexamples first. Start review learning with the [#5944 Git-owned experience](../../../loopx/capabilities/pr_review_queue/experiences/README.md): preserve machine and maintainer-directed frames, deliver qualified advice to the explicitly opted-in review Agent, then verify current-head adoption and useful review outcomes. Context delivery closes no quality/utility gate; held-out false-blocker, cost and attention controls follow [the existing utility RFC](post-outcome-memory-utility-attribution-v0.md#91-review-learning-pilot-repository-experience-before-utility) |
 | [Issue Fix](../../../loopx/capabilities/issue_fix/README.md), [PR Review](../../../loopx/capabilities/pr_review_queue/README.md), [Change Quality](../../../loopx/capabilities/change_quality/README.md), [Integration Branch](../../../loopx/capabilities/integration_branch/README.md), [Change Window](../../../loopx/capabilities/repository_change_window/README.md) | S8/S12 | Engineering caller: issue→implementation→independent review→validation→authorized delivery; source-head drift invalidates old evidence |
 | [Explore](../../../loopx/capabilities/explore/README.md), [Benchmark Toolkit](../../../loopx/capabilities/benchmark_toolkit/README.md), [auto-research](../../product/use-cases/auto-research/README.md) | S8/S11 | Second collaboration journey: question/hypothesis→parallel experiments→independent interpretation→successor; no uplift/failure remain valid outcomes |
 | [Content Operations](../../../loopx/capabilities/content_ops/README.md), [Periodic Report](../../../loopx/capabilities/periodic_report/README.md), [office operations](../../product/use-cases/office-operations/README.md), [domain packs](../../product/domain-capability-packs.md) | S5/S8 | Public-safe projections feed sinks; separate drafts/review/publish authority/outcomes; generic sinks do not depend on project-private documents |
@@ -310,6 +310,7 @@ subsystem was not performed. Section 8 records the focused audit.
 
 | RFC | Stream | Current boundary | Next slice / acceptance |
 | --- | --- | --- | --- |
+| [Complete State Recovery and Controlled Reactivation v0](complete-state-recovery-v0.md) | S2/S10 | Accepted design; backup create and configuration-only isolated recovery exist, complete-state verify/reactivation do not | M1: readable inert audit in Settings/Capability Center with owner/next action and no live authority; M3: recover one packaged local File/SQLite Goal, continue unfinished work, and record recovered/lost work, human cost, holds, owner reuse, and zero protected duplicate operations |
 | [Composable State Machines and Recovery Verification v0](composable-state-machines-recovery-verification-v0.md) | S2/S3/S10 | Design only; local conformance is reusable evidence | P1: one typed boundary, then ownership/writeback/settlement fault sequences and conditional progress; production entrypoint and real-backend evidence |
 | [Agent Loop Effect Interpreter](agent-loop-effect-interpreter-v0.md) | S2 | Accepted; core implemented, adoption continues | P0: reuse effect/recovery, cover R1 partial commits; retain domain-local replan ACK |
 | [TypeScript Control-Plane Migration Direction v0](typescript-control-plane-migration-v0.md) | S2 | Accepted; whole-transaction migration active | P0/P1: R1–R4 hot transactions first; T0–T4 caller/deletion/cost evidence; no full rewrite prerequisite |
@@ -798,8 +799,13 @@ Readable R2/R3 answers reuse shared adaptive authoring guidance across ordinary
 project Chat, steward context and the collaboration return tool. This narrows
 routine protocol noise without cutting substantive answers or judging
 acceptance; it does not close sustained worker, steering or original-route
-return qualification. Private Markdown delivery is already owned by the
-existing Lark transport and is unchanged here.
+return qualification. Private Markdown delivery remains owned by the existing
+Lark transport. Ordinary answers and asynchronous worker returns now share its
+presentation fallback: unresolved visual handles render with an inert full-width
+marker, while valid structured mentions retain membership verification. The
+original stored result is unchanged; delivery and saved-attempt readback use the
+same rendered text. File-backed return/restart regressions cover this bounded
+repair, not sustained receiver adoption or the complete R3 journey.
 
 For App continuity in GQ07–GQ09, qualify chosen Manager/Goal view restoration
 through reload and browser Back/Forward using the existing typed route and
@@ -875,6 +881,46 @@ L3 checkpoint: standalone acquisition/takeover, atomic claim admission and maint
 - **Exit:** use shared-authority Section 7.2's separate decisions for a bounded change, reversible opt-in cohort and released default. Each requires affected real CLI/backend and independent baseline/negative/recovery evidence at its own scope. Formal D2 retains applicable volume and at least ten-day evidence; a cohort need not wait for that certificate. D3 retains explicit cutover authority. This plan runs no soak or provider promotion.
 - **Rollback:** reviewed fenced export/import and schema-aware downgrade; replacing a binary cannot restore old write authority.
 
+Cold-source inventory is now an explicit read-only CLI prerequisite through the
+same TS source/lease owners. It includes unreferenced archives and retained
+leases, with full text and source-byte witnesses, before any shadow opt-in.
+Original outbox disposition is also qualified through the shipped TS effects
+with Python Todo/bootstrap/capture producers absent from a disposable receiver:
+markerless abandoned/committed recovery, receipt replay without duplicate effects,
+unchanged active leases, and refusal plus same-operation archival of ambiguous
+originals. Retain the OS-lock adapter and original history readers. This covers
+the existing disposition owner, not global Host stop, lease settlement, import
+confirmation, a canonical cutover, or permission to delete active old writers.
+The same observation discovers original capture stores/identity, management
+operation files, outbox bytes and Goal-bound rollback archives through the
+existing typed owners; present history is validated without replay or drain.
+Compact readback never replaces the witnessed historical files or proves Host
+stop. Invalid history and missing completed rollback archives refuse inspection.
+Active original outbox inspection reuses the native drain proof owner to show
+pending records and receipt-proven residue per partition without any effects.
+An unavailable disposition retains raw witnesses; inactive/interrupted capture
+still needs its original management recovery. This preview never settles the
+outbox, updates a cursor or grants cleanup/import authority.
+Expired or orphan `active` leases still require settlement; canonical selectors
+and fences prevent treating display Markdown as an old authority source.
+This observation creates no capture or import receipt and never reports import
+readiness. Goal settings now consume that same observation: current/archive
+task counts, unsettled historical leases and retained capture/outbox presence,
+with path-free readback, unavailable-source refusal and fresh retry. This is the
+inventory stage only; no import, capture activation or execution grant is exposed.
+R5/D1 and T4/C1 still need stopped writer/Host proof, original outbox disposition,
+the backup-bound reviewed target and its Goal storage frontend,
+confirmation and same-operation import/recovery. Keep the cold-import work open;
+neither this prerequisite nor archive export qualifies writer cutoff or defaults.
+
+Cold-source retention checkpoint: current-project full backup discovers its
+registered custom state and source-registry routes. Real CLI backups and inert
+independent extraction preserve complete Markdown bytes, unreferenced archived
+Todos and raw runtime history, including SQLite snapshots. This closes a routing
+omission, not reviewed cold import or complete-state reactivation. Continue the
+existing R5/T4 import plan/confirmation, writer/Host/outbox fence and packaged App
+acceptance before retiring affected old writers; D2 and release defaults stay open.
+
 Existing canonical File/SQLite cutover now has a packaged settings journey using
 the existing typed migration/archive owner: immutable preview, explicit apply,
 original-plan recovery and independent current-source readback. Active capture
@@ -883,6 +929,131 @@ writes→File must use the current head; historical completion never selects the
 provider. This is a bounded App companion, not full old-source/Host upgrade or
 D2/release-default qualification. Continue those original acceptance frontiers
 and retire each last caller separately.
+
+Cold-source import now has a bounded CLI/App coordination stage: complete source
+records, an immutable source/target carrier bound to actual backup member bytes,
+explicit operator shutdown attestation, revalidation before the durable writer
+fence, and original-receipt recovery through the existing File/SQLite owners.
+It refuses unresolved capture/outbox and unsettled leases, including expired
+active and orphan records, without manufacturing shadow qualification. A killed
+fenced process can resume without rereading Markdown; original-receipt replay
+preserves later canonical writes. Coordination-source backup verification
+**does not qualify complete Goal recovery**. Packaged Goal storage settings
+reuse that transaction for private backup, inventory, explicit policy/stop
+confirmation and original-operation readback. Reload is read-only, including a
+fenced but uncommitted operation; applying the original carrier requires fresh
+confirmation. File/SQLite HTTP qualification preserves later writes and refuses
+source/backup drift. The operator-led POSIX stop path now exercises actual owned
+Host processes and native source leases on File/SQLite: process exit and lease
+release remain separate, expired active leases refuse import, and the old grant
+cannot launch a Host after cutover. Fresh canonical acquisition advances the
+retained lease version/epoch and launches a real owned Host. Source-free original
+import replay preserves that active grant and its later native settlement;
+a stale token refuses before launch even while the same Todo has a fresh active
+lease. Process exit remains separate from lease release after cutover as well.
+This qualifies the existing POSIX supervisor/lease reactivation boundary with
+synthetic work. Full-state identity adoption, automatic Host discovery and live
+model use remain separate acceptance gaps; the App loading checkpoint below
+qualifies its own synthetic import boundary.
+Proved original Todo outbox disposition now composes with cold import on both
+File and SQLite: four interrupted-write windows retain pending-source backups,
+exact original receipts and revision-bound rollback archives. Active capture
+still refuses import after its queue drains; a fresh post-disposition backup
+binds the reviewed import. Import replay preserves later canonical writes and
+the original archived bytes with the old normal producers absent in the receiver.
+Original lease disposition also refuses import until native owner release;
+the fresh reviewed backup retains the released record without a new grant.
+Unproved A→B→A entries remain refused and raw-byte archived by original-operation
+rollback. A fresh confirmed import binds the current source, never treats that
+ambiguous queue as committed receipts, and preserves it after later writes and
+import replay. This qualifies inert history preservation, not proof of an
+ambiguous commit or automatic Host/lease settlement. Continue App loading with
+the old normal writer absent and authorized full-state reactivation in R5. The
+installed cold-import CLI uses the existing selected dispatcher and
+Goal path resolver; real File/SQLite import and original-receipt recovery pass
+with the four old normal producer modules physically absent in a disposable
+package. This qualifies that command's loading boundary, not every other CLI
+caller or removal of those modules. Keep T4 retirement on actual callers: the
+retained prose-write guard now belongs to the existing source/fence boundary;
+the source partition projector has one shared owner, with compatible old
+imports. Configuration and direct guard checks run without both capture modules.
+Pure runtime-root routing and its actual canonical Todo, acceptance, Chat and
+CLI callers now use the existing paths owner, with an identical compatibility
+reexport for capture callers. Source and fresh-wheel File/SQLite qualification
+now uses the full `serve_chat`
+entrypoint with all four Todo/bootstrap/capture producer modules physically
+absent. Shared Todo input transport calls the existing typed create/update/
+terminal owners; pure readback and Goal identity no longer load the old writers.
+The compatibility facade reexports the same APIs and retains its real Markdown
+write bodies and bootstrap effects. Reviewed App import, source/backup drift
+refusal, original-operation restart/replay, full current/archive readback and
+later App create/edit/complete preserve the provider head under an explicitly
+selected `soft_claim` policy. Missing selected storage and absent `hard_lease`
+execution proof still refuse without Markdown fallback. The packaged settings
+journey uses backup, preview, reload/readback and explicit confirmation.
+Reviewed canonical Todo creation carries its provider revision into the existing
+typed command identity and provider transaction, rejecting concurrent writes
+without applying the stale request. Original-operation recovery precedes that
+current-head check and preserves later writes. After import or receipt recovery,
+the same settings screen independently rereads current ownership; a failed read
+shows a retryable error instead of retaining the pre-import policy.
+This qualifies the bounded App import/loading path, not deletion of remaining
+bootstrap/Host/history callers, full-state identity adoption, D2 or a released
+default. Keep those existing acceptances open.
+The shared TS source check admits runtime directory aliases by physical identity,
+preserving the original snapshot and foreign-source rejection. File/SQLite HTTP
+joins alias-bound import, externally configured registry backup, later writes and original-operation recovery; a
+retargeted alias refuses before the fence. This does not change the writer cutoff.
+Cold-import preservation checkpoint (R5/D1, T4/C1): full-state backups now
+witness each saved regular member's bytes in their existing manifests, including
+raw Markdown history, lease/receipt files, SQLite snapshots and stored
+configuration. Hashing the copied stream avoids binding a reviewed backup to a
+later source reread; failed reads retain the previous backup. Real CLI cold
+import→later canonical write→full-state backup→inert independent recovery now
+retains the complete File/SQLite head and committed journal, unreferenced archived
+requirements, stored configuration and original capture/rollback/released-lease
+bytes. Readback runs with the original project/runtime unreachable; missing
+selected-provider storage fails without replacement or File fallback. The
+pre-import backup separately retains original Markdown before later projection.
+This qualifies independent data/history recovery, not identity adoption, pending
+effect disposition or live Host reactivation. Continue those boundaries and the
+packaged App recovery journey through the existing owners. Do not retire the last
+normal Markdown writer or claim the released SQLite default from this checkpoint.
+
+The qualified shadow→canonical archive→isolated File/SQLite restore path retains
+committed dependency archives, terminal lease facts and later canonical writes.
+It does not preserve every unreferenced old-source archive or raw historical
+receipt. R5/T4 now qualifies those original bytes through full-state backup and
+inert independent readback; it still must qualify their authorized adoption
+before deleting caller chains that own live recovery. Source hashes and canonical
+archive verification alone cannot substitute for that acceptance. Supported
+backup-format and original-receipt recovery retain their
+separate upgrade boundary. See the
+[archive scope](../../reference/authority-archive.md).
+
+Reviewed source admission now rejects unsupported lease JSON filenames,
+non-regular records and linked source subtrees instead of silently omitting or
+following them. The existing typed coordination owner verifies exact source
+bytes under shared locks; Python retains filesystem transport. Regular retained
+lease history remains witnessed without granting a live lease. This closes a
+bounded source-inventory gap; complete cold-source import, original-operation
+recovery, packaged App adoption and the reversible developer trial remain on
+the [existing migration/release path](../../reference/local-authority-provider-selection.md#proposed-compatibility-cutoff-and-release-sequence).
+
+审核源准入拒绝不支持的租约 JSON 文件名、非普通文件和链接子目录，不再静默漏读
+或跟随链接。既有 TS coordination owner 在共享锁内核对原始字节；Python 保留
+文件系统传输。普通租约历史仍参与源见证，不产生新执行授权。这仅关闭有界源盘点
+缺口；完整冷源导入、原操作恢复、打包 App 采用和可逆开发者试用继续沿既有迁移
+与发布路径验收。
+
+New-Goal App recovery is a separate bounded R5/T4 gap: after Goal/Todo commit,
+Host startup or a lost response must resume the frozen original operation,
+without regenerating a creator or duplicating its Todo/Session/Turn. Reuse the
+typed action review/checkpoint and native acceptance owners; show committed
+steps without claiming model execution or Goal completion. The [L9 checkpoint](shared-goal-authority-state-provider-v0.md)
+retains installed CLI/HTTP/packaged App negative and restart qualification,
+while old-Goal migration, real-model first-Turn and D2/release-default gates stay
+independent.
 
 The [Goal instance/recovery RFC](goal-instance-identity-and-orphan-recovery-v0.md)
 adds a bounded R5 dependency for R2/R3 retirement and late-result safety. The

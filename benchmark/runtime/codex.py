@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-# Benchmarks deliberately review earlier than the product default of five.
-DEFAULT_REPLAN_AFTER_TURNS = 3
+# New benchmark runs and the product both default to six settled work Turns.
+DEFAULT_REPLAN_AFTER_TURNS = 6
 
 
 MODES = ("plain", "native-goal", "heartbeat", "turn", "loopx-goal")
@@ -101,6 +101,10 @@ def prepare_codex_home(
             f"sandbox_mode = {json.dumps(execution.sandbox)}",
             'web_search = "disabled"',
             f'model_provider = "{"harbor" if base_url else "openai"}"',
+            # Codex filters its inherited shell environment. Set the trial
+            # policy explicitly so model tools cannot silently lose it.
+            "[shell_environment_policy.set]",
+            'LOOPX_USAGE_PING = "0"',
             "[features]",
             f"goals = {str(execution.native_goal).lower()}",
             "unified_exec = true",

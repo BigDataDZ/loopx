@@ -669,7 +669,9 @@ def test_cached_host_result_cannot_resume_after_goal_recreation(
     )
 
     def write_source_journal() -> None:
-        with admission.source_journal_admission() as source_admission:
+        with admission.source_journal_admission(
+            runtime_root=runtime_root,
+        ) as source_admission:
             assert source_admission is not None
             turn_executor._write_journal(
                 path,
@@ -1059,7 +1061,7 @@ def test_enabled_host_result_rejects_receipt_local_path() -> None:
         (
             "evidence_refs",
             ["file:/tmp/private-result.json"],
-            "opaque 1-192 character public-safe reference",
+            "contains a local path",
         ),
     ],
 )

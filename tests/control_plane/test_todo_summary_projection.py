@@ -114,6 +114,35 @@ def test_wait_still_normalizes_complete_source_and_uses_archived_completion():
     assert source[-1]['done'] is False  # Preparation cannot rewrite source facts.
 
 
+def test_deferred_resume_keeps_full_text_revision_through_selection():
+    from loopx.control_plane.quota.selected_todo_projection import selected_todo_projection
+    from loopx.control_plane.todos.resume_planning import project_todo_resume_planning
+    from loopx.control_plane.todos.summary_item import todo_text_content_revision
+    from loopx.control_plane.todos import todo_summary
+
+    source_text = "Inspect the full deferred requirement. " + ("acceptance detail " * 40)
+    deferred = row(7, status="deferred", claimed_by="agent-a", resume_ready=True, text=source_text)
+    prepared = todo_summary._structured_resume_source_items(
+        [deferred], source_section="Agent Todo",
+    )
+    planning = project_todo_resume_planning(
+        {"deferred_resume_candidates": prepared}, agent_id="agent-a",
+    )
+    candidate = planning["deferred_lanes"]["current_agent_deferred_resume_candidates"][0]
+
+    selected = selected_todo_projection(
+        agent_lane_next_action=None,
+        work_lane_contract=None,
+        agent_scope_frontier={
+            "action": "successor_replan_required",
+            "deferred_resume_candidates": [candidate],
+        },
+    )
+
+    assert selected is not None
+    assert selected["content_revision"] == todo_text_content_revision(source_text)
+
+
 def test_unsupported_wait_still_uses_the_typed_fail_closed_evaluator():
     result = summarize([row(1, status='deferred', resume_when='unknown_wait:target')],
                        resume_source_items=[row(2, status='done')])
@@ -189,11 +218,11 @@ def test_selected_frontier_uses_the_summary_crossing_after_python_attachment_ret
         return original(method, request, **kwargs)
 
     monkeypatch.setattr(effect_runtime, "effect_runtime_result", track)
-    monkeypatch.setattr(frontier_revision, "effect_runtime_result", track)
     selected = filtered_todo_summary(source, role="agent", agent_id="agent-a", item_limit=1)
     assert selected["advancement_frontier_revision_index"]["claimed_advancement_counts"] == {"agent-a": 24}
     assert calls == ["todo.summary.project"]
     assert not hasattr(frontier_revision, "attach_advancement_frontier_revision_index")
+    assert not hasattr(frontier_revision, "build_advancement_frontier_revision_index")
 
 
 def test_missing_batched_frontier_never_falls_back_to_another_owner_call(monkeypatch):

@@ -4,7 +4,7 @@ import json
 import mimetypes
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -48,12 +48,14 @@ from .chat_manager import (
 from .chat_session_open import open_chat_session
 from .chat_ssh_source_api import SshSourceRequestMixin
 from .chat_store import ChatSessionStore
-from .capabilities.native_chat.conversation_bindings import ChatConversationBindings
 from .extensions.lark.private_conversation_api import PrivateConversationRequestMixin, PRIVATE_CONVERSATIONS_PATH
 from .extensions.lark.conversation_identity import observe_lark_conversation_identity
 from .extensions.lark.private_conversations import LarkPrivateConversations
 from .chat_loopx_mode import handle_loopx_request
-from .capabilities.manager_context.roundtrip import project_chat_session_snapshot
+from .capabilities.manager_context.roundtrip import (
+    ReturnService,
+    project_chat_session_snapshot,
+)
 from .control_plane.goals.active_state_metadata import active_state_section_text
 from .control_plane.coordination.local_authority import LocalCoordinationAuthorityUnavailable
 from .control_plane.status.ssh_host_catalog import (
@@ -91,7 +93,7 @@ from .extensions.runtime import (
 )
 from .history import load_registry
 from .chat_completed_todos import CompletedTodoPages, CompletedTodoRequestMixin
-from .chat_explore_results import ExploreResultsRequestMixin
+from .presentation.explore_results_api import ExploreResultsRequestMixin
 from .chat_todo_detail import TodoDetailRequestMixin
 from .kiro_cli_goal_mode import KIRO_CLI_BIN
 from .paths import resolve_runtime_root
@@ -421,6 +423,7 @@ class ChatHTTPServer(ThreadingHTTPServer):
     action_store: ChatActionStore
     action_service: ChatActionService
     runtime_controller: ChatRuntimeController
+    manager_return_service: ReturnService
     lark_runner: CommandRunner
     lark_cli_resolution: LarkCliResolution
     lark_app_setup_manager: LarkAppSetupManager
@@ -441,6 +444,8 @@ class ChatHTTPServer(ThreadingHTTPServer):
             self.lark_app_setup_manager.close()
         if hasattr(self, "manager_return_service"):
             self.manager_return_service.close()
+        if hasattr(self, "conversation_transports"):
+            self.conversation_transports.close()
         if hasattr(self, "delegation_wake_service"):
             self.delegation_wake_service.close()
         if hasattr(self, "lark_goal_topic_runtime"):
@@ -1571,6 +1576,7 @@ def serve_chat(
     project_workspace_grant: str = "workspace_write",
     project_filesystem_scope: str = "host_default",
     private_reactions: bool = True,
+    external_conversation_factories: tuple[Callable[[ChatHTTPServer], object], ...] = (),
 ) -> None:
     if not is_loopback_host(host):
         raise ValueError("loopx chat requires a loopback --host such as 127.0.0.1")
@@ -1640,9 +1646,11 @@ def serve_chat(
         idle_timeout_sec=idle_timeout_sec,
         hard_timeout_sec=hard_timeout_sec,
     )
-    server.runtime_controller.project_contexts.conversation_bindings = ChatConversationBindings(
-        root=server.chat_store.root, project_contexts=server.runtime_controller.project_contexts,
-        observe=lambda profile: observe_lark_conversation_identity(profile=profile, runner=server.lark_runner,
+    from .capabilities.native_chat.transports import install_conversation_transports
+    install_conversation_transports(server, factories=external_conversation_factories,
+        observe_group=lambda profile: observe_lark_conversation_identity(profile=profile, runner=server.lark_runner,
+            cli_bin=server.lark_cli_resolution.command or "lark-cli", audience="group"),
+        observe_default=lambda profile: observe_lark_conversation_identity(profile=profile, runner=server.lark_runner,
             cli_bin=server.lark_cli_resolution.command or "lark-cli"))
     private_transport = LarkPrivateConversations(controller=server.runtime_controller, runtime_root=runtime_root,
         runner=server.lark_runner, cli_bin=server.lark_cli_resolution.command or "lark-cli",
@@ -1686,7 +1694,9 @@ def serve_chat(
     )
     server.lark_goal_topic_runtime.start()
     from .extensions.lark.manager_returns import start_return_service
-    server.manager_return_service = start_return_service(server, server.runtime_controller.coordination_runtime_root)
+    server.manager_return_service = start_return_service(
+        server, server.runtime_controller.coordination_runtime_root, start_service=False
+    )
     from .chat_loopx_mode import DelegationWakeService
 
     def _wake_goal_context(session):
@@ -1711,6 +1721,9 @@ def serve_chat(
     if open_browser:
         webbrowser.open(url)
     try:
+        if external_conversation_factories:
+            server.conversation_transports.start(server)
+        server.manager_return_service.start()
         server.serve_forever()
     except KeyboardInterrupt:
         print("Stopping LoopX Chat", flush=True)

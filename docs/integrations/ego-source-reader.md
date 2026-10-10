@@ -51,6 +51,16 @@ To restrict or roll back that origin scope, set
 the idle host. An empty value, `all`, subdomain wildcards or a list mixing `*`
 with origins is invalid and does not expand the scope.
 
+Ordinary workspace Chat guides the Agent to inspect actual pixels when a
+requested answer depends on a figure, screenshot or chart. Captions, OCR and SVG
+source alone do not complete that visual read. If a reader fails, the Agent should
+discover a permitted alternative and check its rendering for missing labels,
+orientation and arrows before describing it. This is Agent guidance, not a
+machine-enforced completeness check or authority to install tools, access a
+private browser, expand a workspace grant or take control from the user. The
+optional reader still requires explicit host setup; ordinary Chat does not enable
+it automatically, and workspace-only hosts do not inherit personal MCP servers.
+
 Use a supported LoopX installation containing this module. Restart an idle host
 through its existing service path and resume the original Session. Do not change
 its sandbox, approval policy, workspace grants or authentication to make the
@@ -64,8 +74,25 @@ In `auto` mode, URL/configuration/origin validation runs before creation.
 The process reuses its space for text and image calls, and replaces it once only
 when Ego explicitly reports `task space not found`. Other browser errors,
 verification walls and user-control stops do not create replacements. An
-ambiguous creation receipt fails closed until the operator inspects/restarts the
-host. On normal MCP shutdown or SIGTERM, it finishes only its own created,
+ambiguous creation receipt never triggers another creation attempt.
+
+If a creation receipt is lost, the next tool call first looks up the process's
+exact unique space name. One Agent-created, currently Agent-owned match restores
+that original space automatically. Zero matches, duplicate names, unknown
+ownership or a user-controlled match preserve the uncertainty without creating,
+claiming or taking over another space. This bounded lookup shares the existing
+30-second call budget and returns no unrelated space metadata.
+
+Before navigation, the reader checks live ownership rather than trusting an old
+TaskSpace handle. `source_reader_not_agent_owned` preserves the Page without
+navigating or capturing it. Once Ego returns Agent control, the next call uses
+the same space automatically; no extra chat confirmation is needed. This tool
+does not force control, poll in the background or grant approval for protected
+actions. Browser failures and rendering timeouts alone are not requests for
+human handoff. A source's actual login or verification requirement remains a
+separate boundary; follow the installed Ego skill and continue independent work.
+
+On normal MCP shutdown or SIGTERM, it finishes only its own created,
 still-agent-owned space. SIGTERM cleanup can complete while the stdio server
 still waits for its host to close stdin; callers should also close the pipe when
 stopping the process. Configured numeric spaces are never finished by the

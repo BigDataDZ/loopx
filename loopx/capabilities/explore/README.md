@@ -214,6 +214,15 @@ must keep the same question and applicability; use a distinct id for a changed
 scope. `input_revision` is the caller's recorded revision, not a claim that the
 runtime independently verified the underlying artifact.
 
+For an **open Todo under `hard_lease`**, keep its active task lease through
+`refresh-state` and the graph/Todo-link delivery. Release it only after
+`explore_result_delivery.ok=true`. Releasing early causes attachment preflight
+to reject before primary commit; re-enter the normal guard/claim/lease path
+before retrying. The completed-Todo exception above remains limited to additive
+evidence association. An exact replay of already-successful delivery is
+readback-only and needs no new lease; unfinished delivery still requires the
+applicable claim/lease proof. None of these rules make capture mandatory.
+
 Read back with `loopx explore turn-context --goal-id <id> --agent-id <agent>`
 and `loopx explore summary --goal-id <id>`. The bounded next-turn view retains
 up to three attached result summaries, including their applicability and input
@@ -239,8 +248,16 @@ A graph/link delivery failure leaves the primary writeback committed and returns
 `explore_result_delivery.retryable=true`. Replay the **same** refresh command to
 complete delivery; conflicting attachment changes cannot rewrite the original
 Turn. Graph events are idempotent and Todo references merge against the owner's
-locked snapshot. Capacity remains eight references per Todo; it is never silently
-truncated. Successful replay needs no second graph event or Todo mutation.
+locked snapshot. Durable Todo links no longer have an eight-reference ceiling;
+all valid distinct node IDs survive append and exact Todo readback. The compact
+turn view shows at most eight requested/unknown reference IDs per branch, with
+explicit omission counts. Its `plan_command` now calls `todo-branch-plan` to
+expand the same Todo audit (instead of grouping worker lanes),
+and revision-bound result pages retain access to all scoped findings. Display
+budgets do not remove links, exclude negative evidence from hazard classification,
+or block valid writeback. Successful replay needs no second graph event or Todo
+mutation. This changes enabled evidence capture and explicit Todo-link edits;
+ordinary work and feature-off hooks retain their existing behavior.
 
 Use `tentative` for inconclusive observations or prerequisite failures. Neither
 compilation failure nor a score alone supplies a scientific interpretation.
@@ -380,6 +397,20 @@ packet with:
   human operator or registered peer runner to execute explicitly;
 - the safety boundary that keeps the packet advisory rather than an
   replacement for `quota should-run`.
+
+Both planners apply the existing Todo readiness rule before scheduling or
+bundling current work. An open Todo with `resume_when` is selectable only when
+its projected `resume_ready` is true. Unready Todos remain in rejected-candidate
+diagnostics with their condition, but consume no verification width or resource
+slot and carry no claim/lease suggestions. The bounded turn context preserves
+these diagnostics and reports omitted candidates; read the full plan for detail.
+If no branch is actionable, the plan asks the caller to inspect the conditions
+and replan instead of suggesting execution.
+
+For `B.resume_when=todo_done:A`, handing A to another Agent does not release B;
+completing A does. Successor lineage alone is not a completion dependency. Future
+work remains visible for planning, and fresh quota, claim and lease checks still
+govern execution after any plan, handoff or readiness change.
 
 An advancement todo may opt into typed result diagnostics by attaching one or
 more explicit Explore node ids:
@@ -529,13 +560,16 @@ planning remains enabled fails with an actionable mode command. Do not combine
 `--explore-mode` with the legacy enable flags in one request.
 
 Both enabled modes register an `explore.turn_context` turn-start hook. Its
-`required_reads` entry is a **before-work read obligation** in the normal packet.
-The command returns at most three recent nodes/findings and, in planning mode,
-three suggested Todo branches, plus structured commands for detail or evidence
-recording. The read folds existing history but bounds the returned context;
-it does not claim to reduce history IO. The agent chooses evidence-backed work;
-planner suggestions do not require branching on every turn or recording empty
-ceremonial nodes. Use the detail command when the short view is insufficient.
+bounded result is projected inline under
+`interaction_contract.agent_channel.work_context.sources` before work. The
+source retains a command for replay, but the inline context is not a separate
+`required_reads` obligation. It contains at most three recent nodes/findings
+and, in planning mode, three suggested Todo branches, plus structured commands
+for detail or evidence recording. The read folds existing history but bounds
+the returned context; it does not claim to reduce history IO. The agent chooses
+evidence-backed work; planner suggestions do not require branching on every
+turn or recording empty ceremonial nodes. Use the detail command when the
+short view is insufficient.
 
 Explicit writeback results default to three full scoped details, not a hard
 visibility limit. `graph.result_page` reports total/remaining counts and an

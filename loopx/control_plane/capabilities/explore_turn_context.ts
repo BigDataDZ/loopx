@@ -27,14 +27,21 @@ function evidenceCount(audit: JsonObject, kind: string, detailCount: number): nu
   return Math.max(detailCount, total);
 }
 function branchContext(row: JsonObject): JsonObject {
-  const result = compact(row, ["todo_id", "text", "branch_role", "score", "confidence"]);
+  const result = compact(row, ["todo_id", "text", "branch_role", "score", "confidence",
+    "selection_status", "status", "actionable_open", "resume_when", "resume_ready"]);
   if (row.typed_evidence_audit == null) return result;
   const audit = requireJsonObject(row.typed_evidence_audit, "Explore evidence audit");
   const nodes = rows(audit.nodes), findings = rows(audit.findings), edges = rows(audit.relevant_edges);
+  const requested = requireStringArray(audit.requested_node_refs ?? [], "requested_node_refs");
+  const unknown = requireStringArray(audit.unknown_node_refs ?? [], "unknown_node_refs");
   // Preserve the existing diagnostic owner: no score change, inferred links or
   // new execution gate. Full status counts include details omitted upstream.
   result.typed_evidence_audit = {
-    ...compact(audit, ["mode", "score_delta", "requested_node_refs", "unknown_node_refs", "hazards"]),
+    ...compact(audit, ["mode", "score_delta", "hazards"]),
+    requested_node_refs: requested.slice(0, 8),
+    unknown_node_refs: unknown.slice(0, 8),
+    omitted_requested_node_refs: Math.max(0, requested.length - 8),
+    omitted_unknown_node_refs: Math.max(0, unknown.length - 8),
     nodes: nodes.slice(0, 3).map(node => compact(node, ["node_id", "title", "status"])),
     findings: findings.slice(0, 3).map(finding => compact(finding, ["finding_id", "node_id", "finding", "status"])),
     relevant_edges: edges.slice(0, 3).map(edge => compact(edge, ["from_node", "to_node", "edge_type"])),
@@ -58,6 +65,7 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
     String(b.last_updated_at ?? "").localeCompare(String(a.last_updated_at ?? "")));
   const findings = rows(projection.findings);
   const branches = rows(plan.selected_branches);
+  const rejected = rows(plan.rejected_candidates);
   const frontier = rows(projection.frontier);
   const selectedRefs = new Set(harness ? branches.slice(0, 3).flatMap(branch => {
     if (branch.typed_evidence_audit == null) return [];
@@ -149,9 +157,13 @@ export function projectExploreTurnContext(params: JsonObject): JsonObject {
       candidate_count: plan.candidate_count ?? 0,
       selected_branches: branches.slice(0, 3).map(branchContext),
       omitted_selected_branches: Math.max(0, branches.length - 3),
+      rejected_candidates: rejected.slice(0, 3).map(branchContext),
+      omitted_rejected_candidates: Math.max(0,
+        requireInteger(plan.rejected_candidate_count ?? rejected.length, "rejected_candidate_count") - 3),
       frontier: frontier.slice(0, 3).map(node => compact(node, ["node_id", "title", "status", "summary"])),
       omitted_frontier: Math.max(0, frontier.length - 3),
-      plan_command: command("worker-branch-plan", "--agent-id", agent),
+      // Expand the same Todo audit shown above, not a different worker-lane plan.
+      plan_command: command("todo-branch-plan", "--agent-id", agent),
       link_evidence_template: [...route, "todo", "update", "--goal-id", goal, "--agent-id", agent, "--todo-id", "<todo-id>", "--explore-result-node-ref", "<node-id>"],
       guidance: "Before choosing an experiment, compare its question with linked findings and the active frontier. Explain which evidence supports changing or retaining the route, and what the next probe can distinguish. Refutation is scoped evidence, not a permanent ban: a retry can test changed conditions or uncertainty. Link relevant existing nodes to the Todo; missing links mean unknown evidence, not a clean route. With one candidate or no active frontier, form useful alternatives only when evidence warrants them. Record results on the same hypothesis and adopt the decision through the ordinary task step or successor. These are decision guidelines, not a new writeback gate or permission to spawn. Read the full planner/summary when this bounded view is insufficient; normal quota, claim and lease admission still applies.",
     } : null,
