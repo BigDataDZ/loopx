@@ -459,6 +459,7 @@ export function createEffectRuntimeHandlers(
     ["scheduler.monitor_batch.plan", lazyHandler(() => import("./scheduler/monitor_batch.ts"), ({planLegacyMonitorBatch}) => planLegacyMonitorBatch)],
     ["scheduler.monitor_target.select", lazyHandler(() => import("./scheduler/monitor_successor.ts"), ({selectMonitorTodoRequest}) => selectMonitorTodoRequest)],
     ["capabilities.issue_fix.monitor_reconciliation.plan", lazyHandler(() => import("./capabilities/issue_fix_monitor_reconciliation.ts"), ({planIssueFixMonitorReconciliation}) => planIssueFixMonitorReconciliation)],
+    ["capabilities.change_quality.validation_gate", lazyHandler(() => import("./capabilities/change_quality_validation.ts"), ({qualifyChangeQualityValidation}) => qualifyChangeQualityValidation)],
     ["capabilities.pr_review.approval_closeout.plan", lazyHandler(() => import("./capabilities/pr_review_approval_closeout.ts"), ({planPrReviewApprovalCloseout}) => planPrReviewApprovalCloseout)],
     ["capabilities.pr_review.configuration", lazyHandler(() => import("./capabilities/pr_review_order.ts"), ({prReviewConfiguration}) => prReviewConfiguration)],
     ["capabilities.pr_review.order", lazyHandler(() => import("./capabilities/pr_review_order.ts"), ({orderPrReviewQueue}) => orderPrReviewQueue)],
@@ -604,6 +605,8 @@ export function createEffectRuntimeHandlers(
     ["collaboration.delegation.observe_wake", lazyHandler(() => import("./collaboration/delegation.ts"), ({decideDelegationWakeObservation}) => decideDelegationWakeObservation)],
     ["collaboration.delegation.recover_validated_settlement", lazyHandler(() => import("./collaboration/delegation.ts"), ({recoverValidatedDelegationSettlement}) => recoverValidatedDelegationSettlement)],
     ["collaboration.delegation.stop", lazyHandler(() => import("./collaboration/delegation.ts"), ({decideDelegationStop}) => decideDelegationStop)],
+    ["progress_review.evidence_scope", lazyHandler(() => import("./work_items/progress_review_evidence.ts"), ({progressReviewEvidenceScope}) => progressReviewEvidenceScope)],
+    ["progress_review.criterion_basis", lazyHandler(() => import("./work_items/progress_review_evidence.ts"), ({progressReviewCriterionBasis}) => progressReviewCriterionBasis)],
     ["collaboration.delegation.adoption", lazyHandler(() => import("./collaboration/delegation.ts"), ({recordDelegationAdoption}) => recordDelegationAdoption)],
     [
       "collaboration.request.normalize",

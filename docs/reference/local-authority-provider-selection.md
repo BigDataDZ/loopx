@@ -399,19 +399,57 @@ and native unpromoted-source leases on File/SQLite: import refuses while the
 Host runs and after it exits with an active lease; native release permits
 cutover. The imported released lease retains its identity and history, and a
 restart using the old grant is rejected before the actual Host launches.
-This does not qualify automatic Host discovery/stop, pending outbox disposition,
-live model sessions or full-history restore. The
-cold-import CLI reuses the selected command dispatcher and
+A fresh native acquisition advances that retained lease's version and execution
+epoch and can start a real supervised Host under the selected canonical provider.
+With that Host running, original-import recovery still works after the Markdown
+source is removed and preserves the current active lease. The old token refuses
+launch even while a new lease for the same Todo is active. Stopping the new Host
+also leaves its lease active until its owner releases it; import replay preserves
+the new settlement. Reacquire through the normal `task-lease acquire` workflow
+with a new execution key and the current version, rather than reusing the old
+execution receipt. Keep the supervisor/OS transport: writer retirement does not
+remove its process-exit and current-execution proof duties.
+This qualifies operator-led POSIX reactivation of synthetic work, not automatic
+Host discovery/stop, pending outbox disposition, live model sessions or identity
+adoption after full-history restore. The App loading boundary is qualified
+separately below. The cold-import CLI reuses the
+selected command dispatcher and
 the existing Goal path resolver; its File/SQLite import and original-receipt
 recovery run with `todos.py`, `bootstrap.py`, `runtime_shadow_writer_adapter.py`
 and `local_authority_shadow_outbox.py` physically absent in a disposable package.
 This proves that command's independence, not that other commands or supported
-writers can lose those files. Retained prose-write guards have live callers and
-must move to their owning boundary before their adapter is removed.
-The packaged App uses the real File/SQLite backend; App loading with those old
-modules absent remains a separate acceptance. This stage does not qualify
-supported old-writer retirement,
-release default or historical support cutoff.
+writers can lose those files. The retained prose-write guard now belongs to the
+existing source/fence boundary and shares the source partition projector with
+capture. Its old import remains compatible. Configuration and the guard load
+with both capture modules absent. Pure runtime-root routing now belongs to
+`paths.effective_runtime_root`; canonical Todo, terminal lifecycle, acceptance,
+Chat and CLI callers import that owner directly. The old adapter reexports the
+same function for supported capture callers. Source and fresh-wheel File/SQLite
+qualification runs the complete `serve_chat`
+entrypoint with all four modules physically absent. The packaged Goal settings
+journey performs backup/preview, reload and original-operation readback before
+explicit confirmation. Full current and archived requirements survive import;
+subsequent reviewed App creation, editing and completion work with the explicitly
+selected `soft_claim` policy. Restart/replay preserves those later writes.
+Missing selected storage and missing `hard_lease` execution proof still refuse
+without a Markdown fallback. App reads use the existing readback owner, and
+shared input transport reaches the existing typed mutation owners. Reviewed
+canonical Todo creates use request v2 to bind the preview's provider
+revision to the existing command identity and transaction CAS. Concurrent
+changes reject the stale request; original-operation recovery runs first and
+retains subsequent writes. Unreviewed v0/v1 callers keep their existing intent
+and receipt identity. Import and original-receipt recovery refresh current
+ownership independently on the same settings screen, including retryable read
+failures; a saved receipt does not substitute for today's policy.
+Supported old APIs reexport the same functions; their real Markdown writers and bootstrap
+operations remain for actual callers. This qualifies the bounded import/loading
+journey, not retirement of every writer, full-state identity adoption, D2 or a
+released SQLite default.
+
+已审核的 canonical Todo 创建使用请求 v2，将预览的 provider revision 绑定到既有
+命令身份和事务 CAS；并发修改会拒绝过期请求。原操作恢复先于当前 head 校验，保留
+之后的新写入；未审核的 v0/v1 调用保留原有意图和回执身份。导入或原回执恢复后，
+同一设置页面独立回读当前所有权，读取失败时可重试；保存的回执不代替当前策略。
 Source checks accept registered runtime directory aliases only when both paths
 resolve to the same physical directory. Retargeting an alias after preview still
 rejects before the import fence; original source observations are not rewritten.
