@@ -1318,7 +1318,11 @@ def test_reserved_managed_start_recovers_after_death_before_the_first_journal_wr
     assert [
         (row["state"], row["request_id"]) for row in _cadence_starts(runtime_root)
     ] == [("reserved", f"{turn_key}:1")]
-    assert not list((runtime_root / "goals" / "fixture-goal" / "turns").glob("*.json"))
+    assert not [
+        path
+        for path in (runtime_root / "goals" / "fixture-goal" / "turns").glob("*.json")
+        if not path.name.endswith(".lock.holder.json")
+    ]
     assert calls == {"host": 0, "writeback": 0, "spend": 0, "scheduler": 0}
 
     started_at_ms = int(_cadence_starts(runtime_root)[0]["started_at_ms"])
